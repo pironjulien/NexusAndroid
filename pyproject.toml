@@ -1,0 +1,44 @@
+[project]
+name = "nexus-android"
+version = "0.3.1"
+description = "Android computer use for AI agents over ADB: one MCP server shared by Claude Code, Codex and Antigravity"
+authors = [{ name = "Julien Piron" }]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "mcp>=2.3.0",
+    "pillow>=12.3.0",
+]
+
+[project.scripts]
+nexus-android = "nexus_android.server:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright==1.1.407",
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+cache-dir = "~/.nexus/nexus-android/cache/ruff"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501", "E731"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.14"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: tests sur le vrai téléphone"]
+addopts = "-m 'not live' -p no:cacheprovider"
