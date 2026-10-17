@@ -1,5 +1,13 @@
 # NexusAndroid
 
+[![Release](https://img.shields.io/github/v/release/pironjulien/android-computer-use)](https://github.com/pironjulien/android-computer-use/releases)
+[![Tests](https://github.com/pironjulien/android-computer-use/actions/workflows/tests.yml/badge.svg)](https://github.com/pironjulien/android-computer-use/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Python 3.14](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)](pyproject.toml)
+[![MCP](https://img.shields.io/badge/MCP-server-7ee2a8)](https://modelcontextprotocol.io)
+
+[![NexusAndroid: Android computer use for AI agents, over plain ADB. Works with Claude, Codex and Antigravity.](docs/assets/banner.webp)](https://julienpiron.fr/nexusandroid/)
+
 **Android computer use for AI agents, over plain ADB.** One MCP server, `nexus-android`, lets Claude Code, Codex
 and Antigravity see and drive a real Android phone: screen and UI tree, gestures, typing with accents and emoji,
 SMS/RCS reading, prepared replies, notifications, files, settings. No root, no app to install on the phone, no
@@ -7,6 +15,72 @@ cloud relay: a USB cable or the local Wi-Fi.
 
 Built and tested on a Samsung Galaxy Fold (`SM-F971B`, One UI) with a Windows PC. Other Android phones with USB
 debugging should work but have not been tested. Agent-facing messages are in French.
+Project page: [julienpiron.fr/nexusandroid](https://julienpiron.fr/nexusandroid/).
+
+## Quick start
+
+1. Phone: Settings → About phone → tap *Build number* 7 times, then Developer options → **USB debugging** on.
+   Plug it in and accept the PC's key on the phone.
+2. PC: install [`uv`](https://docs.astral.sh/uv/) and the Android Platform Tools (`winget install Google.PlatformTools`).
+3. Add the server to your agent (it runs straight from GitHub, no clone needed):
+
+```bash
+claude mcp add nexus-android --scope user -- uvx --python 3.14 --from git+https://github.com/pironjulien/android-computer-use nexus-android
+```
+
+Then ask your agent: *"Look at my phone and tell me what is on the screen."*
+
+<details>
+<summary>Codex (<code>~/.codex/config.toml</code>)</summary>
+
+```toml
+[mcp_servers.nexus-android]
+command = "uvx"
+args = ["--python", "3.14", "--from", "git+https://github.com/pironjulien/android-computer-use", "nexus-android"]
+```
+</details>
+
+<details>
+<summary>Antigravity, Claude Desktop, Cursor and other JSON clients</summary>
+
+```json
+{
+  "mcpServers": {
+    "nexus-android": {
+      "command": "uvx",
+      "args": ["--python", "3.14", "--from", "git+https://github.com/pironjulien/android-computer-use", "nexus-android"]
+    }
+  }
+}
+```
+</details>
+
+If `adb` is not on the `PATH`, set `NEXUS_ANDROID_ADB` to its full path in the server's environment. Typing accents
+and emoji needs the pinned scrcpy server that [`install.ps1`](#full-install-windows) downloads and checks; without it,
+ASCII typing still works.
+
+### Example prompts
+
+- *"Open Google Maps and start navigation to the nearest pharmacy."*
+- *"Read my last SMS from Alice and draft a reply saying I'll be 10 minutes late."* (drafted, never sent without your "yes")
+- *"Turn on do not disturb and lower the brightness."*
+- *"Pull the last three photos from the phone to my PC."*
+- *"Run a checkup: battery, storage, security patch, apps installed outside the stores."*
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["Claude Code"] --> S
+    B["Codex"] --> S
+    C["Antigravity"] --> S
+    S["nexus-android<br/>MCP server (Python)"] -->|"ADB over USB or local Wi-Fi"| P["Android phone<br/>(no app, no root)"]
+    S -.->|"shared lock, screen-awake state"| L[("~/.nexus")]
+```
+
+`look` returns a screenshot plus the numbered UI tree; `act` runs a batch of gestures, re-reading the screen before
+each one and reporting what really happened. Messages, notifications, contacts and settings are read through
+Android's own providers and `dumpsys`, never by scraping the screen.
 
 ## Why a shared server
 
@@ -93,7 +167,10 @@ the next server to start restores it. The server never unlocks the phone.
 - **Invisible screen**: seeing the agent work on the real screen is a feature.
 - **Internet relay** (tunnels, VPN): USB or local Wi-Fi only.
 
-## Installation
+## Full install (Windows)
+
+Recommended for daily use: one local environment, registration in every client found on the PC, the scrcpy
+server for accents, and the shared state between agents.
 
 Prerequisites: Windows, PowerShell 7, [`uv`](https://docs.astral.sh/uv/), Python 3.14 and the Android Platform Tools
 (`winget install Google.PlatformTools`). On the phone: Developer options → USB debugging.

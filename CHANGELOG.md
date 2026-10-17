@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- README: quick start with a one-line `uvx` install straight from GitHub, Codex and JSON client configs, example
+  prompts, architecture diagram, badges and banner.
+- GitHub Actions workflow running `test.ps1` on Windows; `SECURITY.md` with private reporting.
+
 ## [0.3.1] - 2026-10-17 — First public release
 
 ### Changed
