@@ -51,10 +51,13 @@ EXAMPLES = {
     "^format(er|ez)$": "Formater",
     "format(er|ez) (le |ce |la |cette |un |une )?(disque|lecteur|volume|partition|cle|carte)": "Formater la carte SD",
     "format (the |this )?(disk|drive|partition|volume)": "Format the drive",
+    "format(er|ez) (le |la |l |ce |cette |votre )?(telephone|appareil|tablette)": "Formater le téléphone",
+    "format (the |this |your )?(phone|device|tablet)": "Format phone",
     "reinitialis(er|ez)(?! (les |la |le )?(filtres?|zoom|affichage|vue|recherche|tri|mise en page))":
         "Réinitialiser le téléphone",
     "factory reset": "Factory reset",
     "reset (this pc|(the )?app|to factory( settings)?|all settings)": "Reset all settings",
+    "reset (this |the |your )?(pc|phone|device|tablet)": "Reset phone",
     "resili(er|ez)": "Résiliez",
     "(cancel|terminate) (my |your |the )?(subscription|contract|plan|membership)": "Cancel subscription",
     "(supprim(er|ez)|ferm(er|ez)) (mon |votre |le )compte": "Supprimer mon compte",
@@ -108,7 +111,10 @@ def test_motif_needs_confirmation(motif):
 
 @pytest.mark.parametrize("label", ["Envoyez", "Payez", "Paiement", "Achetez", "Commandez", "Publish", "Purchase",
                                    "Checkout", "Virer", "Transfer money", "ENVOYER", "Oui, envoyer", "Appelez",
-                                   "Appel vocal", "Video call"])
+                                   "Appel vocal", "Video call", "Erase everything",
+                                   "Reset phone", "Reset device", "Reset tablet", "Reset PC", "Factory reset",
+                                   "Formater le téléphone", "Formater l’appareil", "Formater la tablette",
+                                   "Format phone", "Format the device"])
 def test_audit_conjugations_caught(label):
     assert policy.confirm_word(label), label
 
@@ -116,7 +122,7 @@ def test_audit_conjugations_caught(label):
 @pytest.mark.parametrize("label", ["Supprimer", "Tout supprimer", "Accepter", "J’accepte", "Partager", "Share",
                                    "Journal d'appels", "Calls", "Callback", "Valider", "OK", "Autoriser", "Commandes passées",
                                    "Boîte d'envoi", "Éléments envoyés", "Format", "Réinitialiser les filtres",
-                                   "Paypal", "Poste", "Publication"])
+                                   "Paypal", "Poste", "Publication", "Reset filters", "Effacer", "Tout sélectionner"])
 def test_free_labels(label):
     assert policy.confirm_word(label) == "", label
 
@@ -125,6 +131,20 @@ def test_generic_verb_on_payment_or_format_screen():
     assert policy.confirm_word("Valider", "Paiement par carte · 12,00 €")
     assert policy.confirm_word("OK", "Formatage de la carte SD")
     assert policy.confirm_word("Valider", "Paramètres du compte") == ""
+
+
+def test_wipe_all_only_on_a_reset_screen(phone):
+    """« Tout effacer » : libre ailleurs (calculatrice, notifications), confirmé sur l'écran de réinitialisation."""
+    settings = "com.android.settings"
+    phone.package = settings
+    phone.uis = [ui(node("Réinitialisation des données d'usine", (0, 0, 1080, 200), clickable=False, package=settings),
+                    node("Tout effacer", (0, 1700, 1080, 1900), package=settings))]
+    assert "confirm=true" in act(Step(do="tap", target="Tout effacer"))
+    phone.uis = [ui(node("Calculatrice", (0, 0, 1080, 200), clickable=False, package=settings),
+                    node("Tout effacer", (0, 1700, 1080, 1900), package=settings))]
+    assert act(Step(do="tap", target="Tout effacer")).startswith("~")
+    for label in ("Tout effacer", "Effacer tout", "Tout supprimer"):
+        assert policy.confirm_word(label, "Effacer toutes les données") and not policy.confirm_word(label), label
 
 
 def test_generic_verb_judged_with_screen_text(phone):

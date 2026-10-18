@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-18
+
+### Security
+
+- Wiping, resetting or formatting the whole device now needs `confirm=true`: "Reset phone", "Reset device",
+  "Reset tablet", "Reset PC", "Formater le téléphone", "Formater l'appareil", "Format phone" (shared policy). "Tout
+  effacer", "Effacer tout" and "Tout supprimer" need it on a reset screen (factory reset, erase all data) and stay free
+  elsewhere (calculator, notifications). One test per label.
+
 ## [0.4.0] - 2026-10-18 — Shared safeguard policy
 
 Fixes from the 18/10 audit, aligned on the safeguard agreement between Claude and Antigravity.
