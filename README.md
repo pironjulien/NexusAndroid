@@ -11,6 +11,8 @@
 
 [![NexusAndroid: Android computer use for AI agents, over plain ADB. Works with Claude, Codex and Antigravity.](https://raw.githubusercontent.com/pironjulien/NexusAndroid/main/docs/assets/banner.webp)](https://julienpiron.fr/nexusandroid/)
 
+![NexusAndroid: an AI agent launches the Calculator on a real Android phone over ADB, types 1618 × 20 and reads back 32 360](docs/assets/demo.webp)
+
 **Android computer use for AI agents, over plain ADB.** One MCP server, `nexus-android`, lets Claude Code, Codex
 and Antigravity see and drive a real Android phone: screen and UI tree, gestures, typing with accents and emoji,
 SMS/RCS reading, prepared replies, notifications, files, settings. No root, no app to install on the phone, no
