@@ -3,6 +3,7 @@
 <!-- mcp-name: io.github.pironjulien/nexus-android -->
 
 [![Release](https://img.shields.io/github/v/release/pironjulien/android-computer-use)](https://github.com/pironjulien/android-computer-use/releases)
+[![PyPI](https://img.shields.io/pypi/v/nexus-android)](https://pypi.org/project/nexus-android/)
 [![Tests](https://github.com/pironjulien/android-computer-use/actions/workflows/tests.yml/badge.svg)](https://github.com/pironjulien/android-computer-use/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/pironjulien/android-computer-use/blob/main/LICENSE)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)](https://github.com/pironjulien/android-computer-use/blob/main/pyproject.toml)
@@ -30,10 +31,10 @@ Project page: [julienpiron.fr/nexusandroid](https://julienpiron.fr/nexusandroid/
 1. Phone: Settings → About phone → tap *Build number* 7 times, then Developer options → **USB debugging** on.
    Plug it in and accept the PC's key on the phone.
 2. PC: install [`uv`](https://docs.astral.sh/uv/) and the Android Platform Tools (`winget install Google.PlatformTools`).
-3. Add the server to your agent (it runs straight from GitHub, no clone needed):
+3. Add the server to your agent (installed from [PyPI](https://pypi.org/project/nexus-android/) by `uvx`, no clone needed):
 
 ```bash
-claude mcp add nexus-android --scope user -- uvx --python 3.14 --from git+https://github.com/pironjulien/android-computer-use nexus-android
+claude mcp add nexus-android --scope user -- uvx --python 3.14 nexus-android
 ```
 
 Then ask your agent: *"Look at my phone and tell me what is on the screen."*
@@ -44,7 +45,7 @@ Then ask your agent: *"Look at my phone and tell me what is on the screen."*
 ```toml
 [mcp_servers.nexus-android]
 command = "uvx"
-args = ["--python", "3.14", "--from", "git+https://github.com/pironjulien/android-computer-use", "nexus-android"]
+args = ["--python", "3.14", "nexus-android"]
 ```
 </details>
 
@@ -56,7 +57,7 @@ args = ["--python", "3.14", "--from", "git+https://github.com/pironjulien/androi
   "mcpServers": {
     "nexus-android": {
       "command": "uvx",
-      "args": ["--python", "3.14", "--from", "git+https://github.com/pironjulien/android-computer-use", "nexus-android"]
+      "args": ["--python", "3.14", "nexus-android"]
     }
   }
 }

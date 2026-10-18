@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Published on PyPI (`nexus-android`) and in the official MCP registry (`io.github.pironjulien/nexus-android`);
+  the quick start installs with `uvx --python 3.14 nexus-android`.
+
 ## [0.4.1] - 2026-10-18
 
 ### Security
