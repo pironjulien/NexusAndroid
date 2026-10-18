@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Repository renamed to `pironjulien/NexusAndroid`; GitHub redirects the old address.
 - Published on PyPI (`nexus-android`) and in the official MCP registry (`io.github.pironjulien/nexus-android`);
   the quick start installs with `uvx --python 3.14 nexus-android`.
 

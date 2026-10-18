@@ -5,7 +5,7 @@ publish, delete for good or do any other action of the shared confirmation polic
 app, or to read a security code that should be masked.
 
 Please report such issues privately through
-[GitHub private vulnerability reporting](https://github.com/pironjulien/android-computer-use/security/advisories/new),
+[GitHub private vulnerability reporting](https://github.com/pironjulien/NexusAndroid/security/advisories/new),
 not in a public issue. Include the tool call, the screen or app involved and what happened. You will get an answer
 within a few days.
 

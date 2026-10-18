@@ -2,14 +2,14 @@
 
 <!-- mcp-name: io.github.pironjulien/nexus-android -->
 
-[![Release](https://img.shields.io/github/v/release/pironjulien/android-computer-use)](https://github.com/pironjulien/android-computer-use/releases)
+[![Release](https://img.shields.io/github/v/release/pironjulien/NexusAndroid)](https://github.com/pironjulien/NexusAndroid/releases)
 [![PyPI](https://img.shields.io/pypi/v/nexus-android)](https://pypi.org/project/nexus-android/)
-[![Tests](https://github.com/pironjulien/android-computer-use/actions/workflows/tests.yml/badge.svg)](https://github.com/pironjulien/android-computer-use/actions/workflows/tests.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/pironjulien/android-computer-use/blob/main/LICENSE)
-[![Python 3.14](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)](https://github.com/pironjulien/android-computer-use/blob/main/pyproject.toml)
+[![Tests](https://github.com/pironjulien/NexusAndroid/actions/workflows/tests.yml/badge.svg)](https://github.com/pironjulien/NexusAndroid/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/pironjulien/NexusAndroid/blob/main/LICENSE)
+[![Python 3.14](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)](https://github.com/pironjulien/NexusAndroid/blob/main/pyproject.toml)
 [![MCP](https://img.shields.io/badge/MCP-server-7ee2a8)](https://modelcontextprotocol.io)
 
-[![NexusAndroid: Android computer use for AI agents, over plain ADB. Works with Claude, Codex and Antigravity.](https://raw.githubusercontent.com/pironjulien/android-computer-use/main/docs/assets/banner.webp)](https://julienpiron.fr/nexusandroid/)
+[![NexusAndroid: Android computer use for AI agents, over plain ADB. Works with Claude, Codex and Antigravity.](https://raw.githubusercontent.com/pironjulien/NexusAndroid/main/docs/assets/banner.webp)](https://julienpiron.fr/nexusandroid/)
 
 **Android computer use for AI agents, over plain ADB.** One MCP server, `nexus-android`, lets Claude Code, Codex
 and Antigravity see and drive a real Android phone: screen and UI tree, gestures, typing with accents and emoji,
@@ -19,11 +19,11 @@ cloud relay: a USB cable or the local Wi-Fi.
 Built and tested on a Samsung Galaxy Fold (`SM-F971B`, One UI) with a Windows PC. Other Android phones with USB
 debugging should work but have not been tested. Agent-facing messages are in French.
 Part of the Nexus family: [NexusWindows](https://julienpiron.fr/nexuswindows/)
-([Claude](https://github.com/pironjulien/claude-windows-computer-use) ·
-[Codex](https://github.com/pironjulien/codex-windows-computer-use) ·
-[Antigravity](https://github.com/pironjulien/antigravity-windows-computer-use)),
-[NexusBrowser](https://julienpiron.fr/nexusbrowser/) ([repo](https://github.com/pironjulien/chrome-computer-use)),
-[NexusAndroid](https://julienpiron.fr/nexusandroid/) ([repo](https://github.com/pironjulien/android-computer-use)).
+([Claude](https://github.com/pironjulien/NexusWindows-Claude) ·
+[Codex](https://github.com/pironjulien/NexusWindows-Codex) ·
+[Antigravity](https://github.com/pironjulien/NexusWindows-Antigravity)),
+[NexusBrowser](https://julienpiron.fr/nexusbrowser/) ([repo](https://github.com/pironjulien/NexusBrowser)),
+[NexusAndroid](https://julienpiron.fr/nexusandroid/) ([repo](https://github.com/pironjulien/NexusAndroid)).
 Project page: [julienpiron.fr/nexusandroid](https://julienpiron.fr/nexusandroid/).
 
 ## Quick start
@@ -232,7 +232,7 @@ account, no telemetry, no analytics and no cloud relay; the server itself makes 
 - **Removing it**: delete `~/.nexus/nexus-android/` and `~/.nexus/android.lock` and revoke the PC's key on the phone (Developer
   options → Revoke USB debugging authorizations).
 
-Questions or concerns: open an issue, or see [SECURITY.md](https://github.com/pironjulien/android-computer-use/blob/main/SECURITY.md)
+Questions or concerns: open an issue, or see [SECURITY.md](https://github.com/pironjulien/NexusAndroid/blob/main/SECURITY.md)
 for private reports.
 
 ## Development
@@ -243,4 +243,4 @@ pwsh -NoProfile -File test.ps1   # ruff, pyright and the unit tests, offline, no
 
 ## License
 
-[MIT](https://github.com/pironjulien/android-computer-use/blob/main/LICENSE). Not affiliated with Google, Samsung, Anthropic, OpenAI or Genymobile.
+[MIT](https://github.com/pironjulien/NexusAndroid/blob/main/LICENSE). Not affiliated with Google, Samsung, Anthropic, OpenAI or Genymobile.
