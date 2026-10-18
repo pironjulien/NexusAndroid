@@ -1,0 +1,52 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.pironjulien/nexus-android",
+  "title": "NexusAndroid",
+  "description": "Android computer use over plain ADB: screen, gestures, SMS, notifications, files. No root, no app.",
+  "version": "0.4.1",
+  "websiteUrl": "https://julienpiron.fr/nexusandroid/",
+  "repository": {
+    "url": "https://github.com/pironjulien/NexusAndroid",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "nexus-android",
+      "version": "0.4.1",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--python",
+          "value": "3.14"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "NEXUS_ANDROID_ADB",
+          "description": "Full path to adb when it is not on the PATH",
+          "isRequired": false,
+          "format": "filepath"
+        },
+        {
+          "name": "NEXUS_ANDROID_SERIAL",
+          "description": "Force a device by serial number or ip:port",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "NEXUS_ANDROID_KEEP_AWAKE",
+          "description": "0 turns off the keep-screen-on session while the agent works",
+          "isRequired": false,
+          "format": "string",
+          "default": "1"
+        }
+      ]
+    }
+  ]
+}
