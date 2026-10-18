@@ -12,6 +12,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   prompts, architecture diagram, badges and banner.
 - GitHub Actions workflow running `test.ps1` on Windows; `SECURITY.md` with private reporting.
 
+### Changed
+
+- README: "Part of the Nexus family" line with links to NexusWindows (Claude, Codex, Antigravity editions),
+  NexusBrowser and their project pages.
+
 ## [0.3.1] - 2026-10-17 — First public release
 
 ### Changed
