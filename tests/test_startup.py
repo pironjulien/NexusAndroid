@@ -42,5 +42,9 @@ def test_initialize_and_list_tools(tmp_path):
             hints = {name: tool.annotations for name, tool in tools.items()}
             assert hints["look"] and hints["look"].read_only_hint
             assert hints["act"] and hints["act"].destructive_hint
+            for name, field in (("phone", "screen_on"), ("info", "location"), ("settings", "changed")):
+                schema = tools[name].output_schema  # réponses structurées (structuredContent)
+                assert schema and field in schema["properties"], name
+            assert "confirm" in tools["look"].input_schema["properties"]
 
     anyio.run(check)

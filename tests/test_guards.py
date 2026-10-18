@@ -55,6 +55,10 @@ class FakePhone:
         self.png = io.BytesIO()
         PILImage.new("RGB", (W, H), "white").save(self.png, "PNG")
 
+    def state_text(self) -> str:
+        focus = f"\n  mCurrentFocus=Window{{abc u0 {self.package}/x.Main}}" if self.package else ""
+        return "mWakefulness=Awake\n" + self.lock + focus
+
     @property
     def inputs(self) -> list[tuple[str, ...]]:
         return [c for c in self.calls if c[0] == "input"]
@@ -68,9 +72,13 @@ class FakePhone:
             return 0, self.lock + focus, ""
         if argv[:2] == ("dumpsys", "SurfaceFlinger"):
             return 0, "Display 0", ""
+        if argv[0] == "sh" and argv[2] == screen.STATE_SH:  # état en un aller-retour
+            return 0, self.state_text(), ""
         if (argv[0] == "sh" and "uiautomator dump" in argv[2]) or argv[0] == "cat":
             current = self.uis.pop(0) if len(self.uis) > 1 else self.uis[0]
-            return (0, "UI hierchary dumped to: x\n" + current, "") if current else (0, "ERROR: null root node", "")
+            tail = f"\n{screen.STATE_MARK}\n{self.state_text()}" if argv[0] == "sh" else ""
+            return ((0, "UI hierchary dumped to: x\n" + current + tail, "") if current else
+                    (0, "ERROR: null root node" + tail, ""))
         if argv[0] == "uiautomator":  # ancienne lecture en deux commandes (comparaison avec la version d'avant)
             return 0, "UI hierchary dumped to: x", ""
         if argv[0] == "am":
@@ -114,15 +122,15 @@ def look(fake: FakePhone, *nodes: str) -> None:
 
 
 def test_guard_on_every_targeted_step(phone):
-    phone.uis = [ui(node("Tout supprimer", (0, 0, 500, 200)), field())]
-    for step in (Step(do="tap", target="Tout supprimer"), Step(do="clear", target="Tout supprimer"),
-                 Step(do="type", target="Tout supprimer", text="x"), Step(do="long_press", target="10,10"),
+    phone.uis = [ui(node("Supprimer définitivement", (0, 0, 500, 200)), field())]
+    for step in (Step(do="tap", target="Supprimer définitivement"), Step(do="clear", target="Supprimer définitivement"),
+                 Step(do="type", target="Supprimer définitivement", text="x"), Step(do="long_press", target="10,10"),
                  Step(do="swipe", target="10,10", to="400,1000"), Step(do="swipe", target="900,1000", to="100,100"),
-                 Step(do="scroll", target="Tout supprimer", direction="down")):
+                 Step(do="scroll", target="Supprimer définitivement", direction="down")):
         report = act(step)
         assert report.startswith("✗") and "confirm=true" in report, (step, report)
     assert phone.inputs == []
-    assert act(Step(do="tap", target="Tout supprimer", confirm=True)).startswith("~")
+    assert act(Step(do="tap", target="Supprimer définitivement", confirm=True)).startswith("~")
     assert phone.inputs == [("input", "tap", "250", "100")]
 
 
@@ -286,7 +294,7 @@ def test_protected_app_of_targeted_element(phone):
     assert act(Step(do="tap", target="Notes")).startswith("~")  # autre moitié de l'écran partagé : permis
     phone.calls.clear()
     report = act(Step(do="tap", target="100,100", confirm=True))
-    assert "Revolut" in report and "lecture seule" in report and phone.inputs == []
+    assert "Revolut" in report and "jamais par l'agent" in report and phone.inputs == []
 
 
 def test_unknown_foreground_app(phone):
@@ -491,9 +499,11 @@ def test_irreversible_labels_anywhere():
     def el(text):
         return Element(1, "Button", text, "", "", "com.app", (0, 0, 1, 1), True)
 
-    for text in ("Tout supprimer", "Oui, envoyer", "J’accepte", "Déplacer vers la corbeille", "Passer la commande",
-                 "Résilier l'abonnement", "Transférer 20 €", "S'abonner", "Autoriser", "Buy now", "Appeler Alice",
-                 "Soumettre", "VALIDER"):
+    for text in ("Supprimer définitivement", "Oui, envoyer", "Vider la corbeille", "Passer la commande",
+                 "Résilier l'abonnement", "Transférer de l’argent", "Buy now", "Désinstaller", "PAYER", "Appeler Alice"):
         assert policy.irreversible(el(text)), text
-    for text in ("Envoyé hier", "La Poste", "Paramètres", "Commandes passées", "Callback", "Postal"):
+    # Accord du 18/10 : supprimer (corbeille), accepter, partager, appeler, valider et autoriser sont libres.
+    for text in ("Envoyé hier", "La Poste", "Paramètres", "Commandes passées", "Callback", "Postal", "Tout supprimer",
+                 "Déplacer vers la corbeille", "J’accepte", "Autoriser", "Journal d'appels", "Partager", "Soumettre",
+                 "VALIDER", "S'abonner", "Boîte d'envoi", "Éléments envoyés"):
         assert policy.irreversible(el(text)) is None, text

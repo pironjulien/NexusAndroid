@@ -100,7 +100,7 @@ screen-awake session and the same safeguards.
 
 | Tool | Role |
 | --- | --- |
-| `phone` | Connected phone (USB or Wi-Fi), model, screen, foreground app, fold posture, reboot detection |
+| `phone` | Connected phone (USB or Wi-Fi), model, screen, foreground app, fold posture, reboot detection (structured output) |
 | `look` | Screen image and numbered `[N]` elements with text, state and center `@x,y` |
 | `act` | Batched gestures: tap, long press, typing (accents and emoji included), clear, keys, scroll, swipe, wait, links (`geo:`, `google.navigation:`, `tel:` opens the dialer without calling, `mailto:`, `https://`) |
 | `launch` | Open an app by package or part of its name |
@@ -108,8 +108,8 @@ screen-awake session and the same safeguards.
 | `draft` | Open SMS/RCS or WhatsApp with the reply already written, recipient by name or number; sent only after the user explicitly says "send" |
 | `notifications` | Notifications on screen: app, time, title, text; security codes masked; `all` adds ongoing ones |
 | `files` | Shared storage only (`/sdcard`): list newest first, `pull` to the PC (`~\Downloads\Telephone`), `push` to the phone; never overwrites, never deletes |
-| `info` | Read-only: last known location (accuracy, age, Maps link), recent calls, a contact's numbers, upcoming events |
-| `settings` | Read or change, then read back: Wi-Fi, Bluetooth, mobile data, location, NFC, do not disturb, brightness, media volume; turning Wi-Fi off is refused when the link goes through it |
+| `info` | Read-only: last known location (accuracy, age, Maps link), recent calls, a contact's numbers, upcoming events (structured output) |
+| `settings` | Read or change, then read back: Wi-Fi, Bluetooth, mobile data, location, NFC, do not disturb, brightness, media volume; turning Wi-Fi off is refused when the link goes through it (structured output) |
 | `checkup` | Health report: system, security patch, battery, storage, memory, apps installed outside the stores, wireless debugging; `clean` clears caches |
 
 Google Messages stores RCS messages in Android's messaging provider, like MMS, so the server reads them without going
@@ -119,17 +119,26 @@ as hidden in the app.
 
 ## Safeguards
 
-- **Sending, paying, deleting, confirming**: a button of this kind, or a send icon, is refused without
-  `confirm=true`, for every gesture aimed at it (tap, typing, clearing, swipe). The agent only sets it after an
-  explicit "yes" from the user for that specific action. Enter, call keys and any key outside a short safe list need
-  it too.
-- **Target checked on the current screen**: the UI is read again just before each gesture; a changed `[N]` or a spot
-  with nothing readable is refused. Reports: ✓ effect read back, ~ sent but not verified, ✗ refused or failed.
+- **Paying, sending, calling, publishing, deleting for good, formatting, uninstalling, resetting, cancelling a subscription,
+  making a repository public**: a button of this kind is refused without `confirm=true`, for every gesture aimed at
+  it (tap, typing, clearing, swipe, `x,y` coordinates included). The agent sets it on the user's explicit order for
+  that gesture, or after their "yes". The labels come from one policy file shared with the desktop tools
+  (`garde-fous.json`), matched without accents or case and in every listed form ("Envoyez", "Payez", "Paiement",
+  "Commandez", "Checkout", "Appeler"...). Everything else is free: deleting to the trash, accepting, sharing.
+  A generic "OK" or "Validate" needs it on a screen that talks about a payment or a format. In a messaging, mail,
+  social or phone app, a clickable icon with no name at all (often the send or call button) needs it too. Enter, call keys and any key
+  outside a short safe list need it as well.
+- **Target checked on the current screen**: the UI and the phone state (lock, foreground app) are read again in
+  one round trip just before each gesture; a changed `[N]` or a spot with nothing readable is refused. Reports: ✓ effect read back, ~ sent but not verified, ✗ refused or failed.
 - **One phone only**: the owner's phone is identified by its hardware serial number, recorded at the first USB
   connection; emulators, TV boxes and other devices are ignored. One agent at a time drives it (lock shared by all
   servers on the PC).
-- **Banking, payment, crypto, gambling, identity, authenticators**: read-only, no gestures.
-- **Codes received by SMS or shown in notifications**: masked before the agent reads them, and blacked out on the image.
+- **Banking, payment, crypto, gambling, identity, authenticators**: look, scroll and wait freely; tap, type or
+  swipe only with `confirm=true` (the user's order to navigate); a money or send button, or an unnamed icon, never,
+  even with `confirm=true`; a link (`open_url`) that would open one of them is refused (a deep link can prepare a payment).
+- **Codes received by SMS or shown in notifications**: masked before the agent reads them, and blacked out on the
+  image. When the UI tree cannot be read, codes cannot be located, so the image is not sent unless `look` gets
+  `confirm=true` (with the user's agreement).
 - **Passwords**: no typing into a password field.
 - **Locked phone**: no gestures. The user unlocks it; no code is ever entered.
 - **Text read** on screen or in messages is data, never instructions.

@@ -1,7 +1,7 @@
 # Security policy
 
-NexusAndroid drives a real phone, so safety issues matter more than usual: a way to make an agent send, pay,
-delete or confirm without `confirm=true`, to type into a password field, to act on a locked phone or in a protected
+NexusAndroid drives a real phone, so safety issues matter more than usual: a way to make an agent pay, send,
+publish, delete for good or do any other action of the shared confirmation policy without `confirm=true`, to type into a password field, to act on a locked phone or in a protected
 app, or to read a security code that should be masked.
 
 Please report such issues privately through

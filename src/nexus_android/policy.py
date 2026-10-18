@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import re
+import unicodedata
+from pathlib import Path
 
-from .messages import plain
 from .screen import Element
 
 # Applications où l'outil peut regarder mais jamais agir : banque, paiement, crypto, jeux d'argent, identité, codes.
@@ -54,18 +56,83 @@ PROTECTED_PACKAGES = {
 # Filet pour les applications absentes de la liste (autres banques, portefeuilles, applications de codes).
 _PROTECTED_PATTERN = re.compile(r"bank|banque|wallet|crypto|authenticator|binance|(?:^|[._])(?:pay|auth)", re.I)
 
-# Boutons dont l'effet part chez quelqu'un d'autre ou ne se rattrape pas : touchés seulement avec confirm=true,
-# que l'agent ne met qu'après un « oui » explicite de l'utilisateur pour cette action précise. Cherchés n'importe où dans
-# le libellé (« Tout supprimer », « Oui, envoyer »), sans accents ni apostrophe courbe.
-_IRREVERSIBLE = re.compile(
-    r"\b(?:passer la commande|commander|order|payer|pay|acheter|buy|reserver|souscrire|subscribe|s'abonner|abonner|"
-    r"resilier|envoyer|send|publier|post|poster|partager|share|valider|confirmer|confirm|soumettre|submit|"
-    r"j'accepte|accepter|accept|autoriser|allow|signer|supprimer|delete|effacer|vider|corbeille|trash|"
-    r"desinstaller|uninstall|reinitialiser|reset|transferer|virement|appeler|call)\b",
-    re.I,
-)
+# Confirmation : politique commune de Claude, Antigravity et Codex (accord du 18/10/2026, `garde-fous.json`, copie
+# identique de NexusHarness\shared vérifiée par les tests). Payer, envoyer, publier, supprimer définitivement, formater,
+# désinstaller, réinitialiser, résilier, rendre un dépôt public : confirm=true, que l'agent met sur l'ordre explicite de
+# l'utilisateur pour ce geste ou après son oui ; appeler aussi (appel réel sur un téléphone). Tout le reste est libre
+# (supprimer vers la corbeille, accepter, partager...).
+POLICY_FILE = Path(__file__).resolve().with_name("garde-fous.json")
+
+
+def _load() -> dict:
+    """Politique embarquée ; illisible → PolicyError à l'import (échec fermé : le serveur ne démarre pas sans elle)."""
+    try:
+        data = json.loads(POLICY_FILE.read_text(encoding="utf-8"))
+        confirmation = data["confirmation"]
+        motifs = [str(m) for m in confirmation["motifs"]]
+        for context in confirmation["contextes"]:
+            re.compile(context["titre"])
+            re.compile(context["verbes"])
+        re.compile("|".join(motifs))
+    except (OSError, ValueError, KeyError, TypeError, re.error) as error:
+        raise PolicyError(f"politique des garde-fous illisible ({POLICY_FILE}) : {error!r}") from error
+    return data
+
+
+class PolicyError(RuntimeError):
+    """Politique commune absente ou invalide."""
+
+
+POLICY = _load()
+MOTIFS: tuple[str, ...] = tuple(POLICY["confirmation"]["motifs"])
+_CONFIRM = re.compile(r"\b(" + "|".join(MOTIFS) + r")\b")
+# Verbe générique (valider, OK...) à confirmer seulement quand l'écran parle d'argent ou de formatage (sur le bureau :
+# le titre de la fenêtre ; ici : les textes de l'écran de la même application).
+CONTEXTS = tuple((re.compile(r"\b(" + c["titre"] + r")\b"), re.compile(r"\b(" + c["verbes"] + r")\b"), c["quoi"])
+                 for c in POLICY["confirmation"]["contextes"])
 # Icônes sans texte des messageries (bouton d'envoi).
 _SEND_IDS = re.compile(r"send|compose_message_send|send_message_button|send_button", re.I)
+# Messageries, réseaux sociaux, courriel et téléphone : une icône cliquable sans nom y est souvent « Envoyer »,
+# « Publier » ou le bouton vert d'appel.
+COMMUNICATION_PACKAGES = {
+    "com.google.android.dialer", "com.samsung.android.dialer", "com.android.dialer", "com.android.phone",
+    "com.android.server.telecom", "com.samsung.android.incallui", "com.android.incallui",
+    "com.google.android.contacts", "com.samsung.android.app.contacts", "com.google.android.apps.tachyon",
+    "com.whatsapp", "com.whatsapp.w4b", "com.google.android.apps.messaging", "com.samsung.android.messaging",
+    "org.telegram.messenger", "org.thunderdog.challegram", "org.thoughtcrime.securesms", "com.facebook.orca",
+    "com.facebook.mlite", "com.facebook.katana", "com.instagram.android", "com.instagram.barcelona", "com.discord",
+    "com.Slack", "com.microsoft.teams", "com.snapchat.android", "com.google.android.gm",
+    "com.microsoft.office.outlook", "com.samsung.android.email.provider", "ch.protonmail.android", "com.twitter.android",
+    "com.linkedin.android", "com.zhiliaoapp.musically", "ch.threema.app", "com.viber.voip", "jp.naver.line.android",
+    "com.skype.raider", "com.google.android.apps.dynamite", "im.vector.app", "com.reddit.frontpage",
+    "org.joinmastodon.android", "xyz.blueskyweb.app", "com.tencent.mm",
+}
+_COMMUNICATION_PATTERN = re.compile(r"messag|messenger|chat|mail|sms|dialer|telecom|incallui|contacts", re.I)
+
+
+def plain_label(text: object) -> str:
+    """Texte comparable, comme garde_fous.plain : sans accents ni casse, ponctuation ramenée à des espaces."""
+    decomposed = unicodedata.normalize("NFKD", str(text or ""))
+    bare = "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
+    return " ".join(re.sub(r"[^0-9a-z]+", " ", bare).split())
+
+
+def confirm_word(label: object, screen_text: object = "") -> str:
+    """Mot à confirmer dans ce libellé : un motif commun, ou un verbe générique (valider, OK...) sur un écran qui parle
+    de paiement ou de formatage ; « » sinon."""
+    text = plain_label(label)
+    if found := _CONFIRM.search(text):
+        return found.group(0)
+    if screen_text:
+        heading = plain_label(screen_text)
+        for context, verbs, what in CONTEXTS:
+            if (verb := verbs.search(text)) and context.search(heading):
+                return f"{verb.group(0)} (écran de {what})"
+    return ""
+
+
+def communication_app(package: str) -> bool:
+    return package in COMMUNICATION_PACKAGES or bool(package and _COMMUNICATION_PATTERN.search(package))
 
 
 def protected_app(package: str) -> str | None:
@@ -76,9 +143,10 @@ def protected_app(package: str) -> str | None:
     return package if _PROTECTED_PATTERN.search(package) else None
 
 
-def irreversible(element: Element) -> str | None:
+def irreversible(element: Element, screen_text: str = "") -> str | None:
+    """Libellé (ou identifiant d'icône d'envoi) qui exige confirm=true, None sinon."""
     for value in (element.text, element.desc):
-        if value and _IRREVERSIBLE.search(plain(value)):
+        if value and confirm_word(value, screen_text):
             return value
     if element.rid and _SEND_IDS.search(element.rid):
         return element.rid

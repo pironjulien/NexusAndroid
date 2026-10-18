@@ -10,7 +10,7 @@ import pytest
 
 from nexus_android import server
 from nexus_android.awake import RAISED, KeepAwake
-from nexus_android.screen import Screen
+from nexus_android.screen import STATE_SH, Screen
 from nexus_android.server import Step
 
 
@@ -40,6 +40,9 @@ class Phone:
         if argv[:2] == ("dumpsys", "window"):
             lock = "isKeyguardShowing=true" if self.locked else "isKeyguardShowing=false"
             return 0, lock + "\n  mCurrentFocus=Window{abc u0 com.app/x.Main}", ""
+        if argv[0] == "sh" and argv[2] == STATE_SH:  # état en un aller-retour
+            lock = "isKeyguardShowing=true" if self.locked else "isKeyguardShowing=false"
+            return 0, f"mWakefulness=Awake\n{lock}\n  mCurrentFocus=Window{{abc u0 com.app/x.Main}}", ""
         if argv[0] in ("sh", "cat"):
             return 0, "<?xml version='1.0' ?><hierarchy rotation=\"0\"></hierarchy>", ""
         return 0, "", ""

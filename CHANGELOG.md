@@ -6,7 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-Version 0.3.2, prepared for the first release on PyPI and the official MCP registry.
+## [0.4.0] - 2026-10-18 — Shared safeguard policy
+
+Fixes from the 18/10 audit, aligned on the safeguard agreement between Claude and Antigravity.
+
+### Security
+
+- Confirmation labels now come from the policy file shared with the desktop tools (`garde-fous.json`, embedded copy;
+  a test checks it is identical to the shared one in the author's workspace). Every listed form is caught, accents
+  and case ignored: "Envoyez", "Payez", "Paiement", "Achetez", "Commandez", "Publish", "Purchase", "Checkout",
+  "Virer" no longer pass without `confirm=true`. One test per pattern.
+- A clickable icon with no name at all in a messaging, mail, social or phone app (often the send or call button,
+  whose resource id does not always say so) needs `confirm=true`, `x,y` taps included.
+- `look` no longer sends the image when the UI tree cannot be read (security codes could not be blacked out), unless
+  `confirm=true`.
+- `open_url` refuses a link that Android would open in a protected app (banking, payment, identity), or that offers
+  one in its app chooser.
+- The lock state and the foreground app are read in the same round trip as the UI tree, just before each targeted
+  gesture: an app opened by the previous step of a batch is seen before the next one.
+
+### Changed
+
+- Aligned on the shared policy: deleting (to the trash), accepting, sharing, validating and allowing no longer need
+  confirmation; formatting, cancelling a subscription and making a repository public do. Calling stays under
+  confirmation (a real call on a phone; added to the shared policy). A generic
+  "OK"/"Validate" needs it on a screen about a payment or a format. An explicit order from the user for a gesture
+  counts as confirmation (tool descriptions and refusals say so).
+- Protected apps are readable: `scroll` and `wait` are free in them; taps, typing and swipes need `confirm=true`
+  (navigation on the user's order); a money or send button, or an unnamed icon, is refused there even with
+  `confirm=true`: the user does it.
+- Faster batches: phone state read once per `act` batch, in one adb round trip instead of three, then together with
+  each UI read. Measured on a Galaxy Z Fold over Wi-Fi (6 steps): 28 → 8 adb round trips, 11.0 s → 9.9 s.
+
+### Added
+
+- Structured output (`outputSchema` and `structuredContent`) for `phone`, `info` and `settings`, next to the text.
+
+## [0.3.2] - 2026-10-18
+
+Prepared for the first release on PyPI and the official MCP registry.
 
 ### Added
 

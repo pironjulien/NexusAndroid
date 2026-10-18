@@ -11,7 +11,7 @@ def text_of(result):
     return result if isinstance(result, str) else result[0]
 
 
-print("phone :", s._status())
+print("phone :", s._status().text)
 view = s._view("elements")
 print("look :", text_of(view).splitlines()[0], "·", len(text_of(view).splitlines()) - 1, "éléments")
 image = s._view("image")

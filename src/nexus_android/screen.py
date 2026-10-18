@@ -160,6 +160,10 @@ class State:
     lock_known: bool = True  # False : dumpsys ne dit pas si l'écran de verrouillage est affiché
 
 
+# État (allumé, verrouillé, premier plan) en une commande : sorties de dumpsys filtrées sur le téléphone.
+STATE_SH = ("dumpsys power | grep mWakefulness=; { dumpsys window displays; dumpsys window policy; } | grep -E "
+            "'mCurrentFocus=|mFocusedApp=|isKeyguardShowing=|mShowingLockscreen=|KeyguardShowing=|mIsShowing='; true")
+STATE_MARK = "@@NEXUS-STATE@@"
 _KEYGUARD = re.compile(r"(?:isKeyguardShowing|mShowingLockscreen|KeyguardShowing|mIsShowing)=(true|false)")
 
 
@@ -204,6 +208,7 @@ class Screen:
         self.elements: list[Element] = []  # dernière liste montrée à l'agent (look) : ce que désigne [N]
         self.size: tuple[int, int] | None = None
         self.posture = ""  # pliage au moment de la dernière image (les coordonnées "x,y" en dépendent)
+        self.last_state: State | None = None  # état lu avec la dernière lecture d'écran (state ou dump)
 
     def current_posture(self) -> str:
         return parse_posture(self.adb.shell("dumpsys", "device_state", check=False))
@@ -213,10 +218,10 @@ class Screen:
         return parse_helpers(self.adb.shell("ps", "-A", "-o", "PID,NAME,ARGS", check=False))
 
     def state(self) -> State:
-        power = self.adb.shell("dumpsys", "power", check=False)
-        window = self.adb.shell("dumpsys", "window", "displays", check=False)
-        window += self.adb.shell("dumpsys", "window", "policy", check=False)
-        return parse_state(power, window)
+        """État lu en un seul aller-retour (trois dumpsys filtrés sur le téléphone)."""
+        out = self.adb.shell("sh", "-c", STATE_SH, check=False)
+        self.last_state = parse_state(out, out)
+        return self.last_state
 
     def _display_id(self) -> str | None:
         ids = self.adb.shell("dumpsys", "SurfaceFlinger", "--display-id", check=False)
@@ -264,9 +269,13 @@ class Screen:
         last = ""
         for _ in range(3):
             out = self.adb.shell("sh", "-c", f"uiautomator dump {UI_DUMP} 2>&1; cat {UI_DUMP} 2>/dev/null; "
-                                 f"rm -f {UI_DUMP}", timeout=20, check=False)
-            if "<hierarchy" in out:
-                return mask_elements(parse_ui(out))
+                                 f"rm -f {UI_DUMP}; echo; echo {STATE_MARK}; {STATE_SH}", timeout=20, check=False)
+            # La dernière marque est la nôtre (un texte de l'écran qui la recopierait est avant, dans l'arbre).
+            tree, _, status = out.rpartition(STATE_MARK) if STATE_MARK in out else (out, "", "")
+            if status.strip():  # état lu dans le même aller-retour que l'arbre : jugé sur le même instant
+                self.last_state = parse_state(status, status)
+            if "<hierarchy" in tree:
+                return mask_elements(parse_ui(tree))
             last = out.strip()
             time.sleep(0.6)
         helpers = self.helpers()

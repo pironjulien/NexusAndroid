@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from .adb import Adb, PhoneError
 from .messages import Messages, has_keyword, mask_codes
@@ -184,22 +185,27 @@ def _ago(seconds: float) -> str:
     return f"{seconds / 3600:.1f} h"
 
 
-def location(adb: Adb) -> str:
+Data = dict[str, Any]  # réponse structurée (structuredContent) à côté du texte
+
+
+def location(adb: Adb) -> tuple[str, Data | None]:
     uptime = float(adb.shell("cat", "/proc/uptime").split()[0])
     found = parse_location(adb.shell("dumpsys", "location", check=False), uptime)
     if not found:
-        return "Aucune position connue du téléphone (localisation coupée ou jamais calculée)."
+        return "Aucune position connue du téléphone (localisation coupée ou jamais calculée).", None
     lat, lon, acc, age = found
-    return (f"Position : {lat:.6f}, {lon:.6f} (à {acc:.0f} m près), relevée il y a {_ago(age)} · "
-            f"https://maps.google.com/?q={lat:.6f},{lon:.6f}")
+    url = f"https://maps.google.com/?q={lat:.6f},{lon:.6f}"
+    return (f"Position : {lat:.6f}, {lon:.6f} (à {acc:.0f} m près), relevée il y a {_ago(age)} · {url}",
+            {"latitude": round(lat, 6), "longitude": round(lon, 6), "accuracy_m": round(acc), "age_s": round(age),
+             "maps_url": url})
 
 
 CALL_TYPES = {"1": "reçu", "2": "émis", "3": "manqué", "4": "messagerie", "5": "refusé", "6": "bloqué"}
 
 
-def calls(messages: Messages, limit: int = 20) -> str:
+def calls(messages: Messages, limit: int = 20) -> tuple[str, list[Data]]:
     rows = messages._query("content://call_log/calls", ["date", "duration", "type", "number"], sort="date DESC")
-    lines = []
+    lines, data = [], []
     for r in rows[:limit]:
         if not r.get("date", "").isdigit():
             continue
@@ -207,31 +213,40 @@ def calls(messages: Messages, limit: int = 20) -> str:
         who = messages.name(r.get("number", "")) if r.get("number") else "numéro masqué"
         duration = int(r.get("duration") or 0)
         length = f" · {duration // 60} min {duration % 60:02d} s" if duration else ""
-        lines.append(f"{when:%d/%m %H:%M} · {CALL_TYPES.get(r.get('type', ''), r.get('type', '?'))} · {who}{length}")
-    return "Appels récents :\n" + ("\n".join(lines) or "(aucun)")
+        kind = CALL_TYPES.get(r.get("type", ""), r.get("type", "?"))
+        lines.append(f"{when:%d/%m %H:%M} · {kind} · {who}{length}")
+        data.append({"date": when.isoformat(timespec="seconds"), "type": kind, "who": who,
+                     "number": r.get("number", ""), "duration_s": duration})
+    return "Appels récents :\n" + ("\n".join(lines) or "(aucun)"), data
 
 
-def contacts(messages: Messages, query: str) -> str:
+def contacts(messages: Messages, query: str) -> tuple[str, list[Data]]:
     if not query.strip():
         raise PhoneError("contacts : préciser un nom (query)")
-    found = messages.find(query)
-    return "\n".join(f"{name} : {number}" for name, number in found[:30]) or f"aucun contact pour « {query} »"
+    found = messages.find(query)[:30]
+    text = "\n".join(f"{name} : {number}" for name, number in found) or f"aucun contact pour « {query} »"
+    return text, [{"name": name, "number": number} for name, number in found]
 
 
-def calendar(messages: Messages, days: int = 7) -> str:
+def calendar(messages: Messages, days: int = 7) -> tuple[str, list[Data]]:
     begin = int(time.time() * 1000)
     end = begin + max(1, min(days, 60)) * 86400 * 1000
     rows = messages._query(f"content://com.android.calendar/instances/when/{begin}/{end}",
                            ["begin", "end", "allDay", "eventLocation", "title"], sort="begin ASC")
-    lines = []
+    lines, data = [], []
     for r in rows[:60]:
         if not r.get("begin", "").isdigit():
             continue
         start = datetime.fromtimestamp(int(r["begin"]) / 1000)
         when = f"{start:%a %d/%m}" + ("" if r.get("allDay") == "1" else f" {start:%H:%M}")
         place = r.get("eventLocation", "")
-        lines.append(f"{when} · {mask_codes(r.get('title', ''))}" + (f" · {place}" if place and place != "NULL" else ""))
-    return f"Agenda des {days} prochains jours :\n" + ("\n".join(lines) or "(rien)")
+        place = "" if place == "NULL" else place
+        title = mask_codes(r.get("title", ""))
+        lines.append(f"{when} · {title}" + (f" · {place}" if place else ""))
+        end = datetime.fromtimestamp(int(r["end"]) / 1000) if r.get("end", "").isdigit() else None
+        data.append({"begin": start.isoformat(timespec="minutes"), "end": end.isoformat(timespec="minutes") if end else None,
+                     "all_day": r.get("allDay") == "1", "title": title, "location": place})
+    return f"Agenda des {days} prochains jours :\n" + ("\n".join(lines) or "(rien)"), data
 
 
 # ---------------------------------------------------------------- réglages
@@ -248,8 +263,8 @@ def _on(value: str) -> bool:
     raise PhoneError(f"valeur « {value} » : on ou off")
 
 
-def setting(adb: Adb, name: str, value: str | None, link: str) -> str:
-    """Lit (value None) ou change un réglage, puis le relit."""
+def setting(adb: Adb, name: str, value: str | None, link: str) -> tuple[str, str]:
+    """Lit (value None) ou change un réglage, puis le relit : (texte, valeur relue)."""
     sh = lambda *a: adb.shell(*a, check=False).strip()  # noqa: E731
     readers = {
         "wifi": lambda: "on" if sh("settings", "get", "global", "wifi_on") != "0" else "off",
@@ -266,7 +281,8 @@ def setting(adb: Adb, name: str, value: str | None, link: str) -> str:
     if name not in readers:
         raise PhoneError(f"réglage inconnu : {name} ({', '.join(SETTINGS)})")
     if value is None:
-        return f"{name} : {readers[name]()}"
+        now = readers[name]()
+        return f"{name} : {now}", now
     if name in ("wifi", "bluetooth", "data", "nfc"):
         on = _on(value)
         if name == "wifi" and not on and link == "wifi":
@@ -292,7 +308,8 @@ def setting(adb: Adb, name: str, value: str | None, link: str) -> str:
         percent = max(0, min(100, int(re.sub(r"\D", "", value) or 0)))
         sh("cmd", "media_session", "volume", "--stream", "3", "--set", str(round(low + (high - low) * percent / 100)))
     time.sleep(1.0)
-    return f"{name} : {readers[name]()} (relu)"
+    now = readers[name]()
+    return f"{name} : {now} (relu)", now
 
 
 def _volume(out: str) -> tuple[int, int, str]:
