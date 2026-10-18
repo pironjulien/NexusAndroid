@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 from PIL import Image as PILImage
 from pydantic import BaseModel, Field
 
@@ -46,6 +47,15 @@ remise et l'écran s'éteint, ce qui reverrouille."""
 
 mcp = MCPServer("nexus-android", instructions=INSTRUCTIONS, version=__version__, log_level="WARNING")
 ALWAYS = {"anthropic/alwaysLoad": True}
+
+
+def _hints(title: str, *, read_only: bool = False, destructive: bool = False, idempotent: bool = False,
+           open_world: bool = False) -> ToolAnnotations:
+    """Annotations MCP des outils : un client peut s'en servir pour demander confirmation ou paralléliser."""
+    return ToolAnnotations(title=title, read_only_hint=read_only, destructive_hint=destructive,
+                           idempotent_hint=idempotent, open_world_hint=open_world)
+
+
 LOCK = threading.Lock()  # dans ce serveur ; PhoneLock entre les serveurs des trois agents
 ADB: Adb | None = None
 SCREEN: Screen | None = None
@@ -204,7 +214,7 @@ def _view(show: Show, query: str | None = None, region: list[float] | None = Non
     return out
 
 
-@mcp.tool(meta=ALWAYS, structured_output=False)
+@mcp.tool(meta=ALWAYS, annotations=_hints("Look at the phone screen", read_only=True, idempotent=True), structured_output=False)
 async def look(show: Show = "both", query: str | None = None, region: list[float] | None = None) -> list[Any]:
     """Voir l'écran du téléphone : éléments numérotés [N] (rôle, texte, états, centre @x,y) et image.
     show : both (défaut), image, elements, none. query : ne lister que les éléments contenant ce texte.
@@ -600,7 +610,7 @@ def _act(steps: list[Step], then: Show) -> list[Any]:
     return _view(then, notes=report + [""])
 
 
-@mcp.tool(meta=ALWAYS, structured_output=False)
+@mcp.tool(meta=ALWAYS, annotations=_hints("Act on the phone", destructive=True, open_world=True), structured_output=False)
 async def act(steps: list[Step], then: Show = "both") -> list[Any]:
     """Gestes sur le téléphone, dans l'ordre (arrêt à la première erreur), puis l'écran à jour.
     Étapes : tap, long_press, double_tap, type (tout texte, accents et emoji compris ; target = champ à toucher
@@ -642,7 +652,7 @@ def _launch(app: str) -> list[Any]:
     return _view("both", notes=[note])
 
 
-@mcp.tool(meta=ALWAYS, structured_output=False)
+@mcp.tool(meta=ALWAYS, annotations=_hints("Launch an app", idempotent=True), structured_output=False)
 async def launch(app: str) -> list[Any]:
     """Ouvrir une application : nom de paquet (com.whatsapp) ou extrait (« whatsapp », « maps »), puis la voir."""
     return await _run(_launch, app)
@@ -706,7 +716,7 @@ def _messages(conversation: int | None, contact: str | None, limit: int, images:
     return out
 
 
-@mcp.tool(meta=ALWAYS, structured_output=False)
+@mcp.tool(meta=ALWAYS, annotations=_hints("Read SMS/RCS messages", read_only=True, idempotent=True), structured_output=False)
 async def messages(conversation: int | None = None, contact: str | None = None, limit: int = 15,
                    images: int = 4) -> list[Any]:
     """SMS et RCS du téléphone. Sans argument : conversations récentes [N] avec contact, date, non-lus.
@@ -771,7 +781,7 @@ def _draft(to: str, text: str, app: str) -> list[Any]:
     return _view("both", notes=notes + [""])
 
 
-@mcp.tool(meta=ALWAYS, structured_output=False)
+@mcp.tool(meta=ALWAYS, annotations=_hints("Draft a reply (not sent)"), structured_output=False)
 async def draft(to: str, text: str, app: Literal["sms", "whatsapp"] = "sms") -> list[Any]:
     """Préparer une réponse sans l'envoyer : ouvre la conversation avec le texte déjà écrit (accents permis).
     to : nom du répertoire (« Alice »), numéro (06…, +33…, 36179 : des chiffres seuls sont un numéro) ou numéro de
@@ -793,7 +803,7 @@ def _plain_call(fn, *args) -> str:
         raise PhoneError(str(e)) from None
 
 
-@mcp.tool(meta=ALWAYS, structured_output=False)
+@mcp.tool(meta=ALWAYS, annotations=_hints("Read notifications", read_only=True, idempotent=True), structured_output=False)
 async def notifications(all: bool = False, limit: int = 40) -> str:
     """Notifications affichées sur le téléphone (application, heure, titre, texte), plus récentes d'abord ; codes de
     sécurité masqués. all=true : aussi les permanentes (services en cours). Android ne garde des notifications
@@ -801,7 +811,7 @@ async def notifications(all: bool = False, limit: int = 40) -> str:
     return await _run(lambda: extras.notifications(_init()[0], all, max(1, min(limit, 200))))
 
 
-@mcp.tool(structured_output=False)
+@mcp.tool(annotations=_hints("Phone files (list, pull, push)", destructive=True, idempotent=True), structured_output=False)
 async def files(action: Literal["list", "pull", "push"] = "list", path: str | None = None,
                 dest: str | None = None) -> str:
     """Fichiers du stockage partagé du téléphone (/sdcard : DCIM/Camera pour les photos, Download, Documents…).
@@ -818,7 +828,7 @@ async def files(action: Literal["list", "pull", "push"] = "list", path: str | No
     return await _run(run)
 
 
-@mcp.tool(structured_output=False)
+@mcp.tool(annotations=_hints("Location, calls, contacts, calendar", read_only=True, idempotent=True), structured_output=False)
 async def info(kind: Literal["location", "calls", "contacts", "calendar"], query: str | None = None,
                limit: int = 20, days: int = 7) -> str:
     """Lecture seule. location : dernière position connue (précision, âge, lien Maps). calls : derniers appels
@@ -835,7 +845,7 @@ async def info(kind: Literal["location", "calls", "contacts", "calendar"], query
     return await _run(run)
 
 
-@mcp.tool(structured_output=False)
+@mcp.tool(annotations=_hints("Phone settings", idempotent=True), structured_output=False)
 async def settings(name: Literal["wifi", "bluetooth", "data", "location", "nfc", "dnd", "brightness", "volume"],
                    value: str | None = None) -> str:
     """Réglages du téléphone, réversibles : sans value, lit l'état ; sinon le change puis le relit.
@@ -870,7 +880,7 @@ def _status() -> str:
             f"{state.package or '?'}{_awake_note(adb)}{rebooted}")
 
 
-@mcp.tool(meta=ALWAYS, structured_output=False)
+@mcp.tool(meta=ALWAYS, annotations=_hints("Link status", read_only=True, idempotent=True), structured_output=False)
 async def phone() -> str:
     """État de la liaison : téléphone joint (USB ou Wi-Fi), modèle, écran, application au premier plan."""
     return await _run(_status)
@@ -913,7 +923,7 @@ def _checkup(clean: bool) -> str:
     return "\n".join(lines)
 
 
-@mcp.tool(structured_output=False)
+@mcp.tool(annotations=_hints("Phone checkup", idempotent=True), structured_output=False)
 async def checkup(clean: bool = False) -> str:
     """Bilan du téléphone : système, correctif de sécurité, batterie, stockage, mémoire, applications hors magasins,
     débogage sans fil, accessibilité. clean=true vide aussi les caches des applications (sans perte de données)."""

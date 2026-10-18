@@ -17,3 +17,14 @@ jobs:
       - name: test.ps1 (ruff, pyright, unit tests; no phone needed)
         shell: pwsh
         run: ./test.ps1
+
+  startup-linux:
+    # What MCP directories (Glama) check in a Linux container: the server starts and lists its tools.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: initialize + tools/list over stdio
+        run: |
+          uv sync --frozen --quiet
+          uv run --frozen pytest -q tests/test_startup.py

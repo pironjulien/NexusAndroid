@@ -6,7 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+Version 0.3.2, prepared for the first release on PyPI and the official MCP registry.
+
 ### Added
+
+- MCP tool annotations on every tool (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint`), so clients can tell read-only tools from the ones that act.
+- Startup test: the server answers `initialize` and `tools/list` with no phone and no adb, on Windows and on Linux
+  (new Linux CI job), as MCP directories check it.
+- PyPI packaging: project URLs, keywords, classifiers, `mcp-name` line for the official MCP registry, and a
+  `publish.yml` workflow using Trusted Publishing (no token in the repository), triggered by a GitHub release.
+- `glama.json` (maintainer claim on Glama).
+- README: Privacy section (what is read, where it goes, what is stored, how to remove it); absolute image and file
+  links so the README also renders on PyPI.
 
 - README: quick start with a one-line `uvx` install straight from GitHub, Codex and JSON client configs, example
   prompts, architecture diagram, badges and banner.

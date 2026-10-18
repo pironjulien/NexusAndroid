@@ -1,15 +1,29 @@
 [project]
 name = "nexus-android"
-version = "0.3.1"
+version = "0.3.2"
 description = "Android computer use for AI agents over ADB: one MCP server shared by Claude Code, Codex and Antigravity"
 authors = [{ name = "Julien Piron" }]
 license = "MIT"
 readme = "README.md"
 requires-python = ">=3.14"
+keywords = ["mcp", "mcp-server", "android", "adb", "computer-use", "ai-agents", "claude", "codex", "antigravity"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = [
     "mcp>=2.3.0",
     "pillow>=12.3.0",
 ]
+
+[project.urls]
+Homepage = "https://julienpiron.fr/nexusandroid/"
+Repository = "https://github.com/pironjulien/android-computer-use"
+Changelog = "https://github.com/pironjulien/android-computer-use/blob/main/CHANGELOG.md"
+Issues = "https://github.com/pironjulien/android-computer-use/issues"
 
 [project.scripts]
 nexus-android = "nexus_android.server:main"

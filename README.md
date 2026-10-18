@@ -1,12 +1,14 @@
 # NexusAndroid
 
+<!-- mcp-name: io.github.pironjulien/nexus-android -->
+
 [![Release](https://img.shields.io/github/v/release/pironjulien/android-computer-use)](https://github.com/pironjulien/android-computer-use/releases)
 [![Tests](https://github.com/pironjulien/android-computer-use/actions/workflows/tests.yml/badge.svg)](https://github.com/pironjulien/android-computer-use/actions/workflows/tests.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Python 3.14](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/pironjulien/android-computer-use/blob/main/LICENSE)
+[![Python 3.14](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)](https://github.com/pironjulien/android-computer-use/blob/main/pyproject.toml)
 [![MCP](https://img.shields.io/badge/MCP-server-7ee2a8)](https://modelcontextprotocol.io)
 
-[![NexusAndroid: Android computer use for AI agents, over plain ADB. Works with Claude, Codex and Antigravity.](docs/assets/banner.webp)](https://julienpiron.fr/nexusandroid/)
+[![NexusAndroid: Android computer use for AI agents, over plain ADB. Works with Claude, Codex and Antigravity.](https://raw.githubusercontent.com/pironjulien/android-computer-use/main/docs/assets/banner.webp)](https://julienpiron.fr/nexusandroid/)
 
 **Android computer use for AI agents, over plain ADB.** One MCP server, `nexus-android`, lets Claude Code, Codex
 and Antigravity see and drive a real Android phone: screen and UI tree, gestures, typing with accents and emoji,
@@ -204,6 +206,25 @@ the server records its Wi-Fi address and the wireless debugging port every time 
 changes after a reboot or a network change: plugging in over USB once is then enough. The cable takes priority when
 it is plugged in. `NEXUS_ANDROID_SERIAL` forces a specific device, by serial number or `ip:port` address.
 
+## Privacy
+
+NexusAndroid runs entirely on your PC and talks to your phone over ADB (USB cable or local Wi-Fi). It has no
+account, no telemetry, no analytics and no cloud relay; the server itself makes no internet requests.
+
+- **What it reads**: the screen and UI tree, SMS/RCS messages, notifications, files in shared storage, location,
+  recent calls, contacts and calendar, only when the agent calls the matching tool. Security codes are masked before
+  the agent sees them.
+- **Where it goes**: tool results are returned to the AI client you connected (Claude, Codex, Antigravity…). That
+  client may send them to its model provider under its own privacy policy; NexusAndroid sends nothing anywhere else.
+- **What it stores on the PC**, under `~/.nexus/`: the phone's Wi-Fi address and wireless debugging port, the saved
+  screen timeout, a lock file, the pinned scrcpy server, and backups of the client configs that `install.ps1` edits.
+  Files you `pull` go to `~/Downloads/Telephone`. The server writes no messages, screenshots or logs to disk.
+- **Removing it**: delete `~/.nexus/nexus-android/` and `~/.nexus/android.lock` and revoke the PC's key on the phone (Developer
+  options → Revoke USB debugging authorizations).
+
+Questions or concerns: open an issue, or see [SECURITY.md](https://github.com/pironjulien/android-computer-use/blob/main/SECURITY.md)
+for private reports.
+
 ## Development
 
 ```powershell
@@ -212,4 +233,4 @@ pwsh -NoProfile -File test.ps1   # ruff, pyright and the unit tests, offline, no
 
 ## License
 
-[MIT](LICENSE). Not affiliated with Google, Samsung, Anthropic, OpenAI or Genymobile.
+[MIT](https://github.com/pironjulien/android-computer-use/blob/main/LICENSE). Not affiliated with Google, Samsung, Anthropic, OpenAI or Genymobile.
