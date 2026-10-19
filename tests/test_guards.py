@@ -238,8 +238,8 @@ def fake_adb(monkeypatch, tmp_path, devices: str, ids: dict[str, str], state: di
         out = b""
         if args[0] == "-s" and args[3:] == ["getprop", "ro.serialno"]:
             out = ids.get(args[1], "").encode()
-        elif args[0] == "-s" and "wlan0" in args:
-            out = b"inet 192.0.2.50/24 brd"
+        elif args[0] == "-s" and args[3:] == ["ip", "-4", "addr"]:
+            out = b"    inet 192.0.2.50/24 brd 192.0.2.255 scope global wlan0\n"
         elif args[0] == "-s" and "/proc/net/tcp6" in args:
             out = (b"  sl  local rem st\n   1: 0000:8211 0000:0000 0A 00000000:00000000 00:00000000 00000000  2000 0 2\n")
         elif args[0] == "devices":
@@ -248,6 +248,16 @@ def fake_adb(monkeypatch, tmp_path, devices: str, ids: dict[str, str], state: di
 
     monkeypatch.setattr(adb_mod.Adb, "_raw", raw)
     return path
+
+
+def test_wifi_ip_prefers_wlan0_then_hotspot():
+    lo = "    inet 127.0.0.1/8 scope host lo\n"
+    cell = "    inet 203.0.113.2/29 brd 203.0.113.7 scope global rmnet_data7\n"
+    hotspot = "    inet 192.0.2.160/24 brd 192.0.2.255 scope global ap_br_swlan0\n"
+    wlan = "    inet 198.51.100.9/24 brd 198.51.100.255 scope global wlan0\n"
+    assert adb_mod.wifi_ip(lo + cell + hotspot) == "192.0.2.160"  # partage de connexion, PC sur le Wi-Fi du téléphone
+    assert adb_mod.wifi_ip(lo + hotspot + wlan) == "198.51.100.9"
+    assert adb_mod.wifi_ip(lo + cell) is None  # données mobiles seules : rien à joindre depuis le PC
 
 
 def test_connect_refuses_other_devices(monkeypatch, tmp_path):

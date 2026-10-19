@@ -226,6 +226,11 @@ the server records its Wi-Fi address and the wireless debugging port every time 
 changes after a reboot or a network change: plugging in over USB once is then enough. The cable takes priority when
 it is plugged in. `NEXUS_ANDROID_SERIAL` forces a specific device, by serial number or `ip:port` address.
 
+**No shared Wi-Fi network** (office PC on Ethernet only, with a Wi-Fi card): turn on the phone's hotspot and connect
+the PC to it, then, with the cable plugged in once, run `adb tcpip 5555`. The server records the phone's hotspot
+address and finds it there after the cable is removed. TCP mode lasts until the phone restarts. Raise the PC's Wi-Fi
+interface metric if its internet traffic should keep going through Ethernet rather than the phone's mobile data.
+
 ## Privacy
 
 NexusAndroid runs entirely on your PC and talks to your phone over ADB (USB cable or local Wi-Fi). It has no

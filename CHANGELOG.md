@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-19
+
+### Added
+
+- Cable-free use without a shared Wi-Fi network: when the phone runs a hotspot (One UI `ap_br_swlan0` / `swlan0`)
+  and the PC is connected to it, the address recorded at each USB connection is the hotspot address (`wlan0` still
+  comes first). After `adb tcpip 5555`, the server finds the phone again over the hotspot once the cable is removed.
+  README section for this setup.
+
 ## [0.6.0] - 2026-10-19
 
 ### Performance

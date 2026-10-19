@@ -77,6 +77,15 @@ def parse_adbd_port(proc_net: str) -> int | None:
     return None
 
 
+def wifi_ip(ip_addr: str) -> str | None:
+    """Adresse IPv4 du téléphone joignable en Wi-Fi depuis le PC, dans la sortie de `ip -4 addr` : wlan0 (téléphone
+    client d'un réseau Wi-Fi), sinon le point d'accès du partage de connexion (One UI : ap_br_swlan0 ou swlan0),
+    quand le PC est connecté au Wi-Fi du téléphone (bureau sans réseau Wi-Fi commun)."""
+    pairs = re.findall(r"inet (\d+\.\d+\.\d+\.\d+)/\d+.*?\b(wlan0|ap_br_\w+|swlan\d+)\s*$", ip_addr, re.M)
+    by_iface = {iface: ip for ip, iface in pairs}
+    return by_iface.get("wlan0") or next(iter(by_iface.values()), None)
+
+
 WIFI_STATE = Path.home() / ".nexus" / "nexus-android" / "wifi.json"
 TLS_PORTS = range(30000, 50000)  # plage des ports aléatoires du débogage sans fil
 
@@ -159,10 +168,10 @@ class Adb:
         run = lambda *a: self._raw(["-s", serial, "shell", *a], serial=False).stdout.decode("utf-8", "replace")  # noqa: E731
         before = self._remembered()
         state = {**before, "serialno": ident, "usb": serial}
-        ip = re.search(r"inet (\d+\.\d+\.\d+\.\d+)/", run("ip", "-4", "addr", "show", "wlan0"))
+        ip = wifi_ip(run("ip", "-4", "addr"))
         port = parse_adbd_port(run("cat", "/proc/net/tcp6", "/proc/net/tcp"))
         if ip and port:
-            state["address"] = f"{ip.group(1)}:{port}"
+            state["address"] = f"{ip}:{port}"
         if state != before:
             self._save(state)
 
