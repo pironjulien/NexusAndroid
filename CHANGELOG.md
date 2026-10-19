@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-19
+
+### Added
+
+- `capture` tool, to show a problem to a support service: `screenshot` saves the current screen at full resolution
+  (PNG, or JPEG when the name ends in `.jpg`) with security codes blacked out as on `look` images; `record` films the
+  next `seconds` (default 30), `start` and `stop` film while gestures go on (Android's `screenrecord`, MP4, 720p,
+  4 Mbit/s, 180 s at most, one recording at a time). The video is pulled to the PC then deleted from the phone; the
+  response gives the path, the length and the size. Files go to `~\Downloads\Telephone` by default, with the same
+  folder rules as `files pull`, and never overwrite. Videos cannot be masked: no recording starts while a banking,
+  payment or identity app is in the foreground, and the response says codes may appear in the video. A screenshot
+  of such an app, or one without code masking (UI tree unreadable), needs `confirm=true`. Black images (FLAG_SECURE,
+  screen off) are reported, and so is a video shorter than the recording time (Android adds frames only when the
+  screen changes, none while it is off). A recording still running when the server stops is stopped and saved.
+  Before any screenshot or video, a sleeping screen on an unlocked phone is turned on (`KEYCODE_WAKEUP`, counted as an
+  agent gesture and kept on like after `act`); a locked phone, screen on or off, is refused without capturing, with a
+  message to ask the user to unlock it (the agent never types a code): no more black screenshots or empty videos.
+- `logs` tool (read-only), to understand why an app crashed or misbehaves: `kind="crash"` groups the crash log one
+  block per crash (time, package, Java exception and each `Caused by`, the top frame and the first app frames; native
+  crashes with signal, cause and backtrace); `kind="anr"` lists "app not responding" events from Android's drop box
+  (kept for days) and the event log, without duplicates, with their reason; `kind="recent"` gives the last `lines`
+  log lines (200 by default, 2000 at most), for one app with `app` (resolved like `launch`; its running processes,
+  those started earlier, and lines naming it; an uninstalled app by its full package name). `since` (`15m`, `2h`,
+  `13:05`, `2026-10-19 13:05`, phone time) and `query` (case-insensitive, applied after masking) filter; newest
+  last, about 30,000 characters. Any security code, tokens and secrets (known key prefixes, JWT, random hex or
+  base64, `Bearer`, `password=`…), e-mail addresses and phone numbers are masked; stack frames are kept as is.
+  Banking, payment and identity apps: `recent` is refused for them and their lines are left out of the general
+  view; their crashes and ANRs show only exception types and app frames, no message.
+- `logs kind="crash"`: identical crashes (same process, type and text once object hashes, pids, bracketed numbers
+  and times are ignored) are shown as one block, `×N (first …, last …, pids …)`, placed at the newest one; the
+  exception Android re-prints after "Couldn't report crash" (processes without a package) is dropped, and the
+  "Error reporting crash" cause is one short line. 21 crashes, 19 of them identical, went from 22,500 to 2,100 characters.
+
+### Fixed
+
+- When another automation tool holds the phone's single accessibility connection (UiAutomation), such as the
+  mobile-mcp server `com.mobilenext.mobilecli.DeviceServer` that stays alive 30 minutes, Appium UiAutomator2,
+  uiautomator2/atx-agent or an instrumentation run, `look` and the gestures aimed by text now say so at once, with
+  the tool and its pid: "Another automation tool is using the phone's accessibility connection (…, pid N): close it
+  or stop it, then retry." One `ps` call, no more 3 to 4 seconds of `uiautomator dump` retries ending in a misleading
+  "screen moving or protected". The other tool's process is never stopped automatically.
+
 ## [0.7.1] - 2026-10-19
 
 ### Added
@@ -477,7 +519,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.7.2
 [0.7.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.7.1
 [0.7.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.7.0
 [0.6.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.6.2

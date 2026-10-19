@@ -119,6 +119,8 @@ screen-awake session and the same safeguards.
 | `draft` | Open SMS/RCS or WhatsApp with the reply already written, recipient by name or number (WhatsApp: country code from the SIM card); sent only after the user explicitly says "send" |
 | `notifications` | Notifications on screen: app, time, title, text; security codes masked; `all` adds ongoing ones |
 | `files` | Shared storage only (`/sdcard`): list newest first, `pull` to the PC (`~\Downloads\Telephone`), `push` to the phone; never overwrites, never deletes. On the PC: Downloads, Documents, Desktop, Pictures and Videos are free, anywhere else needs `confirm=true`; keys and secrets (`.ssh`, `.env`…) and the Windows Startup folder never |
+| `capture` | Save the screen as a file on the PC, same folder and rules as `files pull` (`~\Downloads\Telephone`, never overwrites): `screenshot` at full resolution (PNG, or JPEG by name) with security codes blacked out; `record` (fixed duration) or `start`/`stop` (gestures go on meanwhile) for an MP4 video, 720p, 4 Mbit/s, 180 s at most, pulled to the PC then deleted from the phone. Codes are not masked in videos, so no recording starts in a banking or identity app; screens protected against capture come out black; a sleeping screen is turned on first, a locked phone is refused (the user unlocks it) |
+| `logs` | Android logs to understand a crash or a misbehaving app: `crash` (one block per crash: time, package, exception and `Caused by`, first app frames; native crashes with signal and backtrace), `anr` (app not responding, from Android's drop box and the event log, with the reason), `recent` (last lines, of one app with `app`: its processes, running or not, and lines naming it); `since` (`15m`, `13:05`…), `query` filter; newest last, about 30,000 characters. Codes, tokens, e-mail addresses and phone numbers masked; banking and identity apps: no `recent`, crashes reduced to exception types and app frames |
 | `info` | Read-only: last known location (accuracy, age, Maps link), recent calls, a contact's numbers, upcoming events (structured output) |
 | `settings` | Read or change, then read back: Wi-Fi, Bluetooth, mobile data, location, NFC, do not disturb, brightness, media volume; turning Wi-Fi off is refused when the link goes through it (structured output) |
 | `checkup` | Health report: system, security patch, battery, storage, memory, apps installed outside the stores, wireless debugging; `clean` clears caches |
@@ -224,6 +226,9 @@ the next server to start restores it. The server never unlocks the phone.
 - Notifications: Android only keeps the app name of dismissed ones, not their text.
 - An app protected by `FLAG_SECURE` produces a black screenshot; the server says so and the `[N]` elements stay
   readable.
+- Android allows one accessibility automation client at a time: while another tool's server holds it (mobile-mcp,
+  Appium, uiautomator2...), the UI tree is unreadable; `look` names that tool and its pid. Close or stop it, then
+  retry.
 - The link is USB or local Wi-Fi through wireless debugging, paired with each PC. ADB does not work over Bluetooth.
 - Windows only for now: the installer, the tests and the default paths target Windows.
 

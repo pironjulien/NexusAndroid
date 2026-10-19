@@ -15,7 +15,7 @@ from mcp.client.stdio import stdio_client
 from nexus_android import __version__
 
 TOOLS = {"look", "act", "launch", "clipboard", "messages", "draft", "notifications", "files", "info", "settings", "phone",
-         "checkup"}
+         "checkup", "capture", "logs"}
 
 
 def test_initialize_and_list_tools(tmp_path):

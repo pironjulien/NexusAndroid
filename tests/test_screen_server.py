@@ -299,3 +299,110 @@ def test_release_never_starts_a_server(monkeypatch):
     link = Link()
     query.QueryServer(link).release()  # type: ignore[arg-type]
     assert link.calls == [("forward", "--list")]
+
+
+# ---------------------------------------------------------------- UiAutomation gardée par un autre outil
+
+PS = ("  PID NAME                        ARGS\n"
+      "30797 app_process                 app_process / NexusQuery nexus-query-f281 600 abcd\n"
+      " 4242 app_process                 app_process / com.mobilenext.mobilecli.DeviceServer --idle-timeout-ms=1800000\n"
+      "  456 app_process                 CLASSPATH=/data/local/tmp/nexus-scrcpy.jar app_process / "
+      "com.genymobile.scrcpy.Server 3.3\n"
+      "  789 com.whatsapp                com.whatsapp\n"
+      " 2893 ps                          ps -A -o PID,NAME,ARGS\n")
+BUSY = ("Another automation tool is using the phone's accessibility connection "
+        "(com.mobilenext.mobilecli.DeviceServer, pid 4242): close it or stop it, then retry.")
+REGISTERED = ("UI tree unavailable (java.lang.IllegalStateException: java.lang.IllegalStateException: "
+              "UiAutomationService android.accessibilityservice.IAccessibilityServiceClient$Stub$Proxy@1 already "
+              "registered!)")
+
+
+def test_parse_holders_names_other_tools_only():
+    assert screen.parse_holders(PS) == [("com.mobilenext.mobilecli.DeviceServer", "4242")]
+    other = ("12 io.appium.uiautomator2.server io.appium.uiautomator2.server\n"
+             "13 atx-agent /data/local/tmp/atx-agent server -d\n"
+             "14 app_process app_process /system/bin com.android.commands.uiautomator.Launcher runtest x.jar\n"
+             "15 app_process app_process /system/bin com.android.commands.uiautomator.Launcher dump /sdcard/u.xml\n"
+             "16 shizuku_server app_process -Djava.class.path=/data/app/moe.shizuku.privileged.api/base.apk /system "
+             "moe.shizuku.server.ShizukuService\n"
+             "17 app_process64 /system/bin/app_process64 /system/bin com.example.Stub\n")
+    assert screen.parse_holders(other) == [
+        ("atx-agent", "13"), ("com.android.commands.uiautomator.Launcher", "14"), ("com.example.Stub", "17"),
+        ("io.appium.uiautomator2.server", "12")]
+    assert screen.parse_holders("") == [] and screen.parse_holders(PS.splitlines()[1]) == []
+
+
+def test_holders_message_in_english():
+    assert screen.holders_message([("com.mobilenext.mobilecli.DeviceServer", "4242")]) == BUSY
+    assert screen.holders_message([("a", "1"), ("b", "2")]).startswith("Other automation tools are using the phone's "
+                                                                        "accessibility connection (a, pid 1; b, pid 2)")
+
+
+class BusyAdb(FakeAdb):
+    """UiAutomation prise par mobile-mcp : `uiautomator dump` échoue comme notre lecteur."""
+
+    def __init__(self, ps: str = PS) -> None:
+        super().__init__()
+        self.ps = ps
+
+    def shell(self, *argv: str, timeout: float = 30.0, check: bool = True) -> str:
+        if argv[0] == "ps":
+            self.calls.append(argv)
+            return self.ps
+        if argv[0] == "sh" and "uiautomator dump" in argv[2]:
+            self.calls.append(argv)
+            return "java.lang.IllegalStateException: UiAutomationService already registered!\n" + screen.STATE_MARK
+        return super().shell(*argv, timeout=timeout, check=check)
+
+
+def _dumps(adb: FakeAdb) -> int:
+    return sum(c[0] == "sh" and "uiautomator dump" in c[2] for c in adb.calls)
+
+
+def test_holder_found_fails_fast_without_uiautomator(fast, monkeypatch):
+    fake, _, scr = fast
+    scr.adb = adb = BusyAdb()
+    monkeypatch.setattr(screen.time, "sleep", lambda s: pytest.fail("no retry when the holder is known"))
+    fake.raw = payload(STATUS, (1248, 1972), REGISTERED)
+    with pytest.raises(screen.PhoneError, match=re.escape(BUSY)):
+        scr.dump()
+    assert _dumps(adb) == 0 and [c for c in adb.calls if c[0] == "ps"] == [("ps", "-A", "-o", "PID,NAME,ARGS")]
+    assert scr.busy == BUSY
+    reading = scr.read(image=False, tree=True)
+    assert str(reading.error) == BUSY and _dumps(adb) == 0
+
+
+def test_holder_found_after_the_first_uiautomator_failure(fast, monkeypatch):
+    fake, _, scr = fast
+    scr.adb = adb = BusyAdb()
+    monkeypatch.setattr(screen.time, "sleep", lambda s: None)
+    fake.raw = None  # lecteur indisponible : uiautomator directement
+    with pytest.raises(screen.PhoneError, match=re.escape(BUSY)):
+        scr.dump()
+    assert _dumps(adb) == 1 and sum(c[0] == "ps" for c in adb.calls) == 1
+
+
+def test_no_holder_keeps_the_retries_with_one_ps(fast, monkeypatch):
+    fake, _, scr = fast
+    scr.adb = adb = BusyAdb(ps=PS.splitlines()[0] + "\n" + PS.splitlines()[1])
+    monkeypatch.setattr(screen.time, "sleep", lambda s: None)
+    fake.raw = payload(STATUS, (1248, 1972), REGISTERED)
+    with pytest.raises(screen.PhoneError, match="UI tree unavailable") as e:
+        scr.dump()
+    assert "accessibility connection" not in str(e.value) and scr.busy == ""
+    assert _dumps(adb) == 3 and sum(c[0] == "ps" for c in adb.calls) == 1
+
+
+def test_null_root_does_not_look_for_holders(fast):
+    fake, adb, scr = fast
+    fake.raw = payload(STATUS, (1248, 1972), "ERROR: null root node returned by UiTestAutomationBridge.")
+    assert scr.dump() and not any(c[0] == "ps" for c in adb.calls)
+
+
+def test_aim_by_text_says_who_holds_the_connection(fast, monkeypatch):
+    fake, _, scr = fast
+    scr.adb = BusyAdb()
+    fake.raw = payload(STATUS, (1248, 1972), REGISTERED)
+    with pytest.raises(screen.PhoneError) as e:
+        server._aim(scr, "Wi-Fi")
+    assert str(e.value).startswith(BUSY) and "\"x,y\"" in str(e.value)

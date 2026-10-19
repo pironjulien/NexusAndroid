@@ -335,6 +335,40 @@ def parse_helpers(ps: str) -> list[str]:
     return sorted(set(found))
 
 
+# Serveurs d'autres outils qui gardent la connexion UiAutomation, unique sur le téléphone (vu le 19/10 : celui de
+# mobile-mcp, resté 30 min en vie) : tant qu'il tourne, ni notre lecteur ni `uiautomator dump` ne lisent l'arbre.
+_HOLDERS = re.compile(r"mobilecli|io\.appium\.uiautomator2|com\.github\.uiautomator|atx-agent|uiautomator2|"
+                      r"androidx\.test\.runner|UiAutomatorStub|uiautomator|(?:^|[\s/])app_process", re.I)
+# Les nôtres (NexusQuery, scrcpy pour le collage) et des app_process qui ne prennent pas l'accessibilité (Shizuku).
+_NOT_HOLDERS = re.compile(r"NexusQuery|nexus-scrcpy|com\.genymobile\.scrcpy|shizuku", re.I)
+
+
+def parse_holders(ps: str) -> list[tuple[str, str]]:
+    """(nom, pid) des serveurs d'autres outils de pilotage qui peuvent garder UiAutomation, d'après
+    `ps -A -o PID,NAME,ARGS` ; un `uiautomator dump` ponctuel (autre session) n'en est pas un : il la rend tout seul."""
+    found = []
+    for line in ps.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) < 3 or not parts[0].isdigit():
+            continue
+        pid, args = parts[0], parts[2].strip()
+        if not _HOLDERS.search(args) or _NOT_HOLDERS.search(args) or re.search(r"uiautomator\S*\s+dump", args):
+            continue
+        words = [w for w in args.split() if "=" not in w or w.startswith("-")]  # sans CLASSPATH=… en tête
+        name = (words[0] if words else args).rsplit("/", 1)[-1]
+        if name in ("app_process", "app_process64"):
+            # app_process <dossier> <classe> … : la classe dit l'outil.
+            name = next((w for w in words[1:] if not w.startswith(("/", "-"))), name)
+        found.append((name[:80], pid))
+    return sorted(set(found))
+
+
+def holders_message(holders: list[tuple[str, str]]) -> str:
+    named = "; ".join(f"{name}, pid {pid}" for name, pid in holders)
+    tool = "Another automation tool is" if len(holders) == 1 else "Other automation tools are"
+    return f"{tool} using the phone's accessibility connection ({named}): close it or stop it, then retry."
+
+
 NODE_FLAGS = ("checkable", "checked", "clickable", "enabled", "focusable", "focused", "scrollable", "long-clickable",
               "password", "selected")  # bits des drapeaux d'un nœud, dans l'ordre de NexusQuery.walk
 POSTURE_MARK = "@@NEXUS-POSTURE@@"
@@ -421,6 +455,7 @@ class Screen:
         self.size: tuple[int, int] | None = None
         self.posture = ""  # pliage au moment de la dernière image (les coordonnées "x,y" en dépendent)
         self.last_state: State | None = None  # état lu avec la dernière lecture d'écran (state ou dump)
+        self.busy = ""  # message de la dernière lecture d'arbre bloquée par un autre outil (UiAutomation prise)
 
     def _server(self) -> query.QueryServer | None:
         return query.server_for(self.adb) if FAST and self.fast else None
@@ -472,7 +507,8 @@ class Screen:
                 reading.elements = mask_elements(elements_of(snap.nodes))
             else:
                 try:
-                    reading.elements = self.dump(fast=False)
+                    ps = self._holders_check(snap.tree_error) if snap else None
+                    reading.elements = self.dump(fast=False, ps=ps)
                 except PhoneError as e:
                     reading.error = e
         return reading
@@ -480,9 +516,24 @@ class Screen:
     def current_posture(self) -> str:
         return parse_posture(self.adb.shell("dumpsys", "device_state", check=False, timeout=STATE_WAIT))
 
+    def _ps(self) -> str:
+        return self.adb.shell("ps", "-A", "-o", "PID,NAME,ARGS", check=False)
+
     def helpers(self) -> list[str]:
         """Programmes d'aide d'autres outils de pilotage en cours sur le téléphone."""
-        return parse_helpers(self.adb.shell("ps", "-A", "-o", "PID,NAME,ARGS", check=False))
+        return parse_helpers(self._ps())
+
+    def _holders_check(self, error: str) -> str | None:
+        """Arbre illisible : un seul `ps` ; PhoneError tout de suite (sans les essais de `uiautomator dump`, voués à
+        l'échec) si un autre outil garde UiAutomation. Rend la sortie de `ps` (reprise pour le message final), ou None
+        sans la lire quand la connexion a été obtenue (racine vide : écran en mouvement, pas un autre outil)."""
+        if "null root node" in error:
+            return None
+        ps = self._ps()
+        if holders := parse_holders(ps):
+            self.busy = holders_message(holders)
+            raise PhoneError(self.busy)
+        return ps
 
     def state(self) -> State:
         """État lu en un seul aller-retour (trois dumpsys filtrés sur le téléphone)."""
@@ -547,11 +598,15 @@ class Screen:
         image.convert("RGB").save(out, "JPEG", quality=80)
         return out.getvalue()
 
-    def dump(self, fast: bool = True) -> list[Element]:
+    def dump(self, fast: bool = True, ps: str | None = None) -> list[Element]:
         """Arbre UI de l'écran actuel, codes masqués ; ne change pas la liste du dernier look. Par le serveur gardé en
-        vie quand il répond, sinon uiautomator dump (après lui avoir fait rendre sa connexion d'accessibilité)."""
-        if fast and (snap := self.snapshot()) is not None and snap.nodes is not None:
-            return mask_elements(elements_of(snap.nodes))
+        vie quand il répond, sinon uiautomator dump (après lui avoir fait rendre sa connexion d'accessibilité). Arrêt
+        immédiat si un autre outil garde UiAutomation (un seul `ps` ; ps : sa sortie, déjà lue par l'appelant)."""
+        self.busy = ""
+        if fast and (snap := self.snapshot()) is not None:
+            if snap.nodes is not None:
+                return mask_elements(elements_of(snap.nodes))
+            ps = self._holders_check(snap.tree_error)
         self.release()
         last = ""
         for _ in range(3):
@@ -564,8 +619,10 @@ class Screen:
             if "<hierarchy" in tree:
                 return mask_elements(parse_ui(tree))
             last = out.strip()
+            if ps is None and (ps := self._holders_check(last)) is None:
+                ps = ""  # racine vide : connexion obtenue, aucun `ps` de plus
             time.sleep(0.6)
-        helpers = self.helpers()
+        helpers = parse_helpers(ps) if ps else self.helpers()
         culprit = ("; another automation tool is running on the phone and may block reading: "
                    + ", ".join(helpers) + " (close it or restart the phone)") if helpers else ""
         raise PhoneError("UI tree unavailable (screen moving or protected): " + last[:200] + culprit)

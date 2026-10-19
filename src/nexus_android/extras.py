@@ -180,12 +180,18 @@ def pull(adb: Adb, path: str, dest: str | None = None, confirm: bool = False) ->
     folder = pc_path(dest or PC_INBOX, confirm, "written")
     target = pc_path(folder / posixpath.basename(source), confirm, "written")
     folder.mkdir(parents=True, exist_ok=True)
-    n = 1
-    while target.exists():  # jamais d'écrasement sur le PC
-        target = folder / f"{Path(source).stem} ({n}){Path(source).suffix}"
-        n += 1
+    target = free_path(target)
     adb.host("pull", "-a", source, str(target), timeout=600)
     return f"Copied to the PC: {target}"
+
+
+def free_path(target: Path) -> Path:
+    """Jamais d'écrasement sur le PC : « nom (1).ext », « nom (2).ext »… si le nom est déjà pris."""
+    candidate, n = target, 1
+    while candidate.exists():
+        candidate = target.with_name(f"{target.stem} ({n}){target.suffix}")
+        n += 1
+    return candidate
 
 
 def push(adb: Adb, local: str, dest: str | None = None, confirm: bool = False) -> str:

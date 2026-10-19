@@ -407,6 +407,15 @@ class Adb:
             raise PhoneError(f"{argv[0]}: {(err or out).strip()[:300]}")
         return out
 
+    def background(self, command: str) -> subprocess.Popen[bytes]:
+        """Commande shell Android laissée tourner (enregistrement de l'écran) : sortie et erreurs mêlées, lues par
+        l'appelant ; sans fenêtre."""
+        if not self.serial:
+            self.connect()
+        return subprocess.Popen([self.path, "-s", str(self.serial), "shell", command], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
     def exec_out(self, *argv: str, timeout: float = 30.0) -> bytes:
         if not self.serial:
             self.connect()

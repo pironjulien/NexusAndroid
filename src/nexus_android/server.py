@@ -23,6 +23,8 @@ from PIL import Image as PILImage
 from pydantic import BaseModel, Field
 
 from . import __version__, awake, clip, extras, policy
+from . import capture as capture_mod
+from . import logs as logs_mod
 from . import screen as screen_mod
 from .adb import STATE_WAIT, Adb, LinkError, PhoneError, transport_of
 from .awake import KeepAwake
@@ -462,7 +464,8 @@ def _aim(screen: Screen, target: str | int | None) -> Aim:
         _same_posture(screen)
         return Aim(*point, None, fresh)
     if fresh is None:
-        raise PhoneError("UI tree unavailable (screen moving or protected): aim by \"x,y\" coordinates")
+        raise PhoneError(f"{screen.busy} Meanwhile, aim by \"x,y\" coordinates." if screen.busy else
+                         "UI tree unavailable (screen moving or protected): aim by \"x,y\" coordinates")
     wanted = plain(target.strip()).casefold()
     exact = [e for e in fresh if wanted in (plain(e.text).casefold(), plain(e.desc).casefold())]
     partial = [e for e in fresh if wanted in plain(e.text).casefold() or wanted in plain(e.desc).casefold()]
@@ -591,7 +594,8 @@ def _field(screen: Screen, step: Step) -> Element | None:
     if fresh is None:
         if step.confirm:
             return None
-        raise PhoneError("active field unreadable (UI tree unavailable): ask the user, then confirm=true if they say yes")
+        raise PhoneError(f"active field unreadable: {screen.busy}" if screen.busy else "active field unreadable (UI "
+                         "tree unavailable): ask the user, then confirm=true if they say yes")
     if any(e.password and e.focused for e in fresh):
         raise PhoneError("password field: never typed by the agent")
     field = next((e for e in fresh if e.focused and e.editable), None)
@@ -1428,6 +1432,81 @@ async def files(action: Literal["list", "pull", "push"] = "list", path: str | No
     return await _run(run)
 
 
+CaptureAction = Literal["screenshot", "record", "start", "stop"]
+
+
+def _capture_woke(adb: Adb, state: State) -> None:
+    """Écran allumé par capture (KEYCODE_WAKEUP) : geste de l'agent, jamais pris pour un toucher de l'utilisateur ;
+    écran gardé allumé comme après un geste d'act."""
+    _gestures_done()
+    _keep_awake(adb, state)
+
+
+capture_mod.ON_WAKE = _capture_woke
+
+
+# Écrit un fichier sur le PC, jamais par-dessus un autre (« nom (1) »…) : ni lecture seule, ni destructif, ni idempotent.
+@mcp.tool(annotations=_hints("Save a screenshot or a screen recording"), structured_output=False)
+async def capture(action: CaptureAction = "screenshot", seconds: int | None = None, name: str | None = None,
+                  dest: str | None = None, confirm: bool = False) -> str:
+    """Save the phone screen as a file on the PC, e.g. to show a problem to a support service: folder dest (default
+    ~\\Downloads\\Telephone, same folder rules as files pull), never overwrites; the response gives the path.
+    screenshot: full resolution PNG (JPEG if name ends in .jpg), security codes blacked out as on look images.
+    record: video of the next `seconds` (default 30, max 180), then saved. start: begins a video and returns at once
+    so gestures can go on (stops by itself after `seconds`, default and max 180); stop: ends it and saves it.
+    Video: MP4, 720p, 4 Mbit/s, no sound, one at a time. Security codes are NOT masked in videos; a video is never
+    started while a banking, payment or identity app is in the foreground. Screens protected against capture
+    (FLAG_SECURE) come out black. name: file name (optional, no folder).
+    confirm=true only on the user's explicit order: folder outside the usual ones, screenshot of a banking or
+    identity app, or screenshot without code masking (UI tree unreadable)."""
+    if action == "record":
+        limit = max(1, min(seconds or capture_mod.RECORD_SECONDS, capture_mod.MAX_SECONDS))
+        _, notes = await _run(lambda: capture_mod.begin(_init()[0], limit, name, dest, confirm))
+        await asyncio.to_thread(capture_mod.wait_end, limit + 15)  # sans verrou : les autres agents agissent
+        saved = await _run(lambda: capture_mod.stop(_init()[0]))
+        return " ".join([saved, *notes])
+    if action == "start":
+        return await _run(lambda: capture_mod.start(_init()[0], seconds, name, dest, confirm))
+    if action == "stop":
+        return await _run(lambda: capture_mod.stop(_init()[0]))
+    return await _run(lambda: capture_mod.screenshot(_init()[0], name, dest, confirm))
+
+
+LogKind = Literal["crash", "anr", "recent"]
+_PACKAGE_NAME = re.compile(r"[A-Za-z][\w]*(?:\.[\w]+)+")
+
+
+def _log_package(adb: Adb, app: str) -> str:
+    """Paquet désigné comme pour launch ; un nom de paquet complet absent du téléphone (application désinstallée
+    depuis son plantage) est gardé tel quel."""
+    try:
+        return _find_package(adb, app)
+    except PhoneError:
+        if _PACKAGE_NAME.fullmatch(app.strip()):
+            return app.strip()
+        raise
+
+
+@mcp.tool(annotations=_hints("Read Android logs (crashes, ANRs, recent lines)", read_only=True, idempotent=True),
+          structured_output=False)
+async def logs(kind: LogKind = "crash", app: str | None = None, lines: int = 200, since: str | None = None,
+               query: str | None = None) -> str:
+    """Android logs (logcat), to understand why an app crashed or misbehaves; newest last, about 30,000 characters
+    at most. crash: crashes grouped one per block (time, package, Java exception and its "Caused by", first app
+    frames; native crashes: signal, cause, backtrace). anr: "app not responding" events (Android's drop box, kept for
+    days, and the recent event log) with their reason. recent: last `lines` log lines (default 200, max 2000).
+    app: package or part of its name, as in launch (an uninstalled app: its full package name); for recent, its
+    running processes, those Android started earlier, and lines naming it. since: 15m, 2h, 1d, 13:05 or
+    2026-10-19 13:05 (phone time). query: case-insensitive text filter, applied after masking.
+    Security codes, tokens and secrets, e-mail addresses and phone numbers are masked. Banking, payment and identity
+    apps: recent never; their crashes give only exception types and app frames."""
+    def run() -> str:
+        adb = _init()[0]
+        package = _log_package(adb, app) if app and app.strip() else ""
+        return logs_mod.read(adb, kind, package, lines, since, query)
+    return await _run(run)
+
+
 def _clipboard(action: str, text: str | None) -> str:
     adb = _init()[0]
     if action == "write":
@@ -1663,6 +1742,7 @@ def main() -> None:
         else:
             mcp.run("stdio")
     finally:
+        capture_mod.shutdown()  # enregistrement encore en cours : arrêté et rangé sur le PC
         if awake.ENABLED:
             if _TIMER:
                 _TIMER.cancel()
