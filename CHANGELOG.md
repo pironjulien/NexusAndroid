@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-19
+
+### Changed
+
+- Server instructions sent to every MCP client are now in English and neutral ("the user"): no phone model, no
+  mention of a shared policy between named agents. Same rules and flow as before. The startup test checks that the
+  instructions stay under the 2048-character client limit and that nothing personal reaches `initialize` or
+  `tools/list`.
+
 ## [0.6.1] - 2026-10-19
 
 ### Added

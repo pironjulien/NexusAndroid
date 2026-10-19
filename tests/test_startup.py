@@ -32,7 +32,13 @@ def test_initialize_and_list_tools(tmp_path):
             init = await session.initialize()
             assert init.server_info.name == "nexus-android"
             assert init.server_info.version == __version__
-            tools = {tool.name: tool for tool in (await session.list_tools()).tools}
+            listed = (await session.list_tools()).tools
+            # Ce que lit tout client tiers : en anglais, neutre (« the user »), sous la limite de 2048 caractères.
+            assert init.instructions and len(init.instructions) <= 2048
+            seen = init.instructions + "".join(tool.model_dump_json() for tool in listed)
+            for personal in ("Julien", "Galaxy Fold", "politique commune"):
+                assert personal not in seen, personal
+            tools = {tool.name: tool for tool in listed}
             assert set(tools) == TOOLS
             for tool in tools.values():
                 hints = tool.annotations
