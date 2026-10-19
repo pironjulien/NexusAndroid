@@ -94,4 +94,4 @@ def test_daemon_refuses_short_token(tmp_path):
     env.pop("NEXUS_MCP_TOKEN_FILE", None)
     out = subprocess.run([sys.executable, "-m", "nexus_android", "--http", str(_free_port())], env=env,
                          capture_output=True, text=True, timeout=30)
-    assert out.returncode != 0 and "Jeton" in out.stderr
+    assert out.returncode != 0 and "Token missing or too short" in out.stderr

@@ -3,22 +3,30 @@
 from __future__ import annotations
 
 import io
+import math
 import os
 import re
+import struct
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 
 from PIL import Image as PILImage
-from PIL import ImageDraw
+from PIL import ImageDraw, ImageFont
 
-from .adb import Adb, PhoneError
+from . import query
+from .adb import STATE_WAIT, Adb, PhoneError
 from .messages import has_keyword, mask_codes
 
 MAX_SIDE = 1280  # côté le plus long de l'image rendue à l'agent
 # Zone de l'utilisateur shell, invisible pour les applications ; un fichier par serveur (pid) : les trois agents ont
 # chacun le leur, et il est effacé aussitôt lu.
 UI_DUMP = f"/data/local/tmp/nexus-android-ui-{os.getpid()}.xml"
+# Lecture rapide par le serveur gardé en vie (query.py, phone/NexusQuery.java) : arbre, capture et état en un échange.
+# False : toujours uiautomator dump et screencap (tests sur un téléphone simulé).
+FAST = True
+PHONE_QUALITY = 90  # JPEG fait par le téléphone, réencodé à 80 par render après le noircissement et les numéros
 
 
 @dataclass
@@ -36,6 +44,7 @@ class Element:
     focused: bool = False
     editable: bool = False
     masked: bool = False  # un code y a été masqué : zone noircie sur l'image
+    scrollable: bool = False  # liste ou zone défilable (un glissé dedans n'est pas un appui)
 
     @property
     def center(self) -> tuple[int, int]:
@@ -50,7 +59,7 @@ class Element:
         x, y = self.center
         parts = [f"[{self.index}] {self.role}"]
         if self.text:
-            parts.append(f"« {self.text[:120]} »")
+            parts.append(f"\"{self.text[:120]}\"")
         if self.desc and self.desc != self.text:
             parts.append(f"({self.desc[:120]})")
         if self.rid:
@@ -70,11 +79,16 @@ def parse_ui(xml_text: str) -> list[Element]:
     if start < 0:
         start = xml_text.find("<hierarchy")
     if start < 0:
-        raise PhoneError("Arbre UI illisible : " + xml_text.strip()[:200])
+        raise PhoneError("UI tree unreadable: " + xml_text.strip()[:200])
     root = ET.fromstring(xml_text[start: xml_text.rfind(">") + 1])
+    return elements_of(node.attrib for node in root.iter("node"))
+
+
+def elements_of(nodes: Iterable[Mapping[str, str]]) -> list[Element]:
+    """Éléments utiles d'après les attributs des nœuds (ceux du XML de uiautomator, ou rendus par le serveur dans les
+    mêmes termes), dans l'ordre du document : une seule règle de tri et de numérotation pour les deux lectures."""
     elements: list[Element] = []
-    for node in root.iter("node"):
-        a = node.attrib
+    for a in nodes:
         match = _BOUNDS.match(a.get("bounds", ""))
         if not match:
             continue
@@ -89,17 +103,17 @@ def parse_ui(xml_text: str) -> list[Element]:
             continue
         states = []
         if a.get("checkable") == "true":
-            states.append("coché" if a.get("checked") == "true" else "non-coché")
+            states.append("checked" if a.get("checked") == "true" else "unchecked")
         if a.get("selected") == "true":
-            states.append("sélectionné")
+            states.append("selected")
         if a.get("focused") == "true":
-            states.append("focus")
+            states.append("focused")
         if a.get("enabled") == "false":
-            states.append("inactif")
+            states.append("disabled")
         if scrollable:
-            states.append("défilable")
+            states.append("scrollable")
         if editable:
-            states.append("saisie")
+            states.append("editable")
         rid = a.get("resource-id", "")
         elements.append(Element(
             index=len(elements) + 1,
@@ -107,7 +121,7 @@ def parse_ui(xml_text: str) -> list[Element]:
             text=text, desc=desc, rid=rid.split("/", 1)[-1] if rid else "",
             package=a.get("package", ""), bounds=(x1, y1, x2, y2), clickable=clickable or editable,
             states=states, password=a.get("password") == "true", focused=a.get("focused") == "true",
-            editable=editable,
+            editable=editable, scrollable=scrollable,
         ))
     return elements
 
@@ -133,15 +147,69 @@ def mask_elements(elements: list[Element]) -> list[Element]:
     return out
 
 
-def blackout(image: PILImage.Image, elements: list[Element]) -> PILImage.Image:
-    """Noircit sur l'image (pixels écran) la zone des éléments dont un code a été masqué."""
+def blackout(image: PILImage.Image, elements: list[Element], shrink: float = 1.0) -> PILImage.Image:
+    """Noircit sur l'image la zone des éléments dont un code a été masqué (limites en pixels écran ; shrink : image
+    réduite par le téléphone, pixels image = pixels écran × shrink, zone arrondie vers l'extérieur)."""
     hidden = [e.bounds for e in elements if e.masked]
     if not hidden:
         return image
     image = image.convert("RGB")
     draw = ImageDraw.Draw(image)
-    for box in hidden:
-        draw.rectangle(box, fill=(0, 0, 0))
+    for x1, y1, x2, y2 in hidden:
+        if shrink == 1.0:
+            draw.rectangle((x1, y1, x2, y2), fill=(0, 0, 0))
+        else:
+            draw.rectangle((math.floor(x1 * shrink), math.floor(y1 * shrink), math.ceil(x2 * shrink),
+                            math.ceil(y2 * shrink)), fill=(0, 0, 0))
+    return image
+
+
+MARK_FEW = 21  # marks="auto" : jusqu'à ce nombre d'éléments, tous numérotés ; au-delà, seulement ceux sans nom
+MARK_SIZE = 14  # px du numéro sur l'image rendue (côté long MAX_SIDE)
+MARK_FILL = (200, 30, 120, 215)  # pastille (comme nexus-windows), chiffres blancs
+MARK_EDGE = (200, 30, 120, 150)  # contour fin des limites de l'élément
+_FONT: list[ImageFont.FreeTypeFont | ImageFont.ImageFont] = []
+
+
+def marked(elements: list[Element], marks: str = "auto") -> list[Element]:
+    """Éléments dont le numéro [N] est dessiné sur l'image : auto = tous s'ils sont peu nombreux, sinon ceux sans nom
+    (icônes sans texte ni description, que la liste seule ne permet pas de situer) ; all ; none."""
+    if marks == "none":
+        return []
+    if marks == "all" or len(elements) <= MARK_FEW:
+        return list(elements)
+    return [e for e in elements if not e.label]
+
+
+def _font() -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    if not _FONT:
+        _FONT.append(ImageFont.load_default(size=MARK_SIZE))
+    return _FONT[0]
+
+
+def draw_marks(image: PILImage.Image, elements: list[Element], factor: float,
+               origin: tuple[float, float] = (0.0, 0.0)) -> PILImage.Image:
+    """Numéros [N] et contour fin de chaque élément, sur l'image déjà réduite (pixel image = (pixel écran - origin) ×
+    factor). Dessinés après le noircissement des codes : une pastille ne fait que recouvrir, jamais révéler."""
+    if not elements:
+        return image
+    image = image.convert("RGB")
+    draw = ImageDraw.Draw(image, "RGBA")
+    font = _font()
+    ox, oy = origin
+    for e in elements:
+        x1, y1, x2, y2 = ((e.bounds[0] - ox) * factor, (e.bounds[1] - oy) * factor,
+                          (e.bounds[2] - ox) * factor, (e.bounds[3] - oy) * factor)
+        if x2 <= 0 or y2 <= 0 or x1 >= image.width or y1 >= image.height:
+            continue  # hors de la zone agrandie (region)
+        draw.rectangle((x1, y1, x2 - 1, y2 - 1), outline=MARK_EDGE, width=1)
+        label = str(e.index)
+        box = draw.textbbox((0, 0), label, font=font)
+        tw, th = box[2] - box[0] + 6, box[3] - box[1] + 4
+        x = min(max(0, round(x1)), image.width - tw)
+        y = min(max(0, round(y1)), image.height - th)
+        draw.rectangle((x, y, x + tw, y + th), fill=MARK_FILL)
+        draw.text((x + 3, y + 2 - box[1]), label, font=font, fill=(255, 255, 255, 255))
     return image
 
 
@@ -201,17 +269,149 @@ def parse_helpers(ps: str) -> list[str]:
     return sorted(set(found))
 
 
+NODE_FLAGS = ("checkable", "checked", "clickable", "enabled", "focusable", "focused", "scrollable", "long-clickable",
+              "password", "selected")  # bits des drapeaux d'un nœud, dans l'ordre de NexusQuery.walk
+POSTURE_MARK = "@@NEXUS-POSTURE@@"
+MAX_NODES = 20_000
+
+
+@dataclass
+class Snapshot:
+    """Lecture d'écran du serveur : état (sortie de STATE_SH), pliage, taille de l'affichage, nœuds (None : arbre
+    illisible, tree_error dit pourquoi), image (JPEG du téléphone, éventuellement réduite) et taille de la capture."""
+
+    state: State | None
+    posture: str
+    size: tuple[int, int]
+    nodes: list[dict[str, str]] | None
+    tree_error: str = ""
+    image: PILImage.Image | None = None
+    shot: tuple[int, int] = (0, 0)
+    image_error: str = ""
+
+
+def parse_snapshot(data: bytes) -> Snapshot:
+    """Réponse binaire de la requête `screen` (protocole décrit en tête de phone/NexusQuery.java) ; ValueError si elle
+    est tronquée ou d'un autre protocole."""
+    reader = query._Reader(data, 0)
+    status = reader.text()
+    state, posture = None, ""
+    if status:
+        head, _, tail = status.rpartition(POSTURE_MARK) if POSTURE_MARK in status else (status, "", "")
+        state, posture = parse_state(head, head), parse_posture(tail)
+    _, width, height = reader.number(), reader.number(), reader.number()
+    nodes: list[dict[str, str]] | None = None
+    tree_error = ""
+    kind = reader.number()
+    if kind == 0:
+        count = reader.number()
+        if not 0 <= count <= MAX_NODES:
+            raise ValueError("response from another protocol")
+        nodes = []
+        for _ in range(count):
+            text, rid, cls, package, desc = (reader.text() or "" for _ in range(5))
+            flags = reader.number()
+            x1, y1, x2, y2 = (reader.number() for _ in range(4))
+            node = {"text": text, "resource-id": rid, "class": cls, "package": package, "content-desc": desc,
+                    "bounds": f"[{x1},{y1}][{x2},{y2}]"}
+            node.update({name: "true" if flags >> bit & 1 else "false" for bit, name in enumerate(NODE_FLAGS)})
+            nodes.append(node)
+    elif kind == 1:
+        tree_error = reader.text() or "UI tree unavailable"
+    else:
+        raise ValueError("response from another protocol")
+    image, shot, image_error = None, (0, 0), ""
+    kind = reader.number()
+    if kind == 0:
+        shot = (reader.number(), reader.number())
+        picture = PILImage.open(io.BytesIO(reader.blob(reader.number())))
+        picture.load()
+        image = picture
+    elif kind == 1:
+        image_error = reader.text() or "no screenshot"
+    elif kind != 2:
+        raise ValueError("response from another protocol")
+    return Snapshot(state, posture, (width, height), nodes, tree_error, image, shot, image_error)
+
+
+@dataclass
+class Reading:
+    """Ce que look montre : état, image (None : non demandée), éléments ou l'erreur de l'arbre."""
+
+    state: State
+    image: PILImage.Image | None = None
+    elements: list[Element] = field(default_factory=list)
+    error: PhoneError | None = None
+
+
 class Screen:
-    def __init__(self, adb: Adb) -> None:
+    def __init__(self, adb: Adb, fast: bool = True) -> None:
         self.adb = adb
+        self.fast = fast
         self.scale = 1.0  # pixels image = pixels écran × scale
+        self.shrink = 1.0  # pixels de la dernière capture = pixels écran × shrink (réduite par le téléphone : < 1)
         self.elements: list[Element] = []  # dernière liste montrée à l'agent (look) : ce que désigne [N]
         self.size: tuple[int, int] | None = None
         self.posture = ""  # pliage au moment de la dernière image (les coordonnées "x,y" en dépendent)
         self.last_state: State | None = None  # état lu avec la dernière lecture d'écran (state ou dump)
 
+    def _server(self) -> query.QueryServer | None:
+        return query.server_for(self.adb) if FAST and self.fast else None
+
+    def snapshot(self, image: str = "none") -> Snapshot | None:
+        """Arbre, état, pliage et, au besoin, capture (image : none, scaled, full) en un échange avec le serveur gardé
+        en vie ; None s'il est indisponible ou répond autre chose (l'appelant reprend la méthode d'avant). Liaison
+        perdue : LinkError, comme toute lecture."""
+        server = self._server()
+        if server is None:
+            return None
+        tables = server.run([["screen", "--image", image, "--max", str(MAX_SIDE), "--quality", str(PHONE_QUALITY)]])
+        if not tables or not tables[0].raw:
+            return None
+        try:
+            snap = parse_snapshot(tables[0].raw)
+        except (ValueError, struct.error, OSError):  # OSError : JPEG illisible (PIL)
+            return None
+        if snap.state is not None:
+            self.last_state = snap.state
+        return snap
+
+    def release(self) -> None:
+        """Connexion d'accessibilité du serveur rendue (s'il tourne) : `uiautomator dump` ne peut pas la partager."""
+        if (server := self._server()) is not None:
+            server.release()
+
+    def read(self, image: bool, tree: bool, full: bool = False) -> Reading:
+        """État, image et arbre (codes masqués) en un échange avec le serveur quand il répond ; chaque partie manquante
+        relue comme avant (dumpsys, screencap, uiautomator dump). full : image en pleine résolution (region)."""
+        snap = self.snapshot("full" if full else "scaled" if image else "none") if (image or tree) else None
+        state = snap.state if snap and snap.state else self.state()
+        reading = Reading(state)
+        if not image and snap and snap.size[0] > 0 and snap.size[1] > 0 and self.size is None:
+            # Échelle des coordonnées @x,y même sans image jointe (show=elements avant toute capture).
+            self.size = snap.size
+            self.scale = min(1.0, MAX_SIDE / max(snap.size))
+            self.posture = snap.posture or self.posture
+        if image:
+            if snap and snap.image is not None and snap.shot[0] > 0:
+                reading.image = snap.image
+                self.size = snap.shot
+                self.shrink = snap.image.width / snap.shot[0]
+                self.posture = snap.posture or self.current_posture()
+            else:
+                reading.image = self.capture()
+        if tree:
+            if snap and snap.nodes is not None:
+                reading.elements = mask_elements(elements_of(snap.nodes))
+            else:
+                try:
+                    reading.elements = self.dump(fast=False)
+                except PhoneError as e:
+                    reading.error = e
+        return reading
+
     def current_posture(self) -> str:
-        return parse_posture(self.adb.shell("dumpsys", "device_state", check=False))
+        return parse_posture(self.adb.shell("dumpsys", "device_state", check=False, timeout=STATE_WAIT))
 
     def helpers(self) -> list[str]:
         """Programmes d'aide d'autres outils de pilotage en cours sur le téléphone."""
@@ -219,7 +419,7 @@ class Screen:
 
     def state(self) -> State:
         """État lu en un seul aller-retour (trois dumpsys filtrés sur le téléphone)."""
-        out = self.adb.shell("sh", "-c", STATE_SH, check=False)
+        out = self.adb.shell("sh", "-c", STATE_SH, check=False, timeout=STATE_WAIT)
         self.last_state = parse_state(out, out)
         return self.last_state
 
@@ -241,31 +441,51 @@ class Screen:
                 break
             except Exception as e:
                 if attempt == 2:
-                    raise PhoneError("Capture d'écran illisible (trois essais) : "
+                    raise PhoneError("Screenshot unreadable (three attempts): "
                                      + raw[:60].decode("utf-8", "replace")) from e
                 time.sleep(0.5)
         assert image is not None
         self.size = image.size
+        self.shrink = 1.0
         self.posture = self.current_posture()
         return image
 
-    def render(self, image: PILImage.Image, region: list[float] | None = None) -> bytes:
-        """JPEG pour l'agent, côté max MAX_SIDE ; region [x1,y1,x2,y2] en pixels de l'image complète."""
+    def render(self, image: PILImage.Image, region: list[float] | None = None,
+               marks: list[Element] | None = None) -> bytes:
+        """JPEG pour l'agent, côté max MAX_SIDE ; region [x1,y1,x2,y2] en pixels de l'image complète ; marks : éléments
+        dont le numéro [N] est dessiné (draw_marks)."""
+        origin = (0.0, 0.0)
+        # Capture réduite par le téléphone (look sans region) : pixels image = pixels écran × shrink.
+        shrink = self.shrink if self.size and self.shrink != 1.0 and round(self.size[0] * self.shrink) == image.width \
+            else 1.0
         if region:
             x1, y1, x2, y2 = (v / self.scale for v in region)
-            image = image.crop((int(x1), int(y1), int(x2), int(y2)))
-            factor = min(1.0, MAX_SIDE / max(image.size))
+            box = (int(x1), int(y1), int(x2), int(y2))
+            image = image.crop((round(box[0] * shrink), round(box[1] * shrink), round(box[2] * shrink),
+                                round(box[3] * shrink)) if shrink != 1.0 else box)
+            origin = (float(box[0]), float(box[1]))
+            width, height = box[2] - box[0], box[3] - box[1]
+            factor = min(1.0, MAX_SIDE / max(width, height))
         else:
-            factor = min(1.0, MAX_SIDE / max(image.size))
+            width, height = self.size if shrink != 1.0 and self.size else image.size
+            factor = min(1.0, MAX_SIDE / max(width, height))
             self.scale = factor
-        if factor < 1.0:
-            image = image.resize((round(image.width * factor), round(image.height * factor)), PILImage.Resampling.LANCZOS)
+        # Taille visée : pixels écran × factor ; une capture que le téléphone a déjà réduite à cette taille est gardée.
+        target = (round(width * factor), round(height * factor)) if factor < 1.0 else (width, height)
+        if image.size != target:
+            image = image.resize(target, PILImage.Resampling.LANCZOS)
+        if marks:
+            image = draw_marks(image, marks, factor, origin)
         out = io.BytesIO()
         image.convert("RGB").save(out, "JPEG", quality=80)
         return out.getvalue()
 
-    def dump(self) -> list[Element]:
-        """Arbre UI de l'écran actuel, codes masqués ; ne change pas la liste du dernier look."""
+    def dump(self, fast: bool = True) -> list[Element]:
+        """Arbre UI de l'écran actuel, codes masqués ; ne change pas la liste du dernier look. Par le serveur gardé en
+        vie quand il répond, sinon uiautomator dump (après lui avoir fait rendre sa connexion d'accessibilité)."""
+        if fast and (snap := self.snapshot()) is not None and snap.nodes is not None:
+            return mask_elements(elements_of(snap.nodes))
+        self.release()
         last = ""
         for _ in range(3):
             out = self.adb.shell("sh", "-c", f"uiautomator dump {UI_DUMP} 2>&1; cat {UI_DUMP} 2>/dev/null; "
@@ -279,9 +499,9 @@ class Screen:
             last = out.strip()
             time.sleep(0.6)
         helpers = self.helpers()
-        culprit = (" ; autre outil de pilotage actif sur le téléphone, qui peut bloquer la lecture : "
-                   + ", ".join(helpers) + " (le fermer ou redémarrer le téléphone)") if helpers else ""
-        raise PhoneError("Arbre UI indisponible (écran en mouvement ou protégé) : " + last[:200] + culprit)
+        culprit = ("; another automation tool is running on the phone and may block reading: "
+                   + ", ".join(helpers) + " (close it or restart the phone)") if helpers else ""
+        raise PhoneError("UI tree unavailable (screen moving or protected): " + last[:200] + culprit)
 
     def to_screen(self, x: float, y: float) -> tuple[int, int]:
         return round(x / self.scale), round(y / self.scale)

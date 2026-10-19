@@ -25,7 +25,7 @@ try {
     if ($LASTEXITCODE) { throw 'javac (stubs) failed.' }
     & "$jdk\bin\javac.exe" --release 11 -encoding UTF-8 -cp "$work\stubs" -d "$work\classes" "$PSScriptRoot\NexusQuery.java"
     if ($LASTEXITCODE) { throw 'javac failed.' }
-    $classes = Get-ChildItem "$work\classes" -Recurse -Filter *.class | ForEach-Object FullName
+    $classes = @(Get-ChildItem "$work\classes" -Recurse -Filter *.class | ForEach-Object FullName)  # tableau même pour une seule classe
     & "$jdk\bin\java.exe" -cp $r8 com.android.tools.r8.D8 --release --min-api 24 --lib $jdk --output "$work\dex" @classes
     if ($LASTEXITCODE) { throw 'd8 failed.' }
     Copy-Item "$work\dex\classes.dex" (Join-Path $PSScriptRoot '..\src\nexus_android\nexus-query.dex') -Force

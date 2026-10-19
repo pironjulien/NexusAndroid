@@ -11,12 +11,17 @@ permissions:
 jobs:
   test:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    name: test (Python ${{ matrix.python }})
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - name: test.ps1 (ruff, pyright, unit tests; no phone needed)
         shell: pwsh
-        run: ./test.ps1
+        run: ./test.ps1 -Python ${{ matrix.python }}
 
   startup-linux:
     # What MCP directories (Glama) check in a Linux container: the server starts and lists its tools.

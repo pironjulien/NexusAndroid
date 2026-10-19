@@ -22,7 +22,7 @@ ids = re.findall(r"^\[(\d+)\]", listing, re.M)
 assert ids, "aucune conversation lue"
 print("conversations :", len(ids), "· non lues :", listing.count("NON LU"))
 thread = text_of(s._messages(int(ids[0]), None, 10, 0))
-print("conversation lue :", len(thread.splitlines()) - 1, "messages ·", thread.count("[code masqué]"), "codes masqués")
+print("conversation lue :", len(thread.splitlines()) - 1, "messages ·", thread.count("[masked code]"), "masked codes")
 
 out = s._draft("0600000000", "Essai NexusAndroid : réponse préparée, accents éàç.", "sms")
 assert "éàç" in text_of(out), "brouillon absent de l'écran"

@@ -1,8 +1,10 @@
 """Tests sans téléphone : analyse des sorties ADB, masquage des codes, garde-fous."""
 
+import pytest
+
 from nexus_android import policy
-from nexus_android.adb import parse_devices, parse_mdns
-from nexus_android.messages import mask_codes, normalize, parse_rows, rcs_group_owner
+from nexus_android.adb import PhoneError, parse_devices, parse_mdns
+from nexus_android.messages import international, mask_codes, normalize, parse_rows, rcs_group_owner, sim_country
 from nexus_android.screen import Element, parse_logical_display, parse_state, parse_ui
 
 UI = """UI hierchary dumped to: /dev/tty<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0">
@@ -26,7 +28,7 @@ def test_parse_ui_keeps_useful_nodes():
     assert [e.text or e.desc for e in elements] == ["Envoyer", "Code"]
     send, pin = elements
     assert send.center == (980, 1850) and send.rid == "send_button" and send.clickable
-    assert pin.password and "saisie" in pin.states and "focus" in pin.states
+    assert pin.password and "editable" in pin.states and "focused" in pin.states
     assert send.line(0.5).endswith("@490,925")
 
 
@@ -41,18 +43,35 @@ def test_irreversible_buttons_need_confirmation():
 
 
 def test_mask_codes_only_in_security_messages():
-    assert mask_codes("Votre code de vérification est 482 913.") == "Votre code de vérification est [code masqué]."
-    assert mask_codes("G-123456 est votre code Google") == "[code masqué] est votre code Google"
+    assert mask_codes("Votre code de vérification est 482 913.") == "Votre code de vérification est [masked code]."
+    assert mask_codes("G-123456 est votre code Google") == "[masked code] est votre code Google"
     assert mask_codes("On se voit à 1830 au 12 rue") == "On se voit à 1830 au 12 rue"
     assert mask_codes("Code promo : 20 % sur 1 250,00 €") == "Code promo : 20 % sur 1 250,00 €"
 
 
+@pytest.mark.parametrize("text", ["Use 482913 to sign in to your account", "Tu código: 482-913",
+                                  "Ihr Bestätigungscode lautet 482913", "Il tuo codice è 482913", "Token: 482913",
+                                  "482913 is your code to log in", "Tu clave de acceso es 482913",
+                                  "Your sign-in code: 4829"])
+def test_mask_codes_other_languages(text):
+    masked = mask_codes(text)
+    assert "[masked code]" in masked and "4829" not in masked, masked
+
+
+@pytest.mark.parametrize("text", ["Votre commande n° 48291345 a été expédiée", "Rendez-vous le 12/10/2026 à 14h30",
+                                  "Montant : 1 250,00 € prélevé le 2026-10-12", "Facture 2026 : 1 250 €",
+                                  "Connexion le 12/10/2026 depuis Paris", "Login le 12-10-2026, débit de 1 250 €",
+                                  "Token de 1 250 € offert le 2026-10-12"])
+def test_mask_codes_leaves_orders_dates_and_amounts(text):
+    assert mask_codes(text) == text
+
+
 def test_parse_rows_multiline_body():
     out = "Row: 0 _id=92, date=1791871247643, type=1, body=Bonjour, ça va ?\nÀ demain\nRow: 1 _id=91, date=1, type=2, body=Ok\n"
-    rows = parse_rows(out, "body")
+    rows = parse_rows(out, ["_id", "date", "type", "body"])
     assert rows[0]["_id"] == "92" and rows[0]["body"] == "Bonjour, ça va ?\nÀ demain"
     assert rows[1]["body"] == "Ok" and rows[1]["type"] == "2"
-    assert parse_rows("No result found.\n", "body") == []
+    assert parse_rows("No result found.\n", ["body"]) == []
 
 
 def test_devices_and_mdns():
@@ -76,7 +95,37 @@ def test_display_and_state():
 
 
 def test_normalize():
-    assert normalize("+33 6 12 34 56 78") == "0612345678"
+    assert normalize("+33 6 12 34 56 78", "fr") == "0612345678"
+    assert normalize("0033 6 12 34 56 78", "fr") == "0612345678"
+    assert normalize("+44 7700 900123", "gb") == "07700900123"
+    assert normalize("+39 06 1234 5678", "it") == "0612345678"  # l'Italie garde son 0
+    assert normalize("+33 6 12 34 56 78") == "+33612345678"  # pays inconnu : rien de deviné
+
+
+def test_international_number_from_sim_country():
+    """wa.me : indicatif du pays de la carte SIM, jamais +33 supposé."""
+    assert international("06 12 34 56 78", "fr") == "33612345678"
+    assert international("07700 900123", "gb") == "447700900123"
+    assert international("06 1234 5678", "it") == "390612345678"
+    assert international("(415) 555-0100", "us") == "14155550100"
+    assert international("+44 7700 900123", "") == "447700900123"
+    assert international("0044 7700 900123", "") == "447700900123"
+    with pytest.raises(PhoneError, match="international format"):
+        international("06 12 34 56 78", "")
+
+
+def test_sim_country_dual_sim_and_network_fallback():
+    class Props:
+        def __init__(self, out: str) -> None:
+            self.out = out
+
+        def shell(self, *argv: str, check: bool = True) -> str:
+            assert "gsm.sim.operator.iso-country" in argv[-1] and "gsm.operator.iso-country" in argv[-1]
+            return self.out
+
+    assert sim_country(Props(",fr\n,fr\n")) == "fr"  # type: ignore[arg-type]
+    assert sim_country(Props("\nGB\n")) == "gb"  # type: ignore[arg-type]  # pas de SIM : pays du réseau
+    assert sim_country(Props("\n\n")) == ""  # type: ignore[arg-type]
 
 
 def test_adbd_port_from_proc_net():

@@ -14,7 +14,7 @@ from mcp.client.stdio import stdio_client
 
 from nexus_android import __version__
 
-TOOLS = {"look", "act", "launch", "messages", "draft", "notifications", "files", "info", "settings", "phone",
+TOOLS = {"look", "act", "launch", "clipboard", "messages", "draft", "notifications", "files", "info", "settings", "phone",
          "checkup"}
 
 
@@ -48,6 +48,9 @@ def test_initialize_and_list_tools(tmp_path):
             hints = {name: tool.annotations for name, tool in tools.items()}
             assert hints["look"] and hints["look"].read_only_hint
             assert hints["act"] and hints["act"].destructive_hint
+            # pull répété : « nom (1) », « nom (2) »… ; clean=true vide des caches.
+            assert hints["files"] and not hints["files"].idempotent_hint and not hints["files"].destructive_hint
+            assert hints["checkup"] and hints["checkup"].destructive_hint and not hints["checkup"].idempotent_hint
             for name, field in (("phone", "screen_on"), ("info", "location"), ("settings", "changed")):
                 schema = tools[name].output_schema  # réponses structurées (structuredContent)
                 assert schema and field in schema["properties"], name

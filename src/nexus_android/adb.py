@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import os
 import re
 import shlex
 import shutil
+import socket
+import struct
 import subprocess
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 
 class PhoneError(RuntimeError):
-    """Erreur à rapporter telle quelle à l'agent (message en français, sans pile)."""
+    """Erreur à rapporter telle quelle à l'agent (message en anglais, sans pile)."""
 
 
 class LinkError(PhoneError):
@@ -37,7 +41,7 @@ def _find_adb() -> str:
     winget = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
     for candidate in winget.glob("Google.PlatformTools_*/platform-tools/adb.exe"):
         return str(candidate)
-    raise PhoneError("adb introuvable : installer les Platform Tools (winget install Google.PlatformTools).")
+    raise PhoneError("adb not found: install the Platform Tools (winget install Google.PlatformTools).")
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,11 @@ class Device:
     transport: str  # "usb" ou "wifi"
 
 
+def transport_of(serial: str) -> str:
+    """« wifi » pour une adresse ip:port ou un service mDNS du débogage sans fil, sinon « usb »."""
+    return "wifi" if ":" in serial or "._adb-tls-connect." in serial else "usb"
+
+
 def parse_devices(output: str) -> list[Device]:
     devices = []
     for line in output.splitlines()[1:]:
@@ -56,8 +65,7 @@ def parse_devices(output: str) -> list[Device]:
             continue
         serial, state = parts[0], parts[1]
         model = next((p.split(":", 1)[1] for p in parts[2:] if p.startswith("model:")), "")
-        wifi = ":" in serial or "._adb-tls-connect." in serial
-        devices.append(Device(serial, state, model.replace("_", "-"), "wifi" if wifi else "usb"))
+        devices.append(Device(serial, state, model.replace("_", "-"), transport_of(serial)))
     return devices
 
 
@@ -88,11 +96,47 @@ def wifi_ip(ip_addr: str) -> str | None:
 
 WIFI_STATE = Path.home() / ".nexus" / "nexus-android" / "wifi.json"
 TLS_PORTS = range(30000, 50000)  # plage des ports aléatoires du débogage sans fil
+ABSENT_TTL = 120.0  # s : téléphone introuvable en Wi-Fi, échec gardé en mémoire (aucune nouvelle recherche)
+MAX_TRIED = 4  # ports du balayage essayés par adb connect, au plus
+HANDSHAKE_WAIT = 1.0  # s : réponse d'adbd à la poignée de main
+STATE_WAIT = 5.0  # s : lectures d'état (écran, verrouillage, inactivité, démarrage)
+
+# Messages du protocole ADB (en-tête de 24 octets, petit-boutiste) : à un CNXN, adbd répond CNXN, AUTH (clé à
+# présenter) ou STLS (débogage sans fil, TLS). Tout autre service du téléphone se tait ou répond autre chose.
+_CNXN, _AUTH, _STLS = 0x4E584E43, 0x48545541, 0x534C5453
 
 
-def open_ports(host: str, ports: range = TLS_PORTS, timeout: float = 0.4) -> list[int]:
-    """Ports TCP ouverts sur le téléphone : le port du débogage sans fil change quand adbd redémarre (câble
-    retiré, veille), et One UI ne l'annonce pas en mDNS."""
+def adb_hello() -> bytes:
+    """CNXN d'un hôte ADB : la première chose qu'adbd attend sur son port TCP."""
+    payload = b"host::\x00"
+    return struct.pack("<6I", _CNXN, 0x01000001, 256 * 1024, len(payload), sum(payload), _CNXN ^ 0xFFFFFFFF) + payload
+
+
+def speaks_adb(reply: bytes) -> bool:
+    """La réponse est-elle un en-tête ADB valide (CNXN, AUTH ou STLS, mot magique cohérent) ?"""
+    if len(reply) < 24:
+        return False
+    command, *_, magic = struct.unpack("<6I", reply[:24])
+    return command in (_CNXN, _AUTH, _STLS) and magic == command ^ 0xFFFFFFFF
+
+
+def same_subnet(host: str, prefix: int = 24) -> bool:
+    """Le PC a-t-il une adresse dans le même /24 que le téléphone ? Route choisie par le système (connect UDP : aucun
+    paquet envoyé) ; sinon, balayer serait inutile (téléphone sur un autre réseau, PC ailleurs)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect((host, 9))
+            local = probe.getsockname()[0]
+        return ipaddress.ip_network(f"{local}/{prefix}", strict=False) == ipaddress.ip_network(
+            f"{host}/{prefix}", strict=False)
+    except (OSError, ValueError):
+        return False
+
+
+def open_ports(host: str, ports: Iterable[int] = TLS_PORTS, timeout: float = 0.4) -> list[int]:
+    """Ports où adbd répond sur le téléphone : le port du débogage sans fil change quand adbd redémarre (câble
+    retiré, veille), et One UI ne l'annonce pas en mDNS. Chaque port ouvert est vérifié par une poignée de main ADB
+    (CNXN → CNXN, AUTH ou STLS) : jamais un adb connect de 8 s sur un autre service."""
 
     async def scan() -> list[int]:
         gate = asyncio.Semaphore(800)
@@ -101,11 +145,18 @@ def open_ports(host: str, ports: range = TLS_PORTS, timeout: float = 0.4) -> lis
         async def probe(port: int) -> None:
             async with gate:
                 try:
-                    _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
-                    found.append(port)
-                    writer.close()
+                    reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
                 except (OSError, TimeoutError):
+                    return
+                try:
+                    writer.write(adb_hello())
+                    await asyncio.wait_for(writer.drain(), HANDSHAKE_WAIT)
+                    if speaks_adb(await asyncio.wait_for(reader.readexactly(24), HANDSHAKE_WAIT)):
+                        found.append(port)
+                except (OSError, TimeoutError, asyncio.IncompleteReadError):
                     pass
+                finally:
+                    writer.close()
 
         await asyncio.gather(*(probe(p) for p in ports))
         return sorted(found)
@@ -120,16 +171,32 @@ class Adb:
         self.serial: str | None = self.forced
         self._ids: dict[str, str] = {}  # numéro adb → ro.serialno (identité réelle de l'appareil)
         self.rebooted = False  # le téléphone a redémarré depuis le dernier contact (à dire une fois, puis False)
+        self._absent_until = 0.0  # heure (monotonic) avant laquelle la recherche Wi-Fi n'est pas refaite
 
     def _raw(self, args: list[str], timeout: float = 30.0, serial: bool = True) -> subprocess.CompletedProcess[bytes]:
         cmd = [self.path]
-        if serial and self.serial:
-            cmd += ["-s", self.serial]
+        targeted = serial and self.serial
+        if targeted:
+            cmd += ["-s", str(self.serial)]
         try:
             return subprocess.run(cmd + args, capture_output=True, timeout=timeout,
                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except subprocess.TimeoutExpired as e:
-            raise LinkError(f"adb {' '.join(args[:2])} : pas de réponse après {timeout:.0f} s.") from e
+            if targeted:
+                self.lost()
+            raise LinkError(f"adb {' '.join(args[:2])}: no response after {timeout:.0f} s.") from e
+
+    def lost(self) -> None:
+        """Délai dépassé sur le téléphone : la liaison est tenue pour coupée. Une liaison Wi-Fi est retirée d'adb (sinon
+        il la garde « device » et chaque appel reprendrait le même délai) ; le téléphone est recherché au prochain
+        appel."""
+        stale, self.serial = self.serial, self.forced
+        if stale and (":" in stale or "._adb-tls-connect." in stale):
+            try:
+                subprocess.run([self.path, "disconnect", stale], capture_output=True, timeout=5,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            except (OSError, subprocess.TimeoutExpired):
+                pass
 
     def devices(self) -> list[Device]:
         return parse_devices(self._raw(["devices", "-l"], serial=False).stdout.decode("utf-8", "replace"))
@@ -189,11 +256,13 @@ class Adb:
         self._raw(["disconnect", address], timeout=5, serial=False)  # autre appareil du réseau (box TV…)
         return False
 
-    def connect(self) -> Device:
+    def connect(self, scan: bool = True) -> Device:
         """Choisit le téléphone de l'utilisateur : celui imposé, sinon USB, sinon Wi-Fi ; tente les téléphones jumelés du
-        Wi-Fi (annonce mDNS, puis dernière adresse notée lors d'un branchement USB). Seul l'appareil dont le numéro
-        de série matériel est celui noté au premier branchement USB est accepté ; émulateurs et autres appareils
-        du réseau sont écartés, et wifi.json n'est jamais réécrit avec un autre appareil."""
+        Wi-Fi (dernière adresse notée, puis annonce mDNS, puis balayage des ports si le PC est sur le même réseau).
+        Seul l'appareil dont le numéro de série matériel est celui noté au premier branchement USB est accepté ;
+        émulateurs et autres appareils du réseau sont écartés, et wifi.json n'est jamais réécrit avec un autre appareil.
+        Recherche Wi-Fi vaine : rien n'est recherché à nouveau pendant ABSENT_TTL s (le câble reste vu tout de suite).
+        scan=False (minuteur de l'écran gardé allumé) : jamais de balayage."""
         if self.forced:
             return self._connect_forced(self.forced)
         remembered = self._remembered()
@@ -207,20 +276,13 @@ class Adb:
                 if mine := self._mine(self._online(), known):
                     break
         if not mine and known:
-            mdns =self._raw(["mdns", "services"], timeout=10, serial=False).stdout.decode("utf-8", "replace")
-            for address in dict.fromkeys(parse_mdns(mdns) + ([remembered["address"]] if remembered.get("address") else [])):
-                if self._try_wifi(address, known):
-                    break
-            mine = self._mine(self._online(), known)
-            if not mine and remembered.get("address"):
-                host = remembered["address"].rsplit(":", 1)[0]
-                for port in open_ports(host):
-                    if self._try_wifi(f"{host}:{port}", known):
-                        break
-                mine = self._mine(self._online(), known)
+            mine = self._search_wifi(remembered, known, scan)
         if not mine:
             self.serial = None
-            raise PhoneError(self._missing(known))
+            wait = self._absent_until - time.monotonic()
+            again = f" Next Wi-Fi search in {wait:.0f} s (a USB cable is detected immediately)." if wait > 0 else ""
+            raise PhoneError(self._missing(known) + again)
+        self._absent_until = 0.0
         chosen = sorted(mine, key=lambda d: d.transport != "usb")[0]
         ident = self.identity(chosen.serial)
         if chosen.transport == "usb":
@@ -231,15 +293,41 @@ class Adb:
         elif re.fullmatch(r"\d+\.\d+\.\d+\.\d+:\d+", chosen.serial) and chosen.serial != remembered.get("address"):
             self._save({**remembered, "serialno": ident, "address": chosen.serial})  # port du débogage sans fil changé
         self.serial = chosen.serial
-        self._note_boot()
+        self.note_boot()
         return chosen
 
-    def _note_boot(self) -> None:
-        """Redémarrage du téléphone depuis le dernier contact de ce PC : signalé une fois (rebooted)."""
-        try:
-            boot = self.boot_id()
-        except PhoneError:
-            return
+    def _search_wifi(self, remembered: dict, known: str, scan: bool) -> list[Device]:
+        """Téléphone de l'utilisateur sur le Wi-Fi : dernière adresse connue d'abord, puis mDNS, puis (scan, même
+        réseau) les ports où adbd répond, MAX_TRIED au plus. Échec complet : gardé ABSENT_TTL s."""
+        if time.monotonic() < self._absent_until:
+            return []
+        address = remembered.get("address") or ""
+        if address and self._try_wifi(address, known):
+            return self._mine(self._online(), known)
+        mdns = self._raw(["mdns", "services"], timeout=10, serial=False).stdout.decode("utf-8", "replace")
+        for candidate in dict.fromkeys(a for a in parse_mdns(mdns) if a != address):
+            if self._try_wifi(candidate, known):
+                return self._mine(self._online(), known)
+        if not scan:
+            return []  # échec partiel (sans balayage) : pas gardé, la prochaine vraie recherche balaiera
+        if address:
+            host = address.rsplit(":", 1)[0]
+            if same_subnet(host):
+                for port in [p for p in open_ports(host) if f"{host}:{p}" != address][:MAX_TRIED]:
+                    if self._try_wifi(f"{host}:{port}", known):
+                        return self._mine(self._online(), known)
+        self._absent_until = time.monotonic() + ABSENT_TTL
+        return []
+
+    def note_boot(self, boot: str | None = None) -> None:
+        """Redémarrage du téléphone depuis le dernier contact de ce PC : signalé une fois (rebooted). boot : identifiant
+        déjà lu par l'appelant (phone, en un seul aller-retour), sinon lu ici."""
+        if boot is None:
+            try:
+                boot = self.boot_id()
+            except PhoneError:
+                return
+        boot = boot.strip()
         state = self._remembered()
         if not re.fullmatch(r"[0-9a-f-]{36}", boot) or boot == state.get("boot_id"):
             return
@@ -252,23 +340,23 @@ class Adb:
         # Jamais branché : le téléphone en USB devient celui de l'utilisateur (le câble est un geste volontaire).
         usb = [d for d in devices if d.transport == "usb" and self.identity(d.serial)]
         if len(usb) > 1:
-            raise PhoneError("Plusieurs appareils en USB (" + ", ".join(d.model or d.serial for d in usb) + ") et aucun "
-                             "téléphone encore enregistré : ne laisser branché que le téléphone de l'utilisateur.")
+            raise PhoneError("Several USB devices (" + ", ".join(d.model or d.serial for d in usb) + ") and no "
+                             "phone registered yet: leave only the user's phone plugged in.")
         return usb
 
     def _missing(self, known: str) -> str:
         visible = self.devices()
         if any(d.state == "unauthorized" for d in visible):
-            return "Téléphone branché mais non autorisé : accepter « Autoriser le débogage » sur l'écran."
+            return "Phone plugged in but not authorized: accept \"Allow USB debugging\" on its screen."
         others = [d.model or d.serial for d in visible if d.state == "device"]
-        ignored = f" Appareils visibles écartés (pas le téléphone de l'utilisateur) : {', '.join(others)}." if others else ""
+        ignored = f" Visible devices ignored (not the user's phone): {', '.join(others)}." if others else ""
         if not known:
-            return ("Téléphone de l'utilisateur pas encore enregistré sur ce PC : le brancher une fois en USB (débogage USB "
-                    "autorisé) ; il sera ensuite retrouvé aussi en Wi-Fi." + ignored)
-        return (f"Téléphone de l'utilisateur (n° de série {known}) introuvable : brancher le câble USB, ou activer le débogage "
-                "sans fil (téléphone jumelé à ce PC et sur le même Wi-Fi). Après un redémarrage du téléphone ou un "
-                "changement de réseau, Android coupe le débogage sans fil : le rallumer (Options de développement) "
-                "ou brancher le câble une fois." + ignored)
+            return ("User's phone not registered on this PC yet: plug it in once over USB (USB debugging "
+                    "allowed); it will then also be found over Wi-Fi." + ignored)
+        return (f"User's phone (serial number {known}) not found: plug in the USB cable, or enable wireless "
+                "debugging (phone paired with this PC and on the same Wi-Fi). After a phone restart or a "
+                "network change, Android turns wireless debugging off: turn it back on (Developer options) "
+                "or plug in the cable once." + ignored)
 
     def _connect_forced(self, serial: str) -> Device:
         """NEXUS_ANDROID_SERIAL : appareil choisi explicitement à l'installation, pris tel quel."""
@@ -278,7 +366,7 @@ class Adb:
             devices = [d for d in self.devices() if d.state == "device"]
         chosen = next((d for d in devices if d.serial == serial), None)
         if not chosen:
-            raise PhoneError(f"Appareil imposé par NEXUS_ANDROID_SERIAL ({serial}) injoignable.")
+            raise PhoneError(f"Device set by NEXUS_ANDROID_SERIAL ({serial}) unreachable.")
         self.serial = serial
         return chosen
 
@@ -292,7 +380,7 @@ class Adb:
         err = result.stderr.decode("utf-8", "replace").strip()
         if result.returncode and _LINK_LOST.search(err):
             self.serial = self.forced  # téléphone perdu : le rechercher au prochain appel
-            raise LinkError(f"liaison perdue avec le téléphone ({err.splitlines()[0][:120]})")
+            raise LinkError(f"link to the phone lost ({err.splitlines()[0][:120]})")
         return result.returncode, out, err
 
     def host(self, *args: str, timeout: float = 60.0) -> str:
@@ -304,19 +392,19 @@ class Adb:
         if result.returncode:
             if _LINK_LOST.search(out):
                 self.serial = self.forced
-                raise LinkError(f"liaison perdue avec le téléphone ({out.splitlines()[0][:120]})")
-            raise PhoneError(f"adb {args[0]} : {out[:300]}")
+                raise LinkError(f"link to the phone lost ({out.splitlines()[0][:120]})")
+            raise PhoneError(f"adb {args[0]}: {out[:300]}")
         return out
 
     def boot_id(self) -> str:
         """Identifiant du démarrage en cours du téléphone (change à chaque redémarrage)."""
-        return self.shell("cat", "/proc/sys/kernel/random/boot_id", check=False).strip()
+        return self.shell("cat", "/proc/sys/kernel/random/boot_id", check=False, timeout=STATE_WAIT).strip()
 
     def shell(self, *argv: str, timeout: float = 30.0, check: bool = True) -> str:
         """Commande shell Android ; chaque argument est protégé (texte libre, accents, retours à la ligne)."""
         code, out, err = self.run(*argv, timeout=timeout)
         if code and check:
-            raise PhoneError(f"{argv[0]} : {(err or out).strip()[:300]}")
+            raise PhoneError(f"{argv[0]}: {(err or out).strip()[:300]}")
         return out
 
     def exec_out(self, *argv: str, timeout: float = 30.0) -> bytes:
@@ -327,6 +415,6 @@ class Adb:
             err = result.stderr.decode("utf-8", "replace").strip()
             if _LINK_LOST.search(err):
                 self.serial = self.forced
-                raise LinkError(f"liaison perdue avec le téléphone ({err.splitlines()[0][:120]})")
-            raise PhoneError(err[:300] or "exec-out a échoué")
+                raise LinkError(f"link to the phone lost ({err.splitlines()[0][:120]})")
+            raise PhoneError(err[:300] or "exec-out failed")
         return result.stdout

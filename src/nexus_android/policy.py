@@ -75,7 +75,7 @@ def _load() -> dict:
             re.compile(context["verbes"])
         re.compile("|".join(motifs))
     except (OSError, ValueError, KeyError, TypeError, re.error) as error:
-        raise PolicyError(f"politique des garde-fous illisible ({POLICY_FILE}) : {error!r}") from error
+        raise PolicyError(f"guardrail policy unreadable ({POLICY_FILE}): {error!r}") from error
     return data
 
 
@@ -90,6 +90,12 @@ _CONFIRM = re.compile(r"\b(" + "|".join(MOTIFS) + r")\b")
 # le titre de la fenêtre ; ici : les textes de l'écran de la même application).
 CONTEXTS = tuple((re.compile(r"\b(" + c["titre"] + r")\b"), re.compile(r"\b(" + c["verbes"] + r")\b"), c["quoi"])
                  for c in POLICY["confirmation"]["contextes"])
+# Libellés anglais des « quoi » de garde-fous.json (le JSON reste en français, partagé entre outils).
+_WHAT_EN = {
+    "paiement ou virement": "payment or transfer",
+    "formatage": "formatting",
+    "réinitialisation de l'appareil": "device reset",
+}
 # Icônes sans texte des messageries (bouton d'envoi).
 _SEND_IDS = re.compile(r"send|compose_message_send|send_message_button|send_button", re.I)
 # Messageries, réseaux sociaux, courriel et téléphone : une icône cliquable sans nom y est souvent « Envoyer »,
@@ -110,9 +116,13 @@ COMMUNICATION_PACKAGES = {
 _COMMUNICATION_PATTERN = re.compile(r"messag|messenger|chat|mail|sms|dialer|telecom|incallui|contacts", re.I)
 
 
+CURRENCIES = str.maketrans({"€": " eur ", "$": " usd ", "£": " gbp ", "¥": " jpy "})
+
+
 def plain_label(text: object) -> str:
-    """Texte comparable, comme garde_fous.plain : sans accents ni casse, ponctuation ramenée à des espaces."""
-    decomposed = unicodedata.normalize("NFKD", str(text or ""))
+    """Texte comparable, comme garde_fous.plain : sans accents ni casse, ponctuation ramenée à des espaces ; symboles
+    de devise écrits en toutes lettres (« 4,99 € » → « 4 99 eur ») pour que les motifs reconnaissent un bouton prix."""
+    decomposed = unicodedata.normalize("NFKD", str(text or "")).translate(CURRENCIES)
     bare = "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
     return " ".join(re.sub(r"[^0-9a-z]+", " ", bare).split())
 
@@ -127,7 +137,7 @@ def confirm_word(label: object, screen_text: object = "") -> str:
         heading = plain_label(screen_text)
         for context, verbs, what in CONTEXTS:
             if (verb := verbs.search(text)) and context.search(heading):
-                return f"{verb.group(0)} (écran de {what})"
+                return f"{verb.group(0)} ({_WHAT_EN.get(what, what)} screen)"
     return ""
 
 

@@ -66,8 +66,8 @@ class PhoneLock:
                 owner = self._owner(fd)
                 os.close(fd)
                 raise PhoneError(
-                    f"Téléphone occupé : un autre agent le pilote{f' (processus {owner})' if owner else ''} encore "
-                    f"après {self.wait:g} s d'attente. Réessayer dans un moment ; rien n'a été fait.")
+                    f"Phone busy: another agent is still driving it{f' (process {owner})' if owner else ''} "
+                    f"after {self.wait:g} s of waiting. Try again in a moment; nothing was done.")
             time.sleep(0.1)
         os.lseek(fd, _OWNER, os.SEEK_SET)
         os.write(fd, f"{os.getpid():<31}".encode("ascii"))

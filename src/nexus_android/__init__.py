@@ -1,3 +1,3 @@
-"""nexus-android : computer use du téléphone Android de l'utilisateur, partagé par ses agents."""
+"""nexus-android: computer use of the user's Android phone, shared by their agents."""
 
-__version__ = "0.6.2"
+__version__ = "0.7.0"

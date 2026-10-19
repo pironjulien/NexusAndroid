@@ -1,110 +1,144 @@
-# Installe NexusAndroid sur ce PC (à relancer sans risque après une mise à jour).
-#  - environnement Python hors des sources : ~\.nexus\nexus-android\venv
-#  - démon partagé déclaré au superviseur Nexus (127.0.0.1:16180, jeton NexusSecure) ; « nexus-android » inscrit par URL
-#    pour Antigravity (inscription remplacée, rien d'autre n'est touché) ; Codex par son plugin perso nexus-android ;
-#    Claude Code le reçoit par le plugin nexus-android du catalogue « nexus » (NexusClaude)
-#  - tests sans téléphone ; -Live : essai sur le téléphone branché
-# Usage : pwsh -NoProfile -File install.ps1 [-Live] [-SkipTests]
-param([switch]$Live, [switch]$SkipTests)
+#Requires -Version 7
+# Installs NexusAndroid from a clone of this repository on Windows (safe to run again after an update).
+#  - Python environment outside the sources: ~\.nexus\nexus-android\venv (uv)
+#  - pinned scrcpy server (typing accents and emoji), SHA-256 checked
+#  - registers the stdio server with Codex (~\.codex\config.toml, backed up first) and Antigravity
+#    (~\.gemini\config\mcp_config.json, backed up first) when they are installed; prints the Claude Code command
+#  - offline tests (test.ps1); -Live: a run on the connected phone (it types and clears a draft SMS, never sends)
+# Usage: pwsh -NoProfile -File install.ps1 [-Live] [-SkipTests] [-NoRegister]
+param([switch]$Live, [switch]$SkipTests, [switch]$NoRegister)
 $ErrorActionPreference = 'Stop'
 
 $project = $PSScriptRoot
 $state = Join-Path $HOME '.nexus\nexus-android'
 $venv = Join-Path $state 'venv'
-$pycache = Join-Path $state 'cache\pycache'
+$backups = Join-Path $state 'backups'
 New-Item -ItemType Directory -Force $state | Out-Null
 
 $uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
-if (-not $uv) { throw "uv introuvable : l'installer (https://docs.astral.sh/uv/) puis relancer." }
+if (-not $uv) { throw 'uv not found: install it (https://docs.astral.sh/uv/), then run this script again.' }
 $env:UV_PROJECT_ENVIRONMENT = $venv
-$env:UV_LINK_MODE = 'copy'
-$env:PYTHONPYCACHEPREFIX = $pycache
+$env:UV_LINK_MODE = 'copy'  # hard links fail in synced folders (OneDrive) and across drives
 $env:PYTHONUTF8 = '1'
 
-# Python système de préférence : celui de uv sous %AppData% est virtualisé par l'application Claude.
-$systemPython = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python314\python.exe'
-if (-not (Test-Path (Join-Path $venv 'Scripts\python.exe'))) {
-    if (Test-Path $systemPython) { & $uv venv --python $systemPython $venv } else { & $uv venv --python 3.14 $venv }
-}
-& $uv sync --frozen --project $project
-if ($LASTEXITCODE) { throw 'uv sync a échoué.' }
+# Installed as a copy (not editable): the server keeps working if this clone is moved; run again to update.
+& $uv sync --frozen --no-dev --no-editable --reinstall-package nexus-android --project $project
+if ($LASTEXITCODE) { throw 'uv sync failed.' }
+$python = Join-Path $venv 'Scripts\python.exe'
+& $python -c 'import nexus_android'
+if ($LASTEXITCODE) { throw 'The installed package does not import.' }
 
 $adb = (Get-Command adb -ErrorAction SilentlyContinue).Source
+$adbOnPath = [bool]$adb
 if (-not $adb) {
     $adb = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Filter adb.exe -Recurse -ErrorAction SilentlyContinue |
         Select-Object -First 1 -ExpandProperty FullName
 }
-if (-not $adb) { Write-Warning 'adb introuvable : winget install Google.PlatformTools' }
+if (-not $adb) { Write-Warning 'adb not found: winget install Google.PlatformTools, then run this script again.' }
 
-# Serveur scrcpy (Genymobile, Apache 2.0) : saisie avec accents par le presse-papiers. Version et empreinte figées,
-# identiques à src\nexus_android\clip.py ; le fichier n'est gardé que si son SHA-256 est celui publié par GitHub.
+# scrcpy server (Genymobile, Apache 2.0): typing accents and emoji through the clipboard. Same pinned version and
+# SHA-256 as src\nexus_android\clip.py (which downloads it itself at the first accented text if it is missing).
 $scrcpyVersion = '5.0.1'
 $scrcpySha = '764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536'
 $scrcpy = Join-Path $state "tools\scrcpy-server-v$scrcpyVersion"
 if (-not (Test-Path $scrcpy) -or (Get-FileHash $scrcpy -Algorithm SHA256).Hash -ne $scrcpySha.ToUpper()) {
     New-Item -ItemType Directory -Force (Split-Path $scrcpy) | Out-Null
     $tmp = "$scrcpy.download"
-    Invoke-WebRequest "https://github.com/Genymobile/scrcpy/releases/download/v$scrcpyVersion/scrcpy-server-v$scrcpyVersion" -OutFile $tmp
-    if ((Get-FileHash $tmp -Algorithm SHA256).Hash -ne $scrcpySha.ToUpper()) {
-        Remove-Item $tmp -Force
-        Write-Warning 'scrcpy-server : empreinte inattendue, fichier rejeté (saisie avec accents indisponible).'
-    } else { Move-Item $tmp $scrcpy -Force; Write-Host "scrcpy-server v$scrcpyVersion vérifié." }
+    try {
+        Invoke-WebRequest "https://github.com/Genymobile/scrcpy/releases/download/v$scrcpyVersion/scrcpy-server-v$scrcpyVersion" -OutFile $tmp
+        if ((Get-FileHash $tmp -Algorithm SHA256).Hash -ne $scrcpySha.ToUpper()) {
+            Remove-Item $tmp -Force
+            Write-Warning 'scrcpy server: unexpected SHA-256, file rejected (typing accents unavailable).'
+        } else { Move-Item $tmp $scrcpy -Force; Write-Host "scrcpy server v$scrcpyVersion verified." }
+    } catch {
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        Write-Warning "scrcpy server not downloaded ($($_.Exception.Message)); the server will try again at the first accented text."
+    }
 }
 
-$python = Join-Path $venv 'Scripts\python.exe'
-$env_ = [ordered]@{ PYTHONUTF8 = '1'; PYTHONPYCACHEPREFIX = $pycache }
-if ($adb) { $env_['NEXUS_ANDROID_ADB'] = $adb }
+# What every client starts: the environment's Python, stdio transport.
+$env_ = [ordered]@{ PYTHONUTF8 = '1' }
+if ($adb -and -not $adbOnPath) { $env_['NEXUS_ANDROID_ADB'] = $adb }
 $args_ = @('-m', 'nexus_android')
 
-# Démon partagé (un seul processus pour Claude, Codex et Antigravity) : déclaré au superviseur des démons Nexus
-# (NexusInfra\ops\workstation\nexus-mcp-daemons.py, tâche « Nexus MCP Daemons »), joint par URL avec un jeton.
-$port = 16180
-$url = "http://127.0.0.1:$port/mcp"
-$tokenFile = Join-Path $env:OneDrive 'Documents\NexusSecure\agents\nexus-mcp-token.txt'
-if (-not (Test-Path $tokenFile)) {
-    $bytes = [byte[]]::new(32); [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-    New-Item -ItemType Directory -Force (Split-Path $tokenFile) | Out-Null
-    [IO.File]::WriteAllText($tokenFile, [Convert]::ToHexString($bytes).ToLower())
-}
-$token = (Get-Content $tokenFile -Raw).Trim()
-$specs = Join-Path $HOME '.nexus\daemons\specs'
-New-Item -ItemType Directory -Force $specs | Out-Null
-$spec = [ordered]@{ port = $port; python = $python; args = $args_; env = $env_ }
-[IO.File]::WriteAllText((Join-Path $specs 'nexus-android.json'), ($spec | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
-# Nouveau code : arrêter le démon en place, le superviseur le relance (les clients se reconnectent seuls).
-Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" | Where-Object { $_.CommandLine -match 'nexus_android --http' } |
-    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-if (-not (Get-ScheduledTask -TaskName 'Nexus MCP Daemons' -ErrorAction SilentlyContinue)) {
-    Write-Warning 'Superviseur des démons absent : lancer NexusInfra\ops\workstation\Sync-NexusPoste.ps1 -Apply.'
+function Save-Backup([string]$file) {
+    New-Item -ItemType Directory -Force $backups | Out-Null
+    $copy = Join-Path $backups ("{0}.{1}" -f (Split-Path $file -Leaf), (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    Copy-Item $file $copy
+    return $copy
 }
 
-# --- Claude Code : par le plugin nexus-android du catalogue « nexus » (NexusClaude\plugins, activé par
-#     NexusClaude\claude-settings.json ; jeton dans la variable NEXUS_MCP_TOKEN des réglages, posée par Sync-NexusPoste).
-#     Aucune inscription ici (aucune CLI Claude).
+function ConvertTo-TomlString([string]$value) {
+    if ($value -notmatch "['\r\n]") { return "'$value'" }  # literal string: Windows paths without escaping
+    return '"' + ($value -replace '\\', '\\' -replace '"', '\"' -replace "`r", '\r' -replace "`n", '\n') + '"'
+}
 
-# --- Codex : serveur par le plugin perso nexus-android de Codex (NexusCodex\scripts\installer-plugins-nexus.ps1,
-#     lancé par Sync-NexusPoste) ; plus de table [mcp_servers] ici.
+if (-not $NoRegister) {
+    # --- Codex: [mcp_servers.nexus-android] table in ~\.codex\config.toml (other tables untouched)
+    $codexDir = Join-Path $HOME '.codex'
+    if (Test-Path $codexDir) {
+        $codexConfig = Join-Path $codexDir 'config.toml'
+        $lines = @()
+        if (Test-Path $codexConfig) {
+            $backup = Save-Backup $codexConfig
+            Write-Host "Codex: backup in $backup"
+            $lines = [IO.File]::ReadAllLines($codexConfig)
+        }
+        # Previous nexus-android table and its sub-tables removed, up to the next table header.
+        $own = '^\s*\[\s*mcp_servers\s*\.\s*("nexus-android"|''nexus-android''|nexus-android)\s*(\.[^\]]*)?\]\s*(#.*)?$'
+        $kept = [Collections.Generic.List[string]]::new()
+        $skip = $false
+        foreach ($line in $lines) {
+            if ($line -match '^\s*\[') { $skip = $line -match $own }
+            if (-not $skip) { $kept.Add($line) }
+        }
+        while ($kept.Count -and -not $kept[$kept.Count - 1].Trim()) { $kept.RemoveAt($kept.Count - 1) }
+        $envToml = ($env_.GetEnumerator() | ForEach-Object { "$($_.Key) = $(ConvertTo-TomlString $_.Value)" }) -join ', '
+        $table = @(
+            '[mcp_servers.nexus-android]'
+            "command = $(ConvertTo-TomlString $python)"
+            "args = [$(($args_ | ForEach-Object { ConvertTo-TomlString $_ }) -join ', ')]"
+            "env = { $envToml }"
+        )
+        $text = (@($kept) + $(if ($kept.Count) { @('') } else { @() }) + $table) -join "`n"
+        [IO.File]::WriteAllText($codexConfig, $text + "`n", [Text.UTF8Encoding]::new($false))
+        Write-Host 'Codex: nexus-android registered.'
+    } else { Write-Host 'Codex not found (no ~\.codex): skipped.' }
 
-# --- Antigravity : ~\.gemini\config\mcp_config.json
-$agyConfig = Join-Path $HOME '.gemini\config\mcp_config.json'
-if (Test-Path $agyConfig) {
-    $json = Get-Content $agyConfig -Raw | ConvertFrom-Json
-    if (-not $json.PSObject.Properties['mcpServers']) { $json | Add-Member mcpServers ([PSCustomObject]@{}) }
-    $server = [PSCustomObject]@{ serverUrl = $url; headers = [PSCustomObject]@{ Authorization = "Bearer $token" } }
-    $json.mcpServers | Add-Member -NotePropertyName 'nexus-android' -NotePropertyValue $server -Force
-    $json.mcpServers.PSObject.Properties.Remove('nexus-android-http')
-    [IO.File]::WriteAllText($agyConfig, ($json | ConvertTo-Json -Depth 100), [Text.UTF8Encoding]::new($false))
-    Write-Host 'Antigravity : nexus-android inscrit.'
-} else { Write-Warning 'Antigravity absent de ce PC : non inscrit.' }
+    # --- Antigravity: "nexus-android" entry in ~\.gemini\config\mcp_config.json (other entries untouched)
+    $agyDir = Join-Path $HOME '.gemini\config'
+    $agyConfig = Join-Path $agyDir 'mcp_config.json'
+    if ((Test-Path $agyConfig) -or (Test-Path (Join-Path $HOME '.gemini\antigravity'))) {
+        $json = [ordered]@{}
+        if (Test-Path $agyConfig) {
+            $backup = Save-Backup $agyConfig
+            Write-Host "Antigravity: backup in $backup"
+            $raw = Get-Content $agyConfig -Raw
+            if ($raw -and $raw.Trim()) { $json = $raw | ConvertFrom-Json -AsHashtable }
+        }
+        if (-not $json.Contains('mcpServers') -or $null -eq $json['mcpServers']) { $json['mcpServers'] = [ordered]@{} }
+        $json['mcpServers']['nexus-android'] = [ordered]@{ command = $python; args = $args_; env = $env_ }
+        New-Item -ItemType Directory -Force $agyDir | Out-Null
+        [IO.File]::WriteAllText($agyConfig, ($json | ConvertTo-Json -Depth 100), [Text.UTF8Encoding]::new($false))
+        Write-Host 'Antigravity: nexus-android registered.'
+    } else { Write-Host 'Antigravity not found (no ~\.gemini\antigravity): skipped.' }
+
+    # --- Claude Code: registered by its own CLI; this script does not call it.
+    $envFlags = ($env_.GetEnumerator() | ForEach-Object { "-e $($_.Key)=`"$($_.Value)`"" }) -join ' '
+    Write-Host ''
+    Write-Host 'Claude Code: run this command once to register the same server:'
+    Write-Host "  claude mcp add nexus-android --scope user $envFlags -- `"$python`" -m nexus_android"
+    Write-Host ''
+}
 
 if (-not $SkipTests) {
-    & (Join-Path $project 'test.ps1')
+    # Tests under the same Python version as the environment just created.
+    $version = & $python -c "import sys; print('%d.%d' % sys.version_info[:2])"
+    & (Join-Path $project 'test.ps1') -Python $version
+    if ($LASTEXITCODE) { throw 'Tests failed.' }
 }
 if ($Live) {
-    & $uv run --frozen --project $project python (Join-Path $project 'tests\live_smoke.py')
-    if ($LASTEXITCODE) { throw 'Essai sur le téléphone en échec.' }
+    & $python (Join-Path $project 'tests\live_smoke.py')
+    if ($LASTEXITCODE) { throw 'Run on the phone failed.' }
 }
-# Empreinte de l'installation : comparée aux sources par un outil de synchronisation pour savoir s'il faut réinstaller.
-$stamp = (Get-FileHash (Join-Path $project 'uv.lock')).Hash + ' ' + (Get-FileHash (Join-Path $project 'install.ps1')).Hash
-Set-Content (Join-Path $state 'installed.stamp') $stamp -Encoding utf8NoBOM
-Write-Host 'NexusAndroid installé. Ouvrir une nouvelle conversation dans chaque client pour charger nexus-android.'
+Write-Host 'NexusAndroid installed. Start a new conversation in each client to load nexus-android.'

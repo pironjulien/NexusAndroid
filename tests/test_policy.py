@@ -67,6 +67,27 @@ EXAMPLES = {
     "(erase|wipe|clear) (all )?(data|everything|device)": "Erase all data",
     "(rendre|passer) (le |ce )?(depot |repository |repo )?(en )?public": "Rendre le dépôt public",
     "(make|change to|set to) (this |the )?(repository |repo )?public": "Make this repository public",
+    "^(post|reply|repondre|repost)$": "Répondre",
+    "(re)?tweet(er|ez)?": "Retweet",
+    "s abonn(er|ez)": "S’abonner",
+    "subscribe": "Subscribe",
+    "(start (my |your |a |the )?)?free trial": "Start free trial",
+    "start (my |your |the )?trial": "Start my trial",
+    "essai gratuit": "Essai gratuit",
+    "commenc(er|ez) (l |mon |votre |un )?essai": "Commencer l'essai",
+    "annul(er|ez) (l |mon |votre )?abonnement": "Annuler l'abonnement",
+    "^book( now| it)?$": "Book",
+    "book now": "Book now for 2",
+    "reserv(er|ez)": "Réservez",
+    "donate": "Donate",
+    "faire un don": "Faire un don",
+    "^answer$": "Answer",
+    "decroch(er|ez)": "Décrocher",
+    "accept(er|ez)? (l |the )?(appel|call)": "Accepter l’appel",
+    "^dial$": "Dial",
+    "transfer(er|ez)": "Transférer",
+    "\\d+( \\d{1,2})? (eur|euros?|usd|gbp|jpy|chf)": "4,99 €",
+    "(eur|usd|gbp|jpy|chf) \\d+( \\d{1,2})?": "$12",
 }
 
 
@@ -128,6 +149,12 @@ def test_free_labels(label):
     assert policy.confirm_word(label) == "", label
 
 
+@pytest.mark.parametrize(("label", "plain"), [("4,99 €", "4 99 eur"), ("€4.99", "eur 4 99"), ("$12", "usd 12"),
+                                              ("£3.99", "gbp 3 99"), ("¥500", "jpy 500"), ("Payer 12 €", "payer 12 eur")])
+def test_currency_symbols_spelled_out_like_the_shared_plain(label, plain):
+    assert policy.plain_label(label) == plain
+
+
 def test_generic_verb_on_payment_or_format_screen():
     assert policy.confirm_word("Valider", "Paiement par carte · 12,00 €")
     assert policy.confirm_word("OK", "Formatage de la carte SD")
@@ -172,7 +199,7 @@ def test_unnamed_icon_in_messaging_needs_confirmation(phone):
     name = node("Alice", (150, 320, 600, 380), clickable=False, package="com.whatsapp")
     phone.uis = [ui(icon, row, name)]
     report = act(Step(do="tap", target="1000,1750"))
-    assert "icône sans nom" in report and "confirm=true" in report and phone.inputs == []
+    assert "unnamed icon" in report and "confirm=true" in report and phone.inputs == []
     assert act(Step(do="tap", target="300,450")).startswith("~")  # ligne de conversation : nommée par son texte
     assert act(Step(do="tap", target="1000,1750", confirm=True)).startswith("~")
     assert len(phone.inputs) == 2
@@ -189,7 +216,7 @@ def test_unnamed_call_button_in_dialer(phone):
     phone.uis = [ui(node("", (440, 1700, 640, 1900), package="com.samsung.android.dialer"),
                     node("06 11 22 33 44", (0, 300, 1080, 450), clickable=False, package="com.samsung.android.dialer"))]
     report = act(Step(do="tap", target="540,1800"))
-    assert "icône sans nom" in report and phone.inputs == []
+    assert "unnamed icon" in report and phone.inputs == []
 
 
 def test_communication_apps():
@@ -216,7 +243,7 @@ def test_protected_app_reads_freely_navigates_on_order_never_moves_money(phone):
     for step in (Step(do="tap", target="Comptes"), Step(do="swipe", target="500,1500", to="500,800"),
                  Step(do="type", text="1")):
         report = act(step)
-        assert report.startswith("✗") and "lecture seule" in report and "confirm=true" in report, (step, report)
+        assert report.startswith("✗") and "read-only" in report and "confirm=true" in report, (step, report)
     assert len(phone.inputs) == before
     # Ordre explicite de l'utilisateur : naviguer (onglet), mais jamais un bouton d'argent ni une icône sans nom.
     assert act(Step(do="tap", target="Comptes", confirm=True)).startswith("~")
@@ -249,9 +276,9 @@ def test_foreground_change_inside_a_batch_is_seen(phone):
 def test_image_withheld_when_tree_unreadable(phone):
     phone.uis = [""]
     out = server._view("both")
-    assert len(out) == 1 and "Image non envoyée" in out[0]
+    assert len(out) == 1 and "Image not sent" in out[0]
     out = server._view("both", confirm=True)
-    assert len(out) == 2 and "sans masquage" in out[0]
+    assert len(out) == 2 and "without code masking" in out[0]
     phone.uis = [ui(node("Bonjour"))]
     assert len(server._view("both")) == 2
 
@@ -270,13 +297,14 @@ def test_open_url_to_protected_app_refused(phone):
             if url.startswith("https://bank"):
                 return 0, "android/com.android.internal.app.ResolverActivity", ""
             return 0, "com.android.chrome/com.google.android.apps.chrome.Main", ""
-        if argv[:3] == ("cmd", "package", "query-activities"):
-            return 0, "com.android.chrome/.Main\nfr.creditagricole.androidapp/.Link", ""
+        if argv[:3] == ("cmd", "package", "query-activities"):  # la banque ne prend que ses propres liens
+            bank = "\nfr.creditagricole.androidapp/.Link" if argv[-1].startswith("https://bank") else ""
+            return 0, "com.android.chrome/.Main" + bank, ""
         return original(*argv, timeout=timeout)
     phone.run = run  # type: ignore[method-assign]
     for url in ("lydia://pay?amount=50", "https://bank.example/virement"):
         report = act(Step(do="open_url", text=url, confirm=True))
-        assert report.startswith("✗") and "lecture seule" in report, url
+        assert report.startswith("✗") and "read-only" in report, url
     assert not [c for c in phone.calls if c[0] == "am"]
     assert act(Step(do="open_url", text="https://example.org")).startswith("~")
 
@@ -320,30 +348,35 @@ def test_structured_settings_and_info(phone, monkeypatch):
     server.InfoResult.model_validate(out.structured_content)
 
 
-def test_status_is_structured(monkeypatch):
-    class Device:
-        model, serial, transport = "SM-F971B", "R5FOLD8", "wifi"
+def test_status_is_structured_and_read_in_one_round_trip(monkeypatch):
+    calls: list[tuple[str, ...]] = []
+    mark = server.STATUS_MARK
 
     class Adb:
         rebooted = False
+        serial = "192.0.2.7:5555"
+        boots: list[str | None] = []
 
         def connect(self):
-            return Device()
+            raise AssertionError("link already known: no new search")
+
+        def note_boot(self, boot=None):
+            self.boots.append(boot)
 
         def shell(self, *argv, check=True, timeout=30.0):
-            return "17\n"
+            calls.append(argv)
+            return (f"SM-F971B\n{mark}\n17\n{mark}\n8d190673-68dc-4533-a5ac-f55a80c09663\n{mark}\n"
+                    "    mCommittedState=Optional[DeviceState{identifier=0, name='CLOSED', app_accessible=true}]\n"
+                    f"{mark}\nmWakefulness=Awake\nisKeyguardShowing=false\n"
+                    "  mCurrentFocus=Window{abc u0 com.app/x.Main}\n")
 
-    class Scr:
-        def state(self):
-            return screen.State(True, False, "com.app")
-
-        def current_posture(self):
-            return "CLOSED"
-
-    monkeypatch.setattr(server, "_init", lambda: (Adb(), Scr(), None))
+    link, scr = Adb(), screen.Screen(None)  # type: ignore[arg-type]
+    monkeypatch.setattr(server, "_init", lambda: (link, scr, None))
     monkeypatch.setattr(server, "_awake_note", lambda adb: "")
     monkeypatch.setattr(server.awake, "ENABLED", False)
     status = server._status()
-    assert status.posture == "plié" and status.transport == "wifi" and status.screen_on and not status.locked
-    assert status.foreground == "com.app" and "SM-F971B" in status.text
+    assert status.posture == "folded" and status.transport == "wifi" and status.screen_on and not status.locked
+    assert status.foreground == "com.app" and "SM-F971B" in status.text and status.android == "17"
+    assert len(calls) == 1 and link.boots == ["8d190673-68dc-4533-a5ac-f55a80c09663"]
+    assert scr.last_state and scr.last_state.package == "com.app"
     server.PhoneStatus.model_validate(status.model_dump())

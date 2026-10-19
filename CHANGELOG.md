@@ -6,6 +6,171 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-19
+
+### Security
+
+- Payment pages behind plain `https` links need `confirm=true` even when they open in the browser: revolut.me,
+  paypal.me, paypal.com/paypalme (and /checkoutnow, /donate), cash.app, lydia-app.com, lydia.me, buy/checkout/donate
+  .stripe.com, venmo.com, wise.com/pay, SumUp links, bunq.me, monzo.me (host and subdomains, any case).
+- Shutdown, reboot and reset intents (`ACTION_REQUEST_SHUTDOWN`, `REBOOT`, `MASTER_CLEAR`, `FACTORY_RESET` and vendor
+  variants with SHUTDOWN, REBOOT or WIPE in the action) need `confirm=true`.
+- A link that Android would send to one app is still checked against every app that could take it: a banking or
+  identity app among them is refused as before. Any component whose class name contains "Chooser" or "Resolver" is
+  treated as a chooser, not a final target (One UI answers `android/com.android.internal.app.ResolverActivity`).
+- Clipboard: fewer false alarms and fewer misses. `.`, `-` and `_` no longer count as password symbols, so file
+  names, versions, model numbers, plates and host names are shown; known key prefixes (`sk-`, `ghp_`, `github_pat_`,
+  `AKIA`, `xox…-`, `AIza`, `glpat-`…), JWTs, PEM blocks, long random hex or base64 tokens and short words mixing
+  letters with password punctuation (`!@#$%^&*+=?~`…) or three kinds of characters are hidden.
+- Forged messages: an SMS whose text contained `\nRow: 1 _id=999, type=2, body=…` could add a fake (even outgoing)
+  message to a conversation. The phone helper no longer returns the text output of `content`: it queries the
+  providers itself (same `ActivityManager` path as `content`) and serializes the cursor rows with length-prefixed
+  values (protocol `NXQ2`), decoded as such on the PC. On the `adb shell` fallback, a read is refused, and reported,
+  when its `Row: N` numbers do not run strictly from 0, exceed the requested `LIMIT`, or differ from the row count of
+  the same read reduced to `_id` (no free text). Columns are split along the requested projection, so a contact named
+  "Dupont, Jean" is no longer cut to "Dupont".
+- Predictable helper socket: each start draws a random 128-bit token, passed to `app_process`, part of the abstract
+  socket name and sent back in every answer. The PC refuses a server that does not return its token; a name already
+  taken is no longer considered normal (the PC relaunches with a new token, then falls back to `adb shell`). A
+  forward left by another process is adopted with its token instead of piling up.
+- Shared safeguards policy updated from `NexusHarness/shared`: post, reply, tweet, subscribe, free trial, book,
+  reserve, donate, answer and accept a call, dial, transfer and price buttons (`4,99 €`, `$12`) need `confirm=true`;
+  `plain_label` spells out €, $, £ and ¥ as eur, usd, gbp and jpy like the shared `plain`.
+- Security codes are now also masked in English, Spanish, German and Italian messages ("Use 482913 to sign in",
+  "Tu código: 482-913", "Ihr Bestätigungscode lautet 482913", "Il tuo codice è 482913", "Token: 482913", "log in",
+  "clave"), without masking dates (12/10/2026, 2026-10-12) or amounts followed by a currency (1 250 €).
+- A short swipe whose start and end fall inside the same clickable, non-scrollable element is judged as a tap, with
+  the strict safeguard (confirmation word, unnamed icon in a messaging app, nothing readable).
+- `files` on the PC side: keys, secrets and papers (`.ssh`, `.gnupg`, `.aws`, `.azure`, `.nexus`, `NexusSecure`,
+  `Administratif`, `.env` files) and the Windows Startup folders are never read or written, even with
+  `confirm=true`; outside Downloads, Documents, Desktop, Pictures and Videos (OneDrive included), `confirm=true` is
+  required. The real path (symlinks, `..`) is resolved before the check.
+- User back on the phone during a batch: before every gesture after the first, a light activity read
+  (`dumpsys power` filtered on the phone) stops the batch at once if the user touched the screen since the agent's last
+  gesture, and the report lists the steps already done. A one-gesture batch costs nothing more.
+- Screen kept on: the raised `screen_off_timeout` is now 5 minutes instead of 30 (Android counts it again from every
+  injected gesture; always longer than the idle delay). A server killed outright leaves the phone unlocked 5 minutes
+  at most. The 30-minute value set by older versions is still recognised and restored. During a long `look`-only
+  phase, more than 3 minutes after the last gesture or poke, a screen that is on gets `KEYCODE_WAKEUP` (no visible
+  effect, counted by Android as activity), recorded as an agent gesture, never as the user's touch.
+
+### Added
+
+- `look(marks=...)`: with `show=both`, the image carries small `[N]` badges (the element numbers of the list) at the
+  top-left of each element, with a thin outline of its bounds. `auto` (default) numbers every element when there are
+  21 or fewer, otherwise only the unnamed ones (icons without text or description); `all`; `none`. Drawn after the
+  security codes are blacked out (a badge only covers, never reveals), never on an image that is refused, and not
+  with `show=image` (no list for the numbers to refer to). About 4 ms for 80 elements on a Fold screenshot.
+- `clipboard(action="read"|"write", text)`: reads the phone's clipboard (security codes masked like messages; a lone
+  code, or a single word that looks like a password or a token, is never shown; says when it is empty or not text)
+  or sets it without pasting, through the same scrcpy server used to type accents (started for the call, stopped
+  after). Typing accents still gives the user their previous clipboard back.
+- `launch(action, data, extras, confirm)`: opens a precise screen (`android.settings.WIFI_SETTINGS`, a deep link,
+  extras as string, integer or boolean; `app` then limits the target to that app). The target is resolved first
+  (`cmd package resolve-activity`), started by its exact component, and reported with the foreground read back.
+  Calling, sending or paying directly (`CALL`, `RESPOND_VIA_MESSAGE`, uninstall and reset actions, payment actions
+  such as `org.chromium.intent.action.PAY`, `upi:`/`bitcoin:`/`payto:`… links, auto-send extras) needs
+  `confirm=true`; a banking, payment or identity app, as the resolved target or as one of the candidates of
+  Android's chooser, is refused even with `confirm=true`. `act open_url` refuses payment links without `confirm=true`
+  too.
+- Tests that tool descriptions, titles and schema descriptions contain no French, that offline errors and refusals
+  (phone absent, unknown target, step needing `confirm=true`, missing or invalid arguments, locked phone) are in
+  English, and that the instructions and descriptions never compare the server with other tools.
+
+- Typing accents and emoji without `install.ps1`: when the pinned scrcpy server (v5.0.1) is missing or altered, the
+  server downloads it once from the official Genymobile/scrcpy GitHub release into `~/.nexus/nexus-android/tools`,
+  checks it against the SHA-256 written in the code and writes it atomically. If the download fails or the digest
+  differs, the step fails with a message giving the URL, the expected digest and the folder; nothing is typed, and
+  the text is never transliterated.
+- Windows installer for the public repository (`install.ps1`): uv environment under `~\.nexus\nexus-android\venv`
+  (package copied, not editable), pinned scrcpy server, stdio registration with Codex (`~\.codex\config.toml`,
+  previous `nexus-android` table replaced, file backed up first) and Antigravity (`~\.gemini\config\mcp_config.json`,
+  backed up first) when they are installed, the `claude mcp add` command printed for Claude Code (no Claude CLI call),
+  then `test.ps1`. No OneDrive, daemon supervisor or author-specific path; `-NoRegister`, `-SkipTests`, `-Live`.
+- Python 3.12 and 3.13 support: `requires-python = ">=3.12"` (3.11 lacks the `type` statement); the CI runs
+  `test.ps1 -Python 3.12|3.13|3.14` on Windows. `test.ps1 -Python X.Y` keeps a separate test environment per version.
+- `server.json` lists `NEXUS_ANDROID_AWAKE_IDLE`.
+- `messages(before=...)`: reads older messages (or older conversations) from the ISO date given at the end of the
+  previous answer. Answers of `messages`, `notifications` and `files list` are capped at about 60,000 characters, cut
+  between two messages or lines, and say how to read the rest.
+- A call cancelled by the client (MCP `notifications/cancelled`, or the client disconnecting) stops the batch before
+  its next step, stops a `wait` step, and stops waiting for the phone.
+
+### Changed
+
+- Private installer: Antigravity now gets nexus-android as a plugin (`~\.gemini\config\plugins\nexus-android`, with
+  the skill and its own `mcp_config.json` pointing at the shared daemon with the token, written on the PC only), like
+  the other Nexus tools. The old entry in the global `mcp_config.json` is removed after a backup; the plugin is
+  enabled in `config.json` only while Antigravity is closed.
+- `look` in about 0.17 s instead of 3 s over Wi-Fi: the phone helper keeps one accessibility connection open and
+  returns the UI tree, the screenshot (JPEG made on the phone, already at the size sent to the agent) and the screen
+  state with the fold posture in one exchange, instead of `uiautomator dump`, `screencap` and several `dumpsys`. The
+  tree is read like `uiautomator dump` does (active window, visible nodes, bounds clipped to the display, same
+  attributes), so the element list, numbering, masking and refusals do not change; the target check before each
+  gesture uses it too. As with `uiautomator dump`, the tree waits for one second without accessibility events, but
+  only after a change: a still screen is read at once, and a screen that never settles (video) is read after 3 s
+  instead of failing. Read-only (no gesture, no global action); the user's accessibility services are not suspended.
+  The connection is released before any `uiautomator dump` fallback, after 45 s without a screen read, and right after a read of a protected (banking or identity) app, whose security SDKs watch for an active accessibility connection.
+- `phone`: model, Android version, boot id, fold posture and screen state are read in one shell command, and an
+  already known link is no longer searched again: 0.19 s instead of 0.34 to 0.42 s per call over Wi-Fi (1 adb round
+  trip instead of 4 or 5), 0.43 s instead of 0.51 to 0.57 s for the first call of a process.
+- `info(kind="location")`: phone clock and known positions in one shell command, `dumpsys location` filtered on the
+  phone: 0.11 to 0.15 s instead of 0.20 to 0.23 s.
+- The SIM country (used to compare numbers) is read once per phone for all the sessions of the shared daemon,
+  instead of once per session.
+- Tool descriptions, parameter descriptions and every message returned to the model (results, per-step reports,
+  refusals, errors, hints, warnings, element labels, phone, settings, info, files, messages and notifications
+  outputs) are now in English, with the same meaning and the same guardrails. Data patterns stay multilingual: the
+  shared safeguards file, keyword lists and regular expressions over screen text, SMS and notifications, Android UI
+  labels and bank app names; the safeguards file's French screen descriptions are translated by the server.
+
+- Quick start, `server.json` and client configs: `uvx nexus-android` (no more `--python 3.14`).
+- Classifiers: Python 3.12 to 3.14, Telephony and AI topics; the unrelated "Testing" topic and the license
+  classifier (redundant with the SPDX `license` field, PEP 639) removed.
+- README: absolute image and link URLs (the demo image was broken on PyPI); exact language of the server (everything
+  sent to the client in English); first-use download of the scrcpy server, and the one internet
+  request in Privacy; files left on the phone (helpers kept; UI dump and `nexus-q-*`/`nexus-p-*` read folders deleted
+  after each read) and a cleanup command that removes them all (`rm -rf /data/local/tmp/nexus-*`); public installer;
+  shared daemon (`--http`, token, limits); warning that `adb tcpip 5555` is not encrypted; Performance section.
+- `SECURITY.md`: what the daemon token does and does not protect against (local malware can use the ADB server on
+  port 5037, which has no authentication), the phone helper's shell/root-only peer check and per-launch token, and
+  the unencrypted `adb tcpip` mode.
+- Shared policy file (`garde-fous.json`): comments made neutral (no names); no pattern or value changed. The public
+  copy is embedded by the export with its SHA-256 (`vendored.sha256`), checked by a public CI workflow.
+- Finding the phone over Wi-Fi: the last known address is tried first, then mDNS; the port scan runs only when the
+  PC is on the same /24 network, checks each open port with an ADB handshake (`CNXN` answered by `CNXN`, `AUTH` or
+  `STLS`) and tries 4 ports at most. A failed search is remembered for 120 s (a USB cable is still seen at once), and
+  the screen-awake timer never scans.
+- `launch` resolves the launcher activity (`cmd package resolve-activity`) and starts it with `am start -n`, `monkey`
+  only as a fallback; the package list is cached for 60 s; the foreground app is polled every 0.25 s (5 s at most)
+  instead of a fixed 2 s wait. `draft` polls the same way instead of waiting 2.5 s.
+- The phone helper answers an error when a batch of reads takes more than 8 s (under the PC's 10 s, so a hung
+  provider is reported as such, not as a lost link) and cancels the hung read, instead of blocking one of its 8
+  threads for good.
+- `Element.scrollable` is a typed field; the tap-like swipe check no longer relies on a French state label.
+- MCP annotations: `files` is no longer idempotent (a repeated pull creates `name (1)`, `name (2)`) nor destructive
+  (it never deletes or overwrites); `checkup` is destructive and not idempotent (`clean=true` clears caches).
+
+### Fixed
+
+- Wi-Fi lost during a read: about 3 minutes of waiting (60 s, three 30 s retries, then the `adb shell` fallback).
+  Now a helper read waits 10 s at most and state reads 5 s; a link error goes up at once instead of falling back;
+  after a timeout a Wi-Fi transport is dropped from adb and the next call looks for the phone again.
+- The in-process lock of the shared daemon waited forever; it now gives up after 30 s with "phone busy", like the
+  lock shared between servers.
+- A refused step no longer marks the time of the agent's last gesture (a touch by the user just before could pass for
+  the agent's at the next batch); only a gesture really sent does.
+- `x,y` targets accept the `@540,1100` form printed by `look`.
+- `checkup`: a short, empty or wrapped `df` output no longer crashes it; apps installed by hand (`installer=null`)
+  are now listed as outside the stores.
+- `settings brightness`: an unset (`null`) brightness no longer crashes the read; a non-numeric value for
+  brightness or volume is refused instead of being read as 0.
+- WhatsApp drafts no longer assume +33: the country code comes from the SIM card (`gsm.sim.operator.iso-country`,
+  else the network's), with the national prefix of that country (libphonenumber table). Unknown country and a number
+  without country code: refused with a clear message. Phone numbers are compared in the SIM country's national
+  format.
+- `phone/build.ps1` works when the helper compiles to a single class file.
+
 ## [0.6.2] - 2026-10-19
 
 ### Changed
@@ -26,7 +191,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.6.0] - 2026-10-19
 
-### Performance
+### Changed
 
 - Message, contact, call log and calendar reads no longer start a Java process on the phone for each `content
   query` (about 1 s per wave of queries). At the first read the server pushes a 7 KB helper
@@ -38,6 +203,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   Fold over USB: conversation list 3.1 s → 0.07 s (0.14 s from a fresh process, 0.73 s when the helper must first
   be pushed and started), one conversation 2.1 s → 0.03 s.
 - One port forward per phone, reused by every process and after a daemon restart.
+- `install.ps1` no longer writes `[mcp_servers.nexus-android]` to Codex's `config.toml`: Codex gets the server from a
+  personal Codex plugin.
 
 ### Security
 
@@ -47,10 +214,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   old helper is never taken for the current one; older ones are stopped and removed.
 - If the helper cannot be started or answers badly, reads fall back to the 0.5 method (`adb shell`), with the same
   output and the same masking of security codes, and the helper is retried a minute later.
-
-### Changed (Codex plugin, 2026-10-19)
-- `install.ps1` no longer writes `[mcp_servers.nexus-android]` to Codex's `config.toml`: Codex gets the server from a
-  personal Codex plugin.
 
 ## [0.5.1] - 2026-10-19
 
@@ -64,7 +227,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.5.0] - 2026-10-19
 
-### Performance
+### Changed
 
 - `messages()` is about 5 times faster. Every `content query` starts a Java process on the phone (about 1 s), and
   the tool used to run them one after another: 34 for the conversation list, 7 to 11 per conversation. Queries now
@@ -74,26 +237,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   conversation list 35 s → 4.6 s (3.1 s with names cached), one conversation 7-11 s → 2.1 s, with 4 images
   11.6 s → 3.3 s, by contact name 11.4 s → 4.3 s. Output is byte-for-byte identical, security codes still masked.
 - `info(kind="calls")` reads only the last N calls and resolves their names in one exchange.
+- `install.ps1` no longer registers the server with Claude Code and never calls a Claude CLI: Claude Code gets
+  `nexus-android` from a Claude Code plugin (shared daemon URL, token read from an environment variable).
+- Repository renamed to `pironjulien/NexusAndroid`; GitHub redirects the old address.
+- Published on PyPI (`nexus-android`) and in the official MCP registry (`io.github.pironjulien/nexus-android`);
+  the quick start installs with `uvx --python 3.14 nexus-android`.
 
 ### Security
 
 - Shared policy (`garde-fous.json`) synced with NexusHarness: "reset" needs `confirm=true` only for the whole device
   ("Réinitialiser le téléphone", "Réinitialisation d'usine"); other "Réinitialiser…" buttons inside an app are free.
 
-### Changed (Claude Code plugin, 2026-10-19)
-- `install.ps1` no longer registers the server with Claude Code and never calls a Claude CLI: Claude Code gets
-  `nexus-android` from a Claude Code plugin (shared daemon URL, token read from an environment variable).
-
 ### Fixed
 
 - `install.ps1`: without `claude` on the PATH, Claude Code was skipped on a new PC. Falls back to the `claude.exe`
   shipped with the Claude desktop app, like NexusClaude and NexusBrowser.
-
-### Changed
-
-- Repository renamed to `pironjulien/NexusAndroid`; GitHub redirects the old address.
-- Published on PyPI (`nexus-android`) and in the official MCP registry (`io.github.pironjulien/nexus-android`);
-  the quick start installs with `uvx --python 3.14 nexus-android`.
 
 ### Added
 
@@ -166,7 +324,6 @@ Prepared for the first release on PyPI and the official MCP registry.
 - `glama.json` (maintainer claim on Glama).
 - README: Privacy section (what is read, where it goes, what is stored, how to remove it); absolute image and file
   links so the README also renders on PyPI.
-
 - README: quick start with a one-line `uvx` install straight from GitHub, Codex and JSON client configs, example
   prompts, architecture diagram, badges and banner.
 - GitHub Actions workflow running `test.ps1` on Windows; `SECURITY.md` with private reporting.
@@ -304,4 +461,12 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[0.3.1]: https://github.com/pironjulien/android-computer-use/releases/tag/v0.3.1
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.7.0
+[0.6.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.6.2
+[0.6.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.6.1
+[0.6.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.6.0
+[0.5.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.5.1
+[0.4.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.4.1
+[0.4.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.4.0
+[0.3.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.3.1

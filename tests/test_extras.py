@@ -3,6 +3,7 @@ position, réglages. adb simulé : aucun vrai téléphone."""
 
 from __future__ import annotations
 
+import hashlib
 import socket
 import struct
 import threading
@@ -40,7 +41,7 @@ def test_gesture_cut_by_link_loss_is_unknown_not_failed(phone, monkeypatch):
 
     monkeypatch.setattr(phone, "run", run)
     out = act(Step(do="tap", target="Bouton"), Step(do="tap", target="Bouton"))
-    assert out.startswith("? 1.") and "effet inconnu" in out and "2." not in out
+    assert out.startswith("? 1.") and "unknown effect" in out and "2." not in out
 
 
 def test_offline_wifi_link_is_reconnected(monkeypatch, tmp_path):
@@ -86,7 +87,7 @@ def test_coordinates_refused_after_fold_change(phone, monkeypatch):
     server.SCREEN.posture = "CLOSED"  # type: ignore[union-attr]
     monkeypatch.setattr(server.SCREEN, "current_posture", lambda: "OPENED")
     out = act(Step(do="tap", target="100,100"))
-    assert out.startswith("✗ 1.") and "plié ou déplié" in out
+    assert out.startswith("✗ 1.") and "folded or unfolded" in out
     assert not phone.inputs
     # Un texte visé est relu sur l'écran actuel : permis.
     assert act(Step(do="tap", target="Bouton")).startswith("~ 1.")
@@ -100,7 +101,7 @@ def test_no_gesture_while_owner_uses_phone(phone, monkeypatch):
     monkeypatch.setattr(server, "_LAST_INPUT", 0.0)
     monkeypatch.setattr(server.awake, "idle_on_phone", lambda adb: 0.5)
     phone.uis = [ui(node("Bouton", (0, 0, 500, 200)))]
-    with pytest.raises(PhoneError, match="L'utilisateur se sert du téléphone"):
+    with pytest.raises(PhoneError, match="The user is using the phone right now"):
         act(Step(do="tap", target="Bouton"))
     assert not phone.inputs
 
@@ -129,7 +130,7 @@ def test_pasted_but_clipboard_not_restored_is_not_a_failure(phone, monkeypatch):
     monkeypatch.setattr(clip, "paste", lambda adb, text: False)
     phone.uis = [ui(field()), ui(field("été"))]
     out = act(Step(do="type", text="été"))
-    assert out.startswith("✓ 1.") and "presse-papiers de l'utilisateur non remis" in out
+    assert out.startswith("✓ 1.") and "the user's clipboard was not restored" in out
 
 
 def test_link_lost_while_typing_ascii_stays_unknown(phone, monkeypatch):
@@ -145,10 +146,68 @@ def test_link_lost_while_typing_ascii_stays_unknown(phone, monkeypatch):
     assert act(Step(do="type", text="bonjour")).startswith("? 1.")
 
 
+REAL_FETCH = clip._fetch  # pris avant la fixture no_download de conftest
+
+
+def _pin(monkeypatch, data: bytes) -> None:
+    monkeypatch.setattr(clip, "SHA256", hashlib.sha256(data).hexdigest())
+
+
+def test_scrcpy_server_downloaded_once_then_reused(monkeypatch):
+    fetched = []
+    _pin(monkeypatch, b"serveur")
+    monkeypatch.setattr(clip, "_fetch", lambda url: fetched.append(url) or b"serveur")
+    assert clip.ensure_local().read_bytes() == b"serveur"
+    assert clip.ensure_local() == clip.LOCAL
+    assert fetched == [clip.URL]
+    assert clip.URL == f"https://github.com/Genymobile/scrcpy/releases/download/v{clip.VERSION}/scrcpy-server-v{clip.VERSION}"
+    assert not list(clip.LOCAL.parent.glob("*.part"))
+
+
+def test_scrcpy_download_with_wrong_digest_is_rejected(monkeypatch):
+    _pin(monkeypatch, b"serveur")
+    monkeypatch.setattr(clip, "_fetch", lambda url: b"autre chose")
+    with pytest.raises(PhoneError, match="expected hash"):
+        clip.ensure_local()
+    assert not clip.LOCAL.exists() or not list(clip.LOCAL.parent.iterdir())
+
+
+def test_altered_local_copy_is_downloaded_again(monkeypatch):
+    _pin(monkeypatch, b"serveur")
+    clip.LOCAL.parent.mkdir(parents=True)
+    clip.LOCAL.write_bytes(b"altere")
+    monkeypatch.setattr(clip, "_fetch", lambda url: b"serveur")
+    assert clip.ensure_local().read_bytes() == b"serveur"
+
+
+def test_download_is_size_bounded(monkeypatch):
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, n: int) -> bytes:
+            return b"x" * n
+
+    monkeypatch.setattr(clip.urllib.request, "urlopen", lambda url, timeout: Response())
+    with pytest.raises(OSError, match="KB"):
+        REAL_FETCH(clip.URL)
+
+
+def test_accents_without_scrcpy_server_fail_clearly_and_type_nothing(phone):
+    phone.uis = [ui(field()), ui(field())]
+    out = act(Step(do="type", text="Réponse été"))
+    assert out.startswith("✗ 1.") and "nothing was typed" in out and clip.URL in out and "install.ps1" in out
+    assert not phone.inputs  # pas de translittération : aucun autre texte tapé à la place
+    assert not any(c[0] == "push" for c in phone.calls)
+
+
 def test_password_field_still_refused_for_accents(phone, monkeypatch):
     monkeypatch.setattr(clip, "paste", lambda adb, text: pytest.fail("collé dans un mot de passe"))
     phone.uis = [ui(field(password=True))]
-    assert "mot de passe" in act(Step(do="type", text="été"))
+    assert "password field" in act(Step(do="type", text="été"))
 
 
 def _serve(handler):
@@ -240,7 +299,7 @@ def test_notifications_parse_mask_and_filter():
     notices, dismissed = extras.parse_notifications(DUMP)
     assert [n.package for n in notices] == ["com.google.android.apps.messaging", "com.microsoft.appmanager"]
     assert notices[0].text.endswith("(ne le communiquez pas)")
-    assert "482913" not in notices[0].line() and "[code masqué]" in notices[0].line()
+    assert "482913" not in notices[0].line() and "[masked code]" in notices[0].line()
     assert notices[1].ongoing and not notices[0].ongoing
     assert dismissed == ["com.whatsapp", "com.whatsapp"]
 
@@ -249,7 +308,7 @@ def test_notifications_parse_mask_and_filter():
             return DUMP
 
     out = extras.notifications(Fake(), all_=False)  # type: ignore[arg-type]
-    assert "PC-BUREAU" not in out and "1 permanentes masquées" in out and "com.whatsapp ×2" in out
+    assert "PC-BUREAU" not in out and "1 ongoing hidden" in out and "com.whatsapp ×2" in out
     assert "PC-BUREAU" in extras.notifications(Fake(), all_=True)  # type: ignore[arg-type]
 
 
@@ -282,9 +341,89 @@ def test_push_never_overwrites(tmp_path):
             Fake.pushed = True
             return ""
 
-    with pytest.raises(PhoneError, match="existe déjà"):
-        extras.push(Fake(), str(local))  # type: ignore[arg-type]
+    with pytest.raises(PhoneError, match="already exists"):
+        extras.push(Fake(), str(local), confirm=True)  # type: ignore[arg-type]
     assert not Fake.pushed
+
+
+@pytest.fixture
+def home(monkeypatch, tmp_path):
+    """Profil Windows simulé : dossiers usuels, dossier Démarrage et OneDrive sous tmp_path."""
+    user = tmp_path / "user"
+    for name in ("Downloads", "Documents", ".ssh", "OneDrive/Documents/Administratif", "OneDrive/Documents/NexusSecure",
+                 "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup", "Projets"):
+        (user / name).mkdir(parents=True)
+    monkeypatch.setenv("USERPROFILE", str(user))
+    monkeypatch.setenv("HOME", str(user))
+    monkeypatch.setenv("OneDrive", str(user / "OneDrive"))
+    monkeypatch.setenv("APPDATA", str(user / "AppData" / "Roaming"))
+    monkeypatch.delenv("OneDriveConsumer", raising=False)
+    monkeypatch.delenv("OneDriveCommercial", raising=False)
+    monkeypatch.setattr(extras, "PC_INBOX", user / "Downloads" / "Telephone")
+    return user
+
+
+class FilesPhone:
+    def __init__(self) -> None:
+        self.hosts: list[tuple[str, ...]] = []
+
+    def run(self, *argv, **kw):
+        return 1, "", ""
+
+    def shell(self, *argv, **kw):
+        return ""
+
+    def host(self, *argv, **kw):
+        self.hosts.append(argv)
+        return ""
+
+
+def test_sensitive_pc_paths_refused_even_with_confirm(home):
+    startup = home / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+    secrets = [home / ".ssh" / "id_ed25519", home / "Projets" / ".env", home / "Projets" / ".env.local",
+               home / "OneDrive/Documents/NexusSecure/cle.txt", home / "OneDrive/Documents/Administratif/impots.pdf",
+               startup / "x.lnk", home / "Downloads" / ".." / ".ssh" / "config", home / ".aws" / "credentials",
+               home / ".nexus" / "jeton"]
+    phone = FilesPhone()
+    for path in secrets:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("secret")
+        with pytest.raises(PhoneError, match="sensitive path"):
+            extras.push(phone, str(path), confirm=True)  # type: ignore[arg-type]
+    for folder in (home / ".ssh", startup, home / "Downloads" / ".." / ".gnupg"):
+        with pytest.raises(PhoneError, match="sensitive path"):
+            extras.pull(phone, "Download/a.txt", str(folder), confirm=True)  # type: ignore[arg-type]
+    with pytest.raises(PhoneError, match="sensitive path"):  # fichier .env rapatrié
+        extras.pull(phone, "Download/.env", str(home / "Downloads"), confirm=True)  # type: ignore[arg-type]
+    assert phone.hosts == [] and not (home / ".gnupg").exists()
+
+
+def test_symlink_to_a_sensitive_folder_is_resolved(home):
+    link = home / "Downloads" / "raccourci"
+    try:
+        link.symlink_to(home / ".ssh", target_is_directory=True)
+    except OSError:
+        pytest.skip("liens symboliques non permis sur ce poste")
+    with pytest.raises(PhoneError, match="sensitive path"):
+        extras.pull(FilesPhone(), "Download/a.txt", str(link), confirm=True)  # type: ignore[arg-type]
+
+
+def test_unusual_pc_paths_need_confirm(home):
+    phone = FilesPhone()
+    other = home / "Projets" / "photo.jpg"
+    other.write_bytes(b"x")
+    with pytest.raises(PhoneError, match="confirm=true"):
+        extras.push(phone, str(other))  # type: ignore[arg-type]
+    with pytest.raises(PhoneError, match="confirm=true"):
+        extras.pull(phone, "Download/a.txt", str(home / "Projets"))  # type: ignore[arg-type]
+    assert phone.hosts == []
+    assert extras.push(phone, str(other), confirm=True).startswith("Copied to the phone")  # type: ignore[arg-type]
+    usual = home / "Documents" / "cv.pdf"
+    usual.write_bytes(b"x")
+    assert extras.push(phone, str(usual)).startswith("Copied to the phone")  # type: ignore[arg-type]
+    assert extras.pull(phone, "Download/a.txt").startswith("Copied to the PC")  # type: ignore[arg-type]  # ~/Downloads/Telephone
+    assert extras.pull(phone, "Download/b.txt", str(home / "OneDrive" / "Documents")).startswith("Copied to the PC")  # type: ignore[arg-type]
+    assert [h[0] for h in phone.hosts] == ["push", "push", "pull", "pull"]
 
 
 def test_location_picks_fresh_precise_fix():
@@ -303,13 +442,13 @@ def test_wifi_off_refused_on_wifi_link():
             Fake.calls.append(argv)
             return "1"
 
-    with pytest.raises(PhoneError, match="couperait la liaison"):
+    with pytest.raises(PhoneError, match="would cut the link"):
         extras.setting(Fake(), "wifi", "off", "wifi")  # type: ignore[arg-type]
     assert not [c for c in Fake.calls if c[0] == "svc"]
 
 
 def test_volume_parse():
-    assert extras._volume("volume is 5 in range [0..15]") == (0, 15, "33 % (médias)")
+    assert extras._volume("volume is 5 in range [0..15]") == (0, 15, "33 % (media)")
 
 
 @pytest.fixture

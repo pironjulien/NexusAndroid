@@ -1,18 +1,23 @@
 [project]
 name = "nexus-android"
-version = "0.6.2"
+version = "0.7.0"
 description = "Android computer use for AI agents over ADB: one MCP server shared by Claude Code, Codex and Antigravity"
 authors = [{ name = "Julien Piron" }]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 keywords = ["mcp", "mcp-server", "android", "adb", "computer-use", "ai-agents", "claude", "codex", "antigravity"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Developers",
     "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "Topic :: Software Development :: Testing",
+    "Topic :: Communications :: Telephony",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
     "mcp>=2.3.0",
@@ -41,7 +46,7 @@ dev = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py314"
+target-version = "py312"
 cache-dir = "~/.nexus/nexus-android/cache/ruff"
 
 [tool.ruff.lint]
@@ -50,7 +55,7 @@ ignore = ["E501", "E731"]
 
 [tool.pyright]
 include = ["src", "tests"]
-pythonVersion = "3.14"
+pythonVersion = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

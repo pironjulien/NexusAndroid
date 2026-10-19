@@ -3,7 +3,7 @@
   "name": "io.github.pironjulien/nexus-android",
   "title": "NexusAndroid",
   "description": "Android computer use over plain ADB: screen, gestures, SMS, notifications, files. No root, no app.",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "websiteUrl": "https://julienpiron.fr/nexusandroid/",
   "repository": {
     "url": "https://github.com/pironjulien/NexusAndroid",
@@ -14,15 +14,8 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "nexus-android",
-      "version": "0.6.2",
+      "version": "0.7.0",
       "runtimeHint": "uvx",
-      "runtimeArguments": [
-        {
-          "type": "named",
-          "name": "--python",
-          "value": "3.14"
-        }
-      ],
       "transport": {
         "type": "stdio"
       },
@@ -45,6 +38,13 @@
           "isRequired": false,
           "format": "string",
           "default": "1"
+        },
+        {
+          "name": "NEXUS_ANDROID_AWAKE_IDLE",
+          "description": "Seconds without any gesture before the original screen timeout is restored and the screen turned off",
+          "isRequired": false,
+          "format": "number",
+          "default": "120"
         }
       ]
     }

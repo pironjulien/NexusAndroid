@@ -9,7 +9,7 @@ import time
 import pytest
 
 from nexus_android import server
-from nexus_android.awake import RAISED, KeepAwake
+from nexus_android.awake import IDLE_SH, RAISED, KeepAwake
 from nexus_android.screen import STATE_SH, Screen
 from nexus_android.server import Step
 
@@ -35,8 +35,8 @@ class Phone:
         if argv[:3] == ("settings", "put", "system"):
             self.timeout = int(argv[4])
             return 0, "", ""
-        if argv[:2] == ("dumpsys", "power"):
-            return 0, f"mWakefulness=Awake\nlastUserActivityTime=123 ({self.idle_ms} ms ago)\n", ""
+        if argv[:2] == ("sh", "-c") and argv[2] == IDLE_SH:
+            return 0, f"  lastUserActivityTime=123 ({self.idle_ms} ms ago)\n", ""
         if argv[:2] == ("dumpsys", "window"):
             lock = "isKeyguardShowing=true" if self.locked else "isKeyguardShowing=false"
             return 0, lock + "\n  mCurrentFocus=Window{abc u0 com.app/x.Main}", ""
@@ -126,7 +126,7 @@ def test_restore_after_idle_then_sleep(awake_state):
     assert k.restore() is None and phone.timeout == RAISED and 0 < (k.due() or 0) <= 1
     clock.now += 2
     assert k.due() == 0
-    assert "écran éteint" in (k.restore() or "")
+    assert "screen turned off" in (k.restore() or "")
     assert phone.timeout == 30000 and phone.slept
     assert k.state()["active"] is False and k.due() is None
     assert k.restore() is None  # une seule restauration
@@ -139,7 +139,7 @@ def test_restore_leaves_screen_to_owner_while_in_use(awake_state):
     k.touch()
     clock.now += 300
     phone.idle_ms = 4000  # l'utilisateur a touché l'écran il y a 4 s
-    assert "laissé à l'utilisateur" in (k.restore() or "")
+    assert "screen left to the user" in (k.restore() or "")
     assert phone.timeout == 30000 and not phone.slept
 
 
@@ -167,7 +167,7 @@ def test_startup_restores_expired_session(awake_state, served):
     keeper(phone, Clock(time.time() - 600), awake_state).touch()  # écrite par un serveur disparu il y a 10 min
     data = json.loads(awake_state.read_text(encoding="utf-8"))
     awake_state.write_text(json.dumps({**data, "pid": 999999}), encoding="utf-8")
-    assert "écran éteint" in (server._check_idle() or "")
+    assert "screen turned off" in (server._check_idle() or "")
     assert phone.timeout == 30000 and phone.slept
 
 
@@ -195,4 +195,4 @@ def test_exit_restores_own_session(awake_state, served):
 def test_phone_status_says_until_when(awake_state):
     phone = Phone(30000)
     keeper(phone, Clock(time.time()), awake_state).touch()
-    assert re.fullmatch(r" · écran gardé allumé jusqu'à \d\d:\d\d", server._awake_note(phone))  # type: ignore[arg-type]
+    assert re.fullmatch(r" · screen kept on until \d\d:\d\d", server._awake_note(phone))  # type: ignore[arg-type]

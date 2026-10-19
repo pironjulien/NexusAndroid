@@ -137,7 +137,7 @@ def test_guard_on_every_targeted_step(phone):
 def test_swipe_from_sensitive_point_and_on_the_spot(phone):
     phone.uis = [ui(node("Payer 12 €", (0, 0, 500, 200)), node("Liste", (0, 400, 1080, 1600), clickable=False))]
     assert "confirm=true" in act(Step(do="swipe", target="100,100", to="100,1500"))
-    assert "rien de lisible" in act(Step(do="swipe", target="1000,1900", to="1005,1905"))  # appui déguisé
+    assert "nothing readable" in act(Step(do="swipe", target="1000,1900", to="1005,1905"))  # appui déguisé
     assert act(Step(do="swipe", target="500,1500", to="500,500")).startswith("~")
     assert act(Step(do="swipe", target="1000,1900", to="1000,1000")).startswith("~")  # vrai glissé, zone vide
     assert len(phone.inputs) == 2
@@ -158,7 +158,7 @@ def test_keys_closed_list(phone):
 def test_newline_in_type_needs_confirmation(phone):
     phone.uis = [ui(field())]
     for text in ("ok\nmerci", "ok\r"):
-        assert "Entrée" in act(Step(do="type", text=text))
+        assert "Enter key" in act(Step(do="type", text=text))
     assert phone.inputs == []
     act(Step(do="type", text="ok\nmerci", confirm=True))
     assert phone.inputs == [("input", "text", "ok"), ("input", "keyevent", "KEYCODE_ENTER"), ("input", "text", "merci")]
@@ -170,7 +170,7 @@ def test_newline_in_type_needs_confirmation(phone):
 def test_index_revalidated_on_current_screen(phone):
     look(phone, node("Archiver", (0, 0, 500, 200)), node("Ouvrir", (0, 300, 500, 500)))
     phone.uis = [ui(node("Supprimer", (0, 0, 500, 200)), node("Ouvrir", (0, 300, 500, 500)))]
-    assert "refais look" in act(Step(do="tap", target="[1]"))
+    assert "run look again" in act(Step(do="tap", target="[1]"))
     assert phone.inputs == []
     phone.uis = [ui(node("Ouvrir", (0, 310, 500, 510)))]  # même élément, à peine déplacé
     assert act(Step(do="tap", target="[2]")).startswith("~")
@@ -182,9 +182,9 @@ def test_point_judged_on_current_screen(phone):
     phone.uis = [ui(node("Payer", (0, 0, 500, 200)))]
     assert "confirm=true" in act(Step(do="tap", target="100,100"))
     phone.uis = [ui(node("Payer", (0, 0, 500, 200)))]
-    assert "rien de lisible" in act(Step(do="tap", target="900,1900"))
+    assert "nothing readable" in act(Step(do="tap", target="900,1900"))
     phone.uis = [""]  # arbre UI illisible
-    assert "rien de lisible" in act(Step(do="tap", target="100,100"))
+    assert "nothing readable" in act(Step(do="tap", target="100,100"))
     assert phone.inputs == []
     assert act(Step(do="tap", target="100,100", confirm=True)).startswith("~")
 
@@ -205,7 +205,7 @@ def test_lock_between_processes(tmp_path):
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
     try:
         assert holder.stdout and holder.stdout.readline().strip() == "pris"
-        with pytest.raises(PhoneError, match=r"occupé.*processus \d+"):
+        with pytest.raises(PhoneError, match=r"busy.*process \d+"):
             with PhoneLock(path, wait=0.3):
                 pass
     finally:
@@ -264,7 +264,7 @@ def test_connect_refuses_other_devices(monkeypatch, tmp_path):
     state = {"serialno": "RFTEST00001", "usb": "RFTEST00001", "address": "192.0.2.67:33915"}
     path = fake_adb(monkeypatch, tmp_path, "emulator-5554 device model:sdk\n192.0.2.30:5555 device model:TV\n",
                     {"emulator-5554": "EMULATOR", "192.0.2.30:5555": "TVBOX"}, state)
-    with pytest.raises(PhoneError, match="RFTEST00001.*introuvable"):
+    with pytest.raises(PhoneError, match="RFTEST00001.*not found"):
         adb_mod.Adb().connect()
     assert json.loads(path.read_text(encoding="utf-8")) == state
 
@@ -281,7 +281,7 @@ def test_connect_wifi_only_if_same_phone(monkeypatch, tmp_path):
     state = {"serialno": "RFTEST00001", "address": "192.0.2.67:33915"}
     path = fake_adb(monkeypatch, tmp_path, "192.0.2.67:40000 device model:SM_F971B\n",
                     {"192.0.2.67:40000": "AUTRE"}, state)
-    with pytest.raises(PhoneError, match="introuvable"):
+    with pytest.raises(PhoneError, match="not found"):
         adb_mod.Adb().connect()
     assert json.loads(path.read_text(encoding="utf-8")) == state
     path = fake_adb(monkeypatch, tmp_path, "192.0.2.67:40000 device model:SM_F971B\n",
@@ -292,7 +292,7 @@ def test_connect_wifi_only_if_same_phone(monkeypatch, tmp_path):
 
 def test_connect_first_pairing_needs_usb(monkeypatch, tmp_path):
     fake_adb(monkeypatch, tmp_path, "192.0.2.30:5555 device model:TV\n", {"192.0.2.30:5555": "TVBOX"}, None)
-    with pytest.raises(PhoneError, match="pas encore enregistré"):
+    with pytest.raises(PhoneError, match="not registered on this PC yet"):
         adb_mod.Adb().connect()
 
 
@@ -304,13 +304,13 @@ def test_protected_app_of_targeted_element(phone):
     assert act(Step(do="tap", target="Notes")).startswith("~")  # autre moitié de l'écran partagé : permis
     phone.calls.clear()
     report = act(Step(do="tap", target="100,100", confirm=True))
-    assert "Revolut" in report and "jamais par l'agent" in report and phone.inputs == []
+    assert "Revolut" in report and "never by the agent" in report and phone.inputs == []
 
 
 def test_unknown_foreground_app(phone):
     phone.package = ""
     phone.uis = [ui(node("Ouvrir", (0, 0, 500, 200)))]
-    assert "inconnue" in act(Step(do="tap", target="Ouvrir"))
+    assert "foreground app unknown" in act(Step(do="tap", target="Ouvrir"))
     assert act(Step(do="key", keys="home")).startswith("~")
     assert act(Step(do="tap", target="Ouvrir", confirm=True)).startswith("~")
 
@@ -330,15 +330,15 @@ def test_protected_packages_and_pattern():
 
 
 def test_mask_codes_more_cases():
-    assert mask_codes("Votre code est 482913, valable 10 min") == "Votre code est [code masqué], valable 10 min"
-    assert mask_codes("Code de validation : A7K9P2") == "Code de validation : [code masqué]"
-    assert mask_codes("Votre OTP : 123456789") == "Votre OTP : [code masqué]"
+    assert mask_codes("Votre code est 482913, valable 10 min") == "Votre code est [masked code], valable 10 min"
+    assert mask_codes("Code de validation : A7K9P2") == "Code de validation : [masked code]"
+    assert mask_codes("Votre OTP : 123456789") == "Votre OTP : [masked code]"
     assert "4829" not in mask_codes("PIN 4829")
     assert "482913" not in mask_codes("Utilisez 482913 pour la vérification de connexion")
     assert "77AB12" not in mask_codes("security code 77AB12")
     assert mask_codes("Code promo : 20 % sur 1 250,00 €") == "Code promo : 20 % sur 1 250,00 €"
     assert mask_codes("Rendez-vous à 1830 près du A12") == "Rendez-vous à 1830 près du A12"
-    assert mask_codes("482913", context=True) == "[code masqué]"
+    assert mask_codes("482913", context=True) == "[masked code]"
 
 
 def test_notification_body_masked_by_title():
@@ -347,7 +347,7 @@ def test_notification_body_masked_by_title():
         Element(2, "TextView", "482913", "", "text", "com.android.systemui", (0, 170, 900, 230), False),
         Element(3, "TextView", "Batterie 2048 mAh", "", "", "com.android.systemui", (0, 1500, 900, 1560), False),
     ])
-    assert elements[1].text == "[code masqué]" and elements[1].masked
+    assert elements[1].text == "[masked code]" and elements[1].masked
     assert elements[2].text == "Batterie 2048 mAh" and not elements[2].masked
 
 
@@ -356,9 +356,9 @@ def test_mask_before_query_wait_target_and_image(phone):
     body = node("482913", (0, 170, 900, 230), clickable=False)
     phone.uis = [ui(title, body)]
     text = server._view("elements", query="482913")[0]
-    assert "482913" not in text and "aucun élément" in text
+    assert "482913" not in text and "no readable element" in text
     assert "absent" in act(Step(do="wait", text="482913", timeout=0.05))
-    assert "introuvable" in act(Step(do="tap", target="482913"))
+    assert "not found" in act(Step(do="tap", target="482913"))
     image = PILImage.open(io.BytesIO(server._view("image")[1].data)).convert("RGB")
     scale = image.width / W
 
@@ -376,21 +376,21 @@ def test_mask_before_query_wait_target_and_image(phone):
 
 def test_type_checks_focused_field(phone):
     phone.uis = [ui(field(password=True))]
-    assert "mot de passe" in act(Step(do="type", text="secret"))
+    assert "password field" in act(Step(do="type", text="secret"))
     phone.uis = [ui(field(focused=False))]
-    assert "aucun champ" in act(Step(do="type", text="abc"))
+    assert "no active input field" in act(Step(do="type", text="abc"))
     phone.uis = [ui(field(focused=False), field(password=True, focused=True, bounds=(0, 0, 500, 100)))]
-    assert "mot de passe" in act(Step(do="type", text="abc", confirm=True))
+    assert "password field" in act(Step(do="type", text="abc", confirm=True))
     assert phone.inputs == []
 
 
 def test_unknown_lock_state_refuses_typing(phone):
     phone.lock = "rien de lisible"
     phone.uis = [ui(field())]
-    assert "verrouillage illisible" in act(Step(do="type", text="abc", confirm=True))
-    assert "verrouillage illisible" in act(Step(do="tap", target="0,1750"))
+    assert "lock state unreadable" in act(Step(do="type", text="abc", confirm=True))
+    assert "lock state unreadable" in act(Step(do="tap", target="0,1750"))
     phone.lock = "mIsShowing=true"
-    assert "verrouillé" in act(Step(do="tap", target="0,1750", confirm=True))
+    assert "Phone locked" in act(Step(do="tap", target="0,1750", confirm=True))
     assert phone.inputs == []
     assert act(Step(do="key", keys="home")).startswith("~")
 
@@ -432,14 +432,14 @@ def test_type_reports_only_what_was_sent(phone):
 
     phone.run = failing  # type: ignore[method-assign]
     report = act(Step(do="type", text="a%sb"))
-    assert report.startswith("✗") and "2 caractère(s) sur 4" in report
+    assert report.startswith("✗") and "2 of 4 character(s) typed" in report
 
 
 def test_type_verified_only_when_reread(phone):
     phone.uis = [ui(field()), ui(field("bonjour"))]
     assert act(Step(do="type", text="bonjour")).startswith("✓")
     phone.uis = [ui(field()), ui(field(""))]
-    assert act(Step(do="type", text="bonjour")).startswith("~ 1. 7 caractères envoyés, non relus")
+    assert act(Step(do="type", text="bonjour")).startswith("~ 1. 7 characters sent, not read back")
 
 
 # ---------------------------------------------------------------- 9. faux succès
@@ -451,7 +451,7 @@ def test_failed_launch_and_open_url_reported(phone):
     original = phone.run
     phone.run = lambda *a, timeout=30.0: (0, "package:com.whatsapp\n", "") if a[:2] == ("pm", "list") else original(  # type: ignore[method-assign]
         *a, timeout=timeout)
-    with pytest.raises(PhoneError, match="non lancé.*No activities"):
+    with pytest.raises(PhoneError, match="not launched.*No activities"):
         server._launch("com.whatsapp")
     phone.am = (0, "", "Error: Activity not started, unable to resolve Intent")
     assert act(Step(do="open_url", text="foo://x")).startswith("✗")
@@ -469,13 +469,13 @@ def test_draft_failure_not_reported_as_ready(phone, monkeypatch):
 
     monkeypatch.setattr(server, "MESSAGES", Book())
     phone.am = (0, "", "Error: Activity not started, unable to resolve Intent")
-    with pytest.raises(PhoneError, match="Android n'a rien ouvert"):
+    with pytest.raises(PhoneError, match="Android opened nothing"):
         server._draft("0611223344", "Salut", "sms")
     phone.am = (0, "Starting: Intent", "")
     phone.uis = [ui(field("Salut Alice"))]
-    assert "Brouillon prêt" in server._draft("0611223344", "Salut Alice", "sms")[0]
+    assert "Draft ready" in server._draft("0611223344", "Salut Alice", "sms")[0]
     phone.uis = [ui()]
-    assert "non relu" in server._draft("0611223344", "Salut Alice", "sms")[0]
+    assert "not read back" in server._draft("0611223344", "Salut Alice", "sms")[0]
 
 
 # ---------------------------------------------------------------- 10. [N] explicite
@@ -510,10 +510,84 @@ def test_irreversible_labels_anywhere():
         return Element(1, "Button", text, "", "", "com.app", (0, 0, 1, 1), True)
 
     for text in ("Supprimer définitivement", "Oui, envoyer", "Vider la corbeille", "Passer la commande",
-                 "Résilier l'abonnement", "Transférer de l’argent", "Buy now", "Désinstaller", "PAYER", "Appeler Alice"):
+                 "Résilier l'abonnement", "Transférer de l’argent", "Buy now", "Désinstaller", "PAYER", "Appeler Alice",
+                 "S'abonner"):
         assert policy.irreversible(el(text)), text
     # Accord du 18/10 : supprimer (corbeille), accepter, partager, appeler, valider et autoriser sont libres.
     for text in ("Envoyé hier", "La Poste", "Paramètres", "Commandes passées", "Callback", "Postal", "Tout supprimer",
                  "Déplacer vers la corbeille", "J’accepte", "Autoriser", "Journal d'appels", "Partager", "Soumettre",
-                 "VALIDER", "S'abonner", "Boîte d'envoi", "Éléments envoyés"):
+                 "VALIDER", "Boîte d'envoi", "Éléments envoyés"):
         assert policy.irreversible(el(text)) is None, text
+
+
+# ---------------------------------------------------------------- glissé court dans un bouton
+
+
+def test_swipe_inside_one_clickable_element_is_a_tap(phone):
+    """Départ et arrivée dans le même élément cliquable : un appui déguisé, jugé comme tel (icône sans nom)."""
+    phone.package = "com.whatsapp"
+    send = node("", (900, 1700, 1060, 1860), rid="com.whatsapp:id/btn_x", package="com.whatsapp")
+    row = node("Alice", (0, 300, 1080, 500), package="com.whatsapp")
+    scroller = node("", (0, 600, 1080, 1600), cls="androidx.recyclerview.widget.RecyclerView", package="com.whatsapp")
+    phone.uis = [ui(send, row, scroller.replace('clickable="true"', 'clickable="true" scrollable="true"'))]
+    report = act(Step(do="swipe", target="910,1710", to="1050,1850"))
+    assert report.startswith("✗") and "unnamed icon" in report and phone.inputs == []
+    assert act(Step(do="swipe", target="910,1710", to="1050,1850", confirm=True)).startswith("~")
+    assert act(Step(do="swipe", target="100,400", to="1000,400")).startswith("~")  # ligne nommée : glissé permis
+    assert act(Step(do="swipe", target="500,1500", to="500,700")).startswith("~")  # liste défilable : vrai glissé
+    assert act(Step(do="swipe", target="1000,1800", to="500,1000")).startswith("~")  # sort du bouton : vrai glissé
+    assert len(phone.inputs) == 4
+
+
+# ---------------------------------------------------------------- brouillon WhatsApp : indicatif de la SIM
+
+
+def test_whatsapp_draft_uses_the_sim_country(phone, monkeypatch):
+    class Book:
+        country = "gb"
+
+        def name(self, number):
+            return number
+
+    monkeypatch.setattr(server, "MESSAGES", Book())
+    phone.uis = [ui(field("Hello"))]
+    server._draft("07700 900123", "Hello", "whatsapp")
+    server._draft("+33 6 11 22 33 44", "Hello", "whatsapp")
+    Book.country = ""
+    with pytest.raises(PhoneError, match="international format"):
+        server._draft("0611223344", "Hello", "whatsapp")
+    server._draft("+33611223344", "Hello", "whatsapp")  # déjà international : pays inutile
+    urls = [c[-1] for c in phone.calls if c[0] == "am"]
+    assert urls == ["https://wa.me/447700900123?text=Hello", "https://wa.me/33611223344?text=Hello",
+                    "https://wa.me/33611223344?text=Hello"]
+
+
+# ---------------------------------------------------------------- l'utilisateur reprend le téléphone pendant un lot
+
+
+def test_batch_stops_when_owner_touches_the_phone(phone, monkeypatch):
+    reads: list[float] = []
+    touched = {"after": 99}  # nombre de gestes après lequel l'utilisateur touche l'écran
+
+    def idle(adb):
+        reads.append(1)
+        # Avant le lot : téléphone posé depuis longtemps ; ensuite, toucher il y a 1 s, 4 s après notre geste.
+        return 1.0 if len(phone.inputs) >= touched["after"] else 100.0
+
+    monkeypatch.setattr(server.awake, "idle_on_phone", idle)
+    monkeypatch.setattr(server, "_LAST_INPUT", 0.0)
+    monkeypatch.setattr(server, "_gestures_done", lambda: setattr(server, "_LAST_INPUT", time.time() - 5))
+    phone.uis = [ui(node("Un", (0, 0, 500, 200)), node("Deux", (0, 300, 500, 500)), node("Trois", (0, 600, 500, 800)))]
+    touched["after"] = 1
+    report = act(Step(do="tap", target="Un"), Step(do="wait", text="Deux"), Step(do="tap", target="Deux"),
+                 Step(do="tap", target="Trois"))
+    assert report.startswith("~ 1.") and "✓ 2." in report and "✗ 3." in report and "took over the phone" in report
+    assert "4." not in report and len(phone.inputs) == 1  # arrêt net : ni l'étape 3 ni la 4
+    phone.calls.clear()
+    reads.clear()
+    touched["after"] = 99
+    report = act(Step(do="tap", target="Un"), Step(do="tap", target="Deux"))
+    assert "✗" not in report and len(phone.inputs) == 2 and len(reads) == 2  # une lecture avant chaque geste
+    reads.clear()
+    act(Step(do="tap", target="Un"))
+    assert len(reads) == 1  # un seul geste : seulement la vérification d'avant le lot
