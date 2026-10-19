@@ -14,6 +14,7 @@ from datetime import datetime
 from urllib.parse import quote
 
 from .adb import Adb
+from .query import server_for
 
 # Mots qui annoncent un code, cherchés sur le texte sans accents (« vérification » → « verification »).
 _KEYWORDS = re.compile(
@@ -126,13 +127,22 @@ _PARALLEL = 32  # requêtes lancées ensemble sur le téléphone (une machine Ja
 _IDS = "sed -n 's/^Row: [0-9]* _id=//p' | paste -sd, -"  # « Row: 0 _id=12 » … → « 12,11 »
 
 
-def query_command(uri: str, projection: list[str], where: str | None = None, sort: str | None = None) -> str:
-    argv = ["content", "query", "--uri", uri, "--projection", ":".join(projection)]
+def query_args(uri: str, projection: list[str], where: str | None = None, sort: str | None = None) -> list[str]:
+    """Arguments de la commande `content` pour une lecture."""
+    argv = ["query", "--uri", uri, "--projection", ":".join(projection)]
     if where:
         argv += ["--where", where]
     if sort:
         argv += ["--sort", sort]
-    return " ".join(shlex.quote(a) for a in argv)
+    return argv
+
+
+def shell_join(argv: list[str]) -> str:
+    return " ".join(shlex.quote(a) for a in ["content", *argv])
+
+
+def query_command(uri: str, projection: list[str], where: str | None = None, sort: str | None = None) -> str:
+    return shell_join(query_args(uri, projection, where, sort))
 
 
 def chained(ids_command: str, uri: str, projection: list[str], column: str) -> str:
@@ -141,6 +151,26 @@ def chained(ids_command: str, uri: str, projection: list[str], column: str) -> s
     si la première ne rend rien."""
     second = query_command(uri, projection)
     return f'ids=$({ids_command} | {_IDS}); [ -z "$ids" ] || {second} --where "{column} IN ($ids)"'
+
+
+@dataclass(frozen=True)
+class Chain:
+    """Deux lectures enchaînées : les _id rendus par `ids` deviennent le filtre « column IN (…) » de la seconde."""
+    ids: list[str]
+    uri: str
+    projection: list[str]
+    column: str
+
+    def shell(self) -> str:
+        return chained(shell_join(self.ids), self.uri, self.projection, self.column)
+
+    def second(self, ids_output: str) -> list[str] | None:
+        """Seconde lecture d'après la sortie de la première ; None si celle-ci n'a rien rendu (sortie vide)."""
+        ids = ",".join(re.findall(r"(?m)^Row: \d+ _id=(\d+)", ids_output))
+        return query_args(self.uri, self.projection, f"{self.column} IN ({ids})") if ids else None
+
+
+type Query = list[str] | Chain  # arguments de `content`, ou deux lectures enchaînées
 
 
 def split_batch(output: str, token: str, count: int) -> list[str]:
@@ -175,17 +205,46 @@ def split_parts(output: bytes, token: str) -> dict[str, bytes]:
 
 
 class Messages:
-    """Chaque `content query` démarre une machine Java sur le téléphone (environ 1 s) ; lancées ensemble dans un seul
-    adb shell, dix coûtent autant qu'une. Les lectures se font donc par vagues de requêtes parallèles."""
+    """Lectures par vagues de requêtes parallèles, servies par le serveur gardé en vie sur le téléphone (quelques
+    dizaines de ms). À défaut, chaque `content query` démarre une machine Java (environ 1 s) ; lancées ensemble dans un
+    seul adb shell, dix coûtent alors autant qu'une."""
 
-    def __init__(self, adb: Adb) -> None:
+    def __init__(self, adb: Adb, fast: bool = True) -> None:
         self.adb = adb
+        self.fast = server_for(adb) if fast else None
         self._archived: dict[int, bool] = {}  # conversation lue par thread() → masquée dans l'application
 
-    def _batch(self, commands: list[str]) -> list[str]:
-        """Commandes shell exécutées en parallèle sur le téléphone, en un seul adb shell ; sorties dans l'ordre."""
-        if not commands:
+    def _batch(self, queries: list[Query]) -> list[str]:
+        """Lectures exécutées en parallèle sur le téléphone ; sorties dans l'ordre."""
+        if not queries:
             return []
+        if self.fast and (outputs := self._served(queries)) is not None:
+            return outputs
+        return self._shell_batch([q.shell() if isinstance(q, Chain) else shell_join(q) for q in queries])
+
+    def _served(self, queries: list[Query]) -> list[str] | None:
+        """Par le serveur du téléphone, en deux échanges au plus (second : lectures enchaînées) ; None s'il manque."""
+        assert self.fast
+        outputs = self.fast.run([q.ids if isinstance(q, Chain) else q for q in queries])
+        if outputs is None:
+            return None
+        second: dict[int, list[str]] = {}
+        for i, q in enumerate(queries):
+            if isinstance(q, Chain):
+                follow = q.second(outputs[i])
+                outputs[i] = ""
+                if follow:
+                    second[i] = follow
+        if second:
+            more = self.fast.run(list(second.values()))
+            if more is None:
+                return None
+            for i, out in zip(second, more, strict=True):
+                outputs[i] = out
+        return outputs
+
+    def _shell_batch(self, commands: list[str]) -> list[str]:
+        """Commandes shell exécutées en parallèle sur le téléphone, en un seul adb shell ; sorties dans l'ordre."""
         token = secrets.token_hex(8)
         folder = f"/data/local/tmp/nexus-q-{token}"
         lines = [f"mkdir -p {folder}"]
@@ -200,16 +259,16 @@ class Messages:
 
     def _query(self, uri: str, projection: list[str], where: str | None = None,
                sort: str | None = None) -> list[dict[str, str]]:
-        return rows_of(self._batch([query_command(uri, projection, where, sort)])[0], projection)
+        return rows_of(self._batch([query_args(uri, projection, where, sort)])[0], projection)
 
-    def resolve(self, addresses: list[str], extra: list[str] | None = None) -> list[str]:
+    def resolve(self, addresses: list[str], extra: list[Query] | None = None) -> list[str]:
         """Noms du répertoire de ces adresses : celles absentes du cache sont lues ensemble, en une vague, avec les
         commandes `extra` dont les sorties sont rendues."""
         now = time.monotonic()
         todo = list(dict.fromkeys(a for a in addresses if a and (a not in _NAMES or now - _NAMES[a][0] >= NAMES_TTL)))
-        commands = [query_command(f"content://com.android.contacts/phone_lookup/{quote(a, safe='')}", ["display_name"])
+        queries = [query_args(f"content://com.android.contacts/phone_lookup/{quote(a, safe='')}", ["display_name"])
                     for a in todo]
-        outputs = self._batch((extra or []) + commands)
+        outputs = self._batch((extra or []) + queries)
         for address, out in zip(todo, outputs[len(extra or []):], strict=True):
             rows = rows_of(out, ["display_name"])
             # Le fournisseur ajoute ses colonnes après celles demandées : ne garder que le nom.
@@ -249,17 +308,17 @@ class Messages:
         return list(members.values())
 
     @staticmethod
-    def _recent_addr(thread_id: int, count: int = 30) -> str:
+    def _recent_addr(thread_id: int, count: int = 30) -> Chain:
         """Adresses (expéditeur et destinataires) des `count` derniers MMS/RCS du fil."""
-        return chained(query_command("content://mms", ["_id"], f"thread_id={int(thread_id)}", f"date DESC LIMIT {count}"),
-                       "content://mms/addr", ["msg_id", "type", "address"], "msg_id")
+        return Chain(query_args("content://mms", ["_id"], f"thread_id={int(thread_id)}", f"date DESC LIMIT {count}"),
+                     "content://mms/addr", ["msg_id", "type", "address"], "msg_id")
 
     def conversations(self, limit: int = 15) -> list[str]:
         projection = ["_id", "date", "message_count", "read", "archived", "recipient_ids", "snippet"]
         threads_out, canonical_out = self._batch([
-            query_command("content://mms-sms/conversations?simple=true", projection, "message_count>0",
+            query_args("content://mms-sms/conversations?simple=true", projection, "message_count>0",
                           f"date DESC LIMIT {int(limit)}"),
-            query_command("content://mms-sms/canonical-addresses", ["_id", "address"])])
+            query_args("content://mms-sms/canonical-addresses", ["_id", "address"])])
         threads = [t for t in rows_of(threads_out, projection)
                    if t.get("message_count", "0") not in ("0", "")][:limit]  # brouillons vides
         canonical = self._canonical(canonical_out)
@@ -293,13 +352,12 @@ class Messages:
         part_p, addr_p, thread_p = ["_id", "mid", "ct", "text"], ["msg_id", "type", "address"], [
             "_id", "archived", "recipient_ids"]
         sms_out, mms_out, part_out, addr_out, thread_out, canonical_out = self._batch([
-            query_command("content://sms", sms_p, f"thread_id={tid}", last),
-            query_command("content://mms", mms_p, f"thread_id={tid}", last),
-            chained(query_command("content://mms", ["_id"], f"thread_id={tid}", last), "content://mms/part", part_p,
-                    "mid"),
+            query_args("content://sms", sms_p, f"thread_id={tid}", last),
+            query_args("content://mms", mms_p, f"thread_id={tid}", last),
+            Chain(query_args("content://mms", ["_id"], f"thread_id={tid}", last), "content://mms/part", part_p, "mid"),
             self._recent_addr(tid, max(int(limit), 30)),
-            query_command("content://mms-sms/conversations?simple=true", thread_p, f"_id={tid}"),
-            query_command("content://mms-sms/canonical-addresses", ["_id", "address"])])
+            query_args("content://mms-sms/conversations?simple=true", thread_p, f"_id={tid}"),
+            query_args("content://mms-sms/canonical-addresses", ["_id", "address"])])
         sms = rows_of(sms_out, sms_p)[:limit]
         messages = [Message(datetime.fromtimestamp(int(r["date"]) / 1000), r.get("type") == "2", r.get("body", ""),
                             "SMS", r.get("read") != "0") for r in sms if r.get("date", "").isdigit()]
@@ -365,8 +423,8 @@ class Messages:
         return split_parts(self.adb.exec_out("sh", "-c", "\n".join(lines), timeout=120), token)
 
     @staticmethod
-    def _find_command(name: str) -> str:
-        return query_command(f"content://com.android.contacts/data/phones/filter/{quote(name, safe='')}",
+    def _find_command(name: str) -> list[str]:
+        return query_args(f"content://com.android.contacts/data/phones/filter/{quote(name, safe='')}",
                              ["display_name", "data1"])
 
     @staticmethod
@@ -389,8 +447,8 @@ class Messages:
         threads_p = ["_id", "message_count", "recipient_ids"]
         found_out, canonical_out, threads_out = self._batch([
             self._find_command(name),
-            query_command("content://mms-sms/canonical-addresses", ["_id", "address"]),
-            query_command("content://mms-sms/conversations?simple=true", threads_p, sort="date DESC")])
+            query_args("content://mms-sms/canonical-addresses", ["_id", "address"]),
+            query_args("content://mms-sms/conversations?simple=true", threads_p, sort="date DESC")])
         found = self._found(found_out)
         wanted = {normalize(n) for _, n in found}
         ids = {i for i, a in self._canonical(canonical_out).items() if normalize(a) in wanted}

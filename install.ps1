@@ -1,7 +1,7 @@
 # Installe NexusAndroid sur ce PC (à relancer sans risque après une mise à jour).
 #  - environnement Python hors des sources : ~\.nexus\nexus-android\venv
 #  - démon partagé déclaré au superviseur Nexus (127.0.0.1:16180, jeton NexusSecure) ; « nexus-android » inscrit par URL
-#    pour Codex et Antigravity (inscription remplacée, rien d'autre n'est touché dans leurs configurations) ;
+#    pour Antigravity (inscription remplacée, rien d'autre n'est touché) ; Codex par son plugin perso nexus-android ;
 #    Claude Code le reçoit par le plugin nexus-android du catalogue « nexus » (NexusClaude)
 #  - tests sans téléphone ; -Live : essai sur le téléphone branché
 # Usage : pwsh -NoProfile -File install.ps1 [-Live] [-SkipTests]
@@ -82,31 +82,8 @@ if (-not (Get-ScheduledTask -TaskName 'Nexus MCP Daemons' -ErrorAction SilentlyC
 #     NexusClaude\claude-settings.json ; jeton dans la variable NEXUS_MCP_TOKEN des réglages, posée par Sync-NexusPoste).
 #     Aucune inscription ici (aucune CLI Claude).
 
-# --- Codex : table [mcp_servers.nexus-android] de ~\.codex\config.toml, remplacée en place (et l'ancienne entrée
-#     d'essai nexus-android-http retirée)
-$codexConfig = Join-Path $HOME '.codex\config.toml'
-if (Test-Path $codexConfig) {
-    $block = @('[mcp_servers.nexus-android]', "url = `"$url`"", "http_headers = { Authorization = `"Bearer $token`" }")
-    $lines = [Collections.Generic.List[string]](Get-Content $codexConfig)
-    $placed = $false
-    foreach ($name in 'nexus-android-http', 'nexus-android') {
-        $start = $lines.FindIndex({ param($l) $l -match "^\s*\[mcp_servers\.$([regex]::Escape($name))\]\s*$" })
-        if ($start -lt 0) { continue }
-        $end = $start + 1
-        while ($end -lt $lines.Count -and ($lines[$end] -notmatch '^\s*\[' -or $lines[$end] -match "^\s*\[mcp_servers\.$([regex]::Escape($name))\.")) { $end++ }
-        $lines.RemoveRange($start, $end - $start)
-        if ($name -eq 'nexus-android') { $lines.InsertRange($start, [string[]]($block + '')); $placed = $true }
-    }
-    if (-not $placed) {
-        if ($lines.Count -and $lines[$lines.Count - 1] -ne '') { $lines.Add('') }
-        $lines.AddRange([string[]]$block)
-    }
-    $backup = Join-Path $state ('backups\codex-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.toml')
-    New-Item -ItemType Directory -Force (Split-Path $backup) | Out-Null
-    Copy-Item $codexConfig $backup
-    [IO.File]::WriteAllText($codexConfig, ($lines -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
-    Write-Host 'Codex : nexus-android inscrit.'
-} else { Write-Warning 'Codex absent de ce PC : non inscrit.' }
+# --- Codex : serveur par le plugin perso nexus-android de Codex (NexusCodex\scripts\installer-plugins-nexus.ps1,
+#     lancé par Sync-NexusPoste) ; plus de table [mcp_servers] ici.
 
 # --- Antigravity : ~\.gemini\config\mcp_config.json
 $agyConfig = Join-Path $HOME '.gemini\config\mcp_config.json'

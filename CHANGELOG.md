@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-19
+
+### Performance
+
+- Message, contact, call log and calendar reads no longer start a Java process on the phone for each `content
+  query` (about 1 s per wave of queries). At the first read the server pushes a 7 KB helper
+  (`phone/NexusQuery.java`, built into `src/nexus_android/nexus-query.dex` by `phone/build.ps1`) to
+  `/data/local/tmp` and starts it once with `app_process` under the shell identity, reached through `adb forward`
+  on a local abstract socket: the scrcpy server's method (mobile-mcp's device server works the same way; DroidMind
+  stays on plain `adb shell`). No app to install. It runs each query with the code of Android's own `content`
+  command (`/system/framework/content.jar`), so the output is identical to the character. Measured on a Galaxy
+  Fold over USB: conversation list 3.1 s → 0.07 s (0.14 s from a fresh process, 0.73 s when the helper must first
+  be pushed and started), one conversation 2.1 s → 0.03 s.
+- One port forward per phone, reused by every process and after a daemon restart.
+
+### Security
+
+- The helper is read-only (only `query` is served; insert, update, delete and call are refused), answers only
+  connections from the shell user or root (adbd; kernel-checked peer credentials, which no app on the phone can
+  have), and stops by itself after 10 minutes without a request. Each dex version has its own socket name, so an
+  old helper is never taken for the current one; older ones are stopped and removed.
+- If the helper cannot be started or answers badly, reads fall back to the 0.5 method (`adb shell`), with the same
+  output and the same masking of security codes, and the helper is retried a minute later.
+
+### Changed (Codex plugin, 2026-10-19)
+- `install.ps1` no longer writes `[mcp_servers.nexus-android]` to Codex's `config.toml`: Codex gets the server from a
+  personal Codex plugin.
+
 ## [0.5.1] - 2026-10-19
 
 ### Security

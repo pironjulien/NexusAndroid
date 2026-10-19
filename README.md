@@ -120,6 +120,14 @@ through the screen. An RCS group only has an encoded address there: the server w
 sender of each received message. A conversation archived or trashed in Google Messages stays readable and is labelled
 as hidden in the app.
 
+Reads are fast: every `adb shell content query` starts a Java process on the phone (about 1 s), so at the first
+read the server pushes a 7 KB helper (`phone/NexusQuery.java`, built into `nexus-query.dex`) to `/data/local/tmp`
+and starts it once with `app_process` under the shell identity, as scrcpy does: no app to install, no permission
+beyond ADB's. It runs the queries with the code of Android's own `content` command (identical output), read-only
+(`query` only), answers only connections from the shell user (adbd, checked by the kernel), and stops after 10 minutes
+without a request. On a Galaxy Fold over USB, the conversation list drops from 3.1 s to 0.07 s and a conversation from
+2.1 s to 0.03 s. If the helper cannot run, reads fall back to `adb shell` with the same results.
+
 ## Safeguards
 
 - **Paying, sending, calling, publishing, deleting for good, formatting, uninstalling, resetting, cancelling a subscription,
@@ -231,7 +239,10 @@ account, no telemetry, no analytics and no cloud relay; the server itself makes 
 - **What it stores on the PC**, under `~/.nexus/`: the phone's Wi-Fi address and wireless debugging port, the saved
   screen timeout, a lock file, the pinned scrcpy server, and backups of the client configs that `install.ps1` edits.
   Files you `pull` go to `~/Downloads/Telephone`. The server writes no messages, screenshots or logs to disk.
-- **Removing it**: delete `~/.nexus/nexus-android/` and `~/.nexus/android.lock` and revoke the PC's key on the phone (Developer
+- **On the phone**: only working files in `/data/local/tmp` (`nexus-*`: the two helpers and the last UI dump); the
+  read helper stops by itself after 10 minutes without a request.
+- **Removing it**: delete `~/.nexus/nexus-android/` and `~/.nexus/android.lock`, run
+  `adb shell rm /data/local/tmp/nexus-*`, and revoke the PC's key on the phone (Developer
   options → Revoke USB debugging authorizations).
 
 Questions or concerns: open an issue, or see [SECURITY.md](https://github.com/pironjulien/NexusAndroid/blob/main/SECURITY.md)
