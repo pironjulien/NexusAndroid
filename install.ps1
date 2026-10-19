@@ -1,7 +1,8 @@
 # Installe NexusAndroid sur ce PC (à relancer sans risque après une mise à jour).
 #  - environnement Python hors des sources : ~\.nexus\nexus-android\venv
-#  - serveur MCP « nexus-android » inscrit pour Claude Code, Codex et Antigravity (inscription remplacée, rien d'autre
-#    n'est touché dans leurs configurations)
+#  - démon partagé déclaré au superviseur Nexus (127.0.0.1:16180, jeton NexusSecure) ; « nexus-android » inscrit par URL
+#    pour Codex et Antigravity (inscription remplacée, rien d'autre n'est touché dans leurs configurations) ;
+#    Claude Code le reçoit par le plugin nexus-android du catalogue « nexus » (NexusClaude)
 #  - tests sans téléphone ; -Live : essai sur le téléphone branché
 # Usage : pwsh -NoProfile -File install.ps1 [-Live] [-SkipTests]
 param([switch]$Live, [switch]$SkipTests)
@@ -55,33 +56,48 @@ $env_ = [ordered]@{ PYTHONUTF8 = '1'; PYTHONPYCACHEPREFIX = $pycache }
 if ($adb) { $env_['NEXUS_ANDROID_ADB'] = $adb }
 $args_ = @('-m', 'nexus_android')
 
-# --- Claude Code (portée utilisateur)
-$claude = (Get-Command claude -ErrorAction SilentlyContinue).Source
-if ($claude) {
-    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    & $claude mcp remove nexus-android -s user *> $null
-    $ErrorActionPreference = $previous
-    $envArgs = foreach ($k in $env_.Keys) { '-e'; "$k=$($env_[$k])" }
-    & $claude mcp add @envArgs --scope user --transport stdio nexus-android '--' $python @args_
-    if ($LASTEXITCODE) { throw 'claude mcp add a échoué.' }
-    Write-Host 'Claude Code : nexus-android inscrit.'
-} else { Write-Warning 'CLI claude introuvable : Claude Code non inscrit.' }
+# Démon partagé (un seul processus pour Claude, Codex et Antigravity) : déclaré au superviseur des démons Nexus
+# (NexusInfra\ops\workstation\nexus-mcp-daemons.py, tâche « Nexus MCP Daemons »), joint par URL avec un jeton.
+$port = 16180
+$url = "http://127.0.0.1:$port/mcp"
+$tokenFile = Join-Path $env:OneDrive 'Documents\NexusSecure\agents\nexus-mcp-token.txt'
+if (-not (Test-Path $tokenFile)) {
+    $bytes = [byte[]]::new(32); [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    New-Item -ItemType Directory -Force (Split-Path $tokenFile) | Out-Null
+    [IO.File]::WriteAllText($tokenFile, [Convert]::ToHexString($bytes).ToLower())
+}
+$token = (Get-Content $tokenFile -Raw).Trim()
+$specs = Join-Path $HOME '.nexus\daemons\specs'
+New-Item -ItemType Directory -Force $specs | Out-Null
+$spec = [ordered]@{ port = $port; python = $python; args = $args_; env = $env_ }
+[IO.File]::WriteAllText((Join-Path $specs 'nexus-android.json'), ($spec | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+# Nouveau code : arrêter le démon en place, le superviseur le relance (les clients se reconnectent seuls).
+Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" | Where-Object { $_.CommandLine -match 'nexus_android --http' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+if (-not (Get-ScheduledTask -TaskName 'Nexus MCP Daemons' -ErrorAction SilentlyContinue)) {
+    Write-Warning 'Superviseur des démons absent : lancer NexusInfra\ops\workstation\Sync-NexusPoste.ps1 -Apply.'
+}
 
-# --- Codex : table [mcp_servers.nexus-android] de ~\.codex\config.toml, remplacée en place
+# --- Claude Code : par le plugin nexus-android du catalogue « nexus » (NexusClaude\plugins, activé par
+#     NexusClaude\claude-settings.json ; jeton dans la variable NEXUS_MCP_TOKEN des réglages, posée par Sync-NexusPoste).
+#     Aucune inscription ici (aucune CLI Claude).
+
+# --- Codex : table [mcp_servers.nexus-android] de ~\.codex\config.toml, remplacée en place (et l'ancienne entrée
+#     d'essai nexus-android-http retirée)
 $codexConfig = Join-Path $HOME '.codex\config.toml'
 if (Test-Path $codexConfig) {
-    $q = { param($s) "'" + $s + "'" }  # chaîne TOML littérale : antislashs Windows conservés
-    $block = @('[mcp_servers.nexus-android]', "command = $(& $q $python)",
-        "args = [$(($args_ | ForEach-Object { & $q $_ }) -join ', ')]", '',
-        '[mcp_servers.nexus-android.env]') + ($env_.Keys | ForEach-Object { "$_ = $(& $q $env_[$_])" })
+    $block = @('[mcp_servers.nexus-android]', "url = `"$url`"", "http_headers = { Authorization = `"Bearer $token`" }")
     $lines = [Collections.Generic.List[string]](Get-Content $codexConfig)
-    $start = $lines.FindIndex({ param($l) $l -match '^\s*\[mcp_servers\.nexus-android\]\s*$' })
-    if ($start -ge 0) {
+    $placed = $false
+    foreach ($name in 'nexus-android-http', 'nexus-android') {
+        $start = $lines.FindIndex({ param($l) $l -match "^\s*\[mcp_servers\.$([regex]::Escape($name))\]\s*$" })
+        if ($start -lt 0) { continue }
         $end = $start + 1
-        while ($end -lt $lines.Count -and ($lines[$end] -notmatch '^\s*\[' -or $lines[$end] -match '^\s*\[mcp_servers\.nexus-android\.')) { $end++ }
+        while ($end -lt $lines.Count -and ($lines[$end] -notmatch '^\s*\[' -or $lines[$end] -match "^\s*\[mcp_servers\.$([regex]::Escape($name))\.")) { $end++ }
         $lines.RemoveRange($start, $end - $start)
-        $lines.InsertRange($start, [string[]]($block + ''))
-    } else {
+        if ($name -eq 'nexus-android') { $lines.InsertRange($start, [string[]]($block + '')); $placed = $true }
+    }
+    if (-not $placed) {
         if ($lines.Count -and $lines[$lines.Count - 1] -ne '') { $lines.Add('') }
         $lines.AddRange([string[]]$block)
     }
@@ -97,8 +113,9 @@ $agyConfig = Join-Path $HOME '.gemini\config\mcp_config.json'
 if (Test-Path $agyConfig) {
     $json = Get-Content $agyConfig -Raw | ConvertFrom-Json
     if (-not $json.PSObject.Properties['mcpServers']) { $json | Add-Member mcpServers ([PSCustomObject]@{}) }
-    $server = [PSCustomObject]@{ command = $python; args = $args_; env = [PSCustomObject]$env_ }
+    $server = [PSCustomObject]@{ serverUrl = $url; headers = [PSCustomObject]@{ Authorization = "Bearer $token" } }
     $json.mcpServers | Add-Member -NotePropertyName 'nexus-android' -NotePropertyValue $server -Force
+    $json.mcpServers.PSObject.Properties.Remove('nexus-android-http')
     [IO.File]::WriteAllText($agyConfig, ($json | ConvertTo-Json -Depth 100), [Text.UTF8Encoding]::new($false))
     Write-Host 'Antigravity : nexus-android inscrit.'
 } else { Write-Warning 'Antigravity absent de ce PC : non inscrit.' }

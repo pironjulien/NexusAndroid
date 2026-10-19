@@ -5,6 +5,9 @@ from __future__ import annotations
 import base64
 import binascii
 import re
+import secrets
+import shlex
+import time
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -115,67 +118,166 @@ class Message:
 HIDDEN = " · masquée dans l'application (archivée ou corbeille)"
 
 
+# Noms des contacts, communs à toutes les sessions du démon : (instant de la lecture, nom). Relus après NAMES_TTL
+# secondes, pour qu'un contact ajouté ou renommé apparaisse sans redémarrer le serveur.
+_NAMES: dict[str, tuple[float, str]] = {}
+NAMES_TTL = 600.0
+_PARALLEL = 32  # requêtes lancées ensemble sur le téléphone (une machine Java chacune ; 30 en 1,5 s sur le Fold)
+_IDS = "sed -n 's/^Row: [0-9]* _id=//p' | paste -sd, -"  # « Row: 0 _id=12 » … → « 12,11 »
+
+
+def query_command(uri: str, projection: list[str], where: str | None = None, sort: str | None = None) -> str:
+    argv = ["content", "query", "--uri", uri, "--projection", ":".join(projection)]
+    if where:
+        argv += ["--where", where]
+    if sort:
+        argv += ["--sort", sort]
+    return " ".join(shlex.quote(a) for a in argv)
+
+
+def chained(ids_command: str, uri: str, projection: list[str], column: str) -> str:
+    """Deux requêtes enchaînées sur le téléphone (le fournisseur refuse les sous-requêtes SELECT) : les _id rendus
+    par la première deviennent le filtre « column IN (…) » de la seconde, sans aller-retour avec le PC. Sortie vide
+    si la première ne rend rien."""
+    second = query_command(uri, projection)
+    return f'ids=$({ids_command} | {_IDS}); [ -z "$ids" ] || {second} --where "{column} IN ($ids)"'
+
+
+def split_batch(output: str, token: str, count: int) -> list[str]:
+    """Sortie d'un lot : chaque commande précédée de « \\n@@<jeton> <i>\\n » (jeton aléatoire : un SMS ne peut pas
+    imiter le séparateur)."""
+    chunks = [""] * count
+    parts = re.split(rf"\n@@{token} (\d+)\n", "\n" + output)
+    for index, text in zip(parts[1::2], parts[2::2], strict=True):
+        if int(index) < count:
+            chunks[int(index)] = text
+    return chunks
+
+
+def rows_of(output: str, projection: list[str]) -> list[dict[str, str]]:
+    if "Error" in output[:200] or "Exception" in output[:200]:
+        raise RuntimeError(output.strip()[:300])
+    return parse_rows(output, projection[-1])
+
+
+def split_parts(output: bytes, token: str) -> dict[str, bytes]:
+    """Sortie binaire de parts() : « @@<jeton> <id> <taille>\\n » suivi des octets, pour chaque pièce."""
+    found: dict[str, bytes] = {}
+    head = re.compile(rb"@@" + token.encode() + rb" (\d+) (\d+)\n")
+    pos = 0
+    while match := head.match(output, pos):
+        size = int(match.group(2))
+        data = output[match.end():match.end() + size]
+        if size and len(data) == size:
+            found[match.group(1).decode()] = data
+        pos = match.end() + size
+    return found
+
+
 class Messages:
+    """Chaque `content query` démarre une machine Java sur le téléphone (environ 1 s) ; lancées ensemble dans un seul
+    adb shell, dix coûtent autant qu'une. Les lectures se font donc par vagues de requêtes parallèles."""
+
     def __init__(self, adb: Adb) -> None:
         self.adb = adb
-        self._names: dict[str, str] = {}
+        self._archived: dict[int, bool] = {}  # conversation lue par thread() → masquée dans l'application
 
-    def _query(self, uri: str, projection: list[str], where: str | None = None, sort: str | None = None) -> list[dict]:
-        argv = ["content", "query", "--uri", uri, "--projection", ":".join(projection)]
-        if where:
-            argv += ["--where", where]
-        if sort:
-            argv += ["--sort", sort]
-        out = self.adb.shell(*argv, check=False)
-        if "Error" in out[:200] or "Exception" in out[:200]:
-            raise RuntimeError(out.strip()[:300])
-        return parse_rows(out, projection[-1])
+    def _batch(self, commands: list[str]) -> list[str]:
+        """Commandes shell exécutées en parallèle sur le téléphone, en un seul adb shell ; sorties dans l'ordre."""
+        if not commands:
+            return []
+        token = secrets.token_hex(8)
+        folder = f"/data/local/tmp/nexus-q-{token}"
+        lines = [f"mkdir -p {folder}"]
+        for i, command in enumerate(commands):
+            lines.append(f"( {command} ) >{folder}/{i} 2>&1 &")
+            if (i + 1) % _PARALLEL == 0:
+                lines.append("wait")
+        lines += ["wait", f"for i in {' '.join(map(str, range(len(commands))))}; do "
+                          f"printf '\\n@@{token} %s\\n' $i; cat {folder}/$i; done", f"rm -rf {folder}"]
+        out = self.adb.shell("sh", "-c", "\n".join(lines), check=False, timeout=60)
+        return split_batch(out, token, len(commands))
+
+    def _query(self, uri: str, projection: list[str], where: str | None = None,
+               sort: str | None = None) -> list[dict[str, str]]:
+        return rows_of(self._batch([query_command(uri, projection, where, sort)])[0], projection)
+
+    def resolve(self, addresses: list[str], extra: list[str] | None = None) -> list[str]:
+        """Noms du répertoire de ces adresses : celles absentes du cache sont lues ensemble, en une vague, avec les
+        commandes `extra` dont les sorties sont rendues."""
+        now = time.monotonic()
+        todo = list(dict.fromkeys(a for a in addresses if a and (a not in _NAMES or now - _NAMES[a][0] >= NAMES_TTL)))
+        commands = [query_command(f"content://com.android.contacts/phone_lookup/{quote(a, safe='')}", ["display_name"])
+                    for a in todo]
+        outputs = self._batch((extra or []) + commands)
+        for address, out in zip(todo, outputs[len(extra or []):], strict=True):
+            rows = rows_of(out, ["display_name"])
+            # Le fournisseur ajoute ses colonnes après celles demandées : ne garder que le nom.
+            name = rows[0].get("display_name", "") if rows else ""
+            _NAMES[address] = (now, re.sub(r", \w+=.*", "", name, flags=re.S))
+        return outputs[:len(extra or [])]
 
     def name(self, address: str) -> str:
         if not address:
             return "?"
-        if address not in self._names:
-            rows = self._query(f"content://com.android.contacts/phone_lookup/{quote(address, safe='')}",
-                               ["display_name"])
-            # Le fournisseur ajoute ses colonnes après celles demandées : ne garder que le nom.
-            name = rows[0].get("display_name", "") if rows else ""
-            self._names[address] = re.sub(r", \w+=.*", "", name, flags=re.S)
-        name = self._names[address]
+        self.resolve([address])
+        name = _NAMES[address][1]
         return f"{name} ({address})" if name else address
 
-    def _thread_addresses(self, recipient_ids: str) -> list[str]:
-        ids = [i for i in recipient_ids.split() if i.isdigit()]
-        if not ids:
-            return []
-        rows = self._query("content://mms-sms/canonical-addresses", ["_id", "address"],
-                           where=f"_id IN ({','.join(ids)})")
-        return [r.get("address", "") for r in rows]
+    @staticmethod
+    def _canonical(output: str) -> dict[str, str]:
+        return {r.get("_id", ""): r.get("address", "") for r in rows_of(output, ["_id", "address"])}
 
-    def _people(self, thread_id: int, recipient_ids: str) -> list[str]:
-        """Participants nommés. Un groupe RCS n'a qu'une adresse codée : ses membres viennent des adresses des
-        derniers messages du fil, moi exclu."""
-        addresses = self._thread_addresses(recipient_ids)
+    @staticmethod
+    def _addresses(recipient_ids: str, canonical: dict[str, str]) -> list[str]:
+        return [canonical.get(i, "") for i in recipient_ids.split() if i.isdigit()]
+
+    @staticmethod
+    def _members(addresses: list[str], addr_rows: list[dict[str, str]], top: set[str] | None = None) -> list[str] | None:
+        """Membres d'un groupe RCS, qui n'a qu'une adresse codée : adresses des derniers messages du fil (ceux de
+        `top` si donné), moi exclu. None si ce n'est pas un groupe."""
         owners = {normalize(o) for o in map(rcs_group_owner, addresses) if o}
         if not owners:
-            return [self.name(a) for a in addresses]
-        ids = [r["_id"] for r in self._query("content://mms", ["_id"], where=f"thread_id={int(thread_id)}",
-                                             sort="date DESC")[:30] if r.get("_id", "").isdigit()]
+            return None
         members: dict[str, str] = {}
-        if ids:
-            for r in self._query("content://mms/addr", ["msg_id", "address"], where=f"msg_id IN ({','.join(ids)})"):
-                address = r.get("address", "")
-                if address and normalize(address) not in owners and "insert-address-token" not in address:
-                    members.setdefault(normalize(address), address)
-        return ["groupe RCS"] + [self.name(a) for a in members.values()]
+        for r in addr_rows:
+            address = r.get("address", "")
+            if top is not None and r.get("msg_id") not in top:
+                continue
+            if address and normalize(address) not in owners and "insert-address-token" not in address:
+                members.setdefault(normalize(address), address)
+        return list(members.values())
+
+    @staticmethod
+    def _recent_addr(thread_id: int, count: int = 30) -> str:
+        """Adresses (expéditeur et destinataires) des `count` derniers MMS/RCS du fil."""
+        return chained(query_command("content://mms", ["_id"], f"thread_id={int(thread_id)}", f"date DESC LIMIT {count}"),
+                       "content://mms/addr", ["msg_id", "type", "address"], "msg_id")
 
     def conversations(self, limit: int = 15) -> list[str]:
-        threads = self._query("content://mms-sms/conversations?simple=true",
-                              ["_id", "date", "message_count", "read", "archived", "recipient_ids", "snippet"],
-                              sort="date DESC")
-        threads = [t for t in threads if t.get("message_count", "0") not in ("0", "")][:limit]  # brouillons vides
+        projection = ["_id", "date", "message_count", "read", "archived", "recipient_ids", "snippet"]
+        threads_out, canonical_out = self._batch([
+            query_command("content://mms-sms/conversations?simple=true", projection, "message_count>0",
+                          f"date DESC LIMIT {int(limit)}"),
+            query_command("content://mms-sms/canonical-addresses", ["_id", "address"])])
+        threads = [t for t in rows_of(threads_out, projection)
+                   if t.get("message_count", "0") not in ("0", "")][:limit]  # brouillons vides
+        canonical = self._canonical(canonical_out)
+        addresses = {t["_id"]: self._addresses(t.get("recipient_ids", ""), canonical) for t in threads}
+        groups = [i for i, a in addresses.items() if any(map(rcs_group_owner, a))]
+        # Vague 2 : noms des participants et adresses récentes des groupes ; vague 3 : noms des membres des groupes,
+        # seulement s'ils manquent au cache.
+        group_out = self.resolve([a for i, a_list in addresses.items() if i not in groups for a in a_list],
+                                 [self._recent_addr(int(g)) for g in groups])
+        members = {g: self._members(addresses[g], rows_of(out, ["msg_id", "type", "address"])) or []
+                   for g, out in zip(groups, group_out, strict=True)}
+        self.resolve([a for m in members.values() for a in m])
         lines = []
         for t in threads:
-            people = ", ".join(self._people(int(t["_id"]), t.get("recipient_ids", ""))) or "?"
+            i = t["_id"]
+            names = ["groupe RCS"] + [self.name(a) for a in members[i]] if i in members else [
+                self.name(a) for a in addresses[i]]
+            people = ", ".join(names) or "?"
             when = datetime.fromtimestamp(int(t.get("date", "0") or 0) / 1000)
             unread = "" if t.get("read") == "1" else " · NON LU"
             unread += HIDDEN if t.get("archived") == "1" else ""
@@ -185,25 +287,35 @@ class Messages:
         return lines
 
     def thread(self, thread_id: int, limit: int = 20) -> tuple[list[str], list[Message]]:
-        sms = self._query("content://sms", ["_id", "date", "type", "read", "body"],
-                          where=f"thread_id={int(thread_id)}", sort="date DESC")[:limit]
+        tid = int(thread_id)
+        last = f"date DESC LIMIT {int(limit)}"
+        sms_p, mms_p = ["_id", "date", "type", "read", "body"], ["_id", "date", "msg_box", "read", "m_type"]
+        part_p, addr_p, thread_p = ["_id", "mid", "ct", "text"], ["msg_id", "type", "address"], [
+            "_id", "archived", "recipient_ids"]
+        sms_out, mms_out, part_out, addr_out, thread_out, canonical_out = self._batch([
+            query_command("content://sms", sms_p, f"thread_id={tid}", last),
+            query_command("content://mms", mms_p, f"thread_id={tid}", last),
+            chained(query_command("content://mms", ["_id"], f"thread_id={tid}", last), "content://mms/part", part_p,
+                    "mid"),
+            self._recent_addr(tid, max(int(limit), 30)),
+            query_command("content://mms-sms/conversations?simple=true", thread_p, f"_id={tid}"),
+            query_command("content://mms-sms/canonical-addresses", ["_id", "address"])])
+        sms = rows_of(sms_out, sms_p)[:limit]
         messages = [Message(datetime.fromtimestamp(int(r["date"]) / 1000), r.get("type") == "2", r.get("body", ""),
                             "SMS", r.get("read") != "0") for r in sms if r.get("date", "").isdigit()]
-        mms = self._query("content://mms", ["_id", "date", "msg_box", "read", "m_type"],
-                          where=f"thread_id={int(thread_id)}", sort="date DESC")[:limit]
+        mms_all = rows_of(mms_out, mms_p)
+        mms = mms_all[:limit]
+        addr_rows = rows_of(addr_out, addr_p)
         if mms:
-            ids = ",".join(r["_id"] for r in mms if r.get("_id", "").isdigit())
-            parts = self._query("content://mms/part", ["_id", "mid", "ct", "text"], where=f"mid IN ({ids})")
             texts: dict[str, list[str]] = {}
             files: dict[str, list[tuple[str, str]]] = {}
-            for p in parts:
+            for p in rows_of(part_out, part_p):
                 if p.get("ct") == "text/plain":
                     texts.setdefault(p.get("mid", ""), []).append(p.get("text", ""))
                 elif p.get("ct", "").startswith(("image/", "video/", "audio/", "application/", "text/x-vcard")) and p.get(
                         "ct") != "application/smil":  # SMIL : mise en page MMS, pas une pièce jointe
                     files.setdefault(p.get("mid", ""), []).append((p.get("_id", ""), p["ct"]))
-            senders = {r.get("msg_id", ""): r.get("address", "") for r in self._query(
-                "content://mms/addr", ["msg_id", "type", "address"], where=f"msg_id IN ({ids}) AND type=137")}
+            senders = {r.get("msg_id", ""): r.get("address", "") for r in addr_rows if r.get("type") == "137"}
             for r in mms:
                 if r.get("date", "").isdigit():
                     attachments = files.get(r["_id"], [])
@@ -214,15 +326,23 @@ class Messages:
                         messages[-1].sender = senders[r["_id"]]
         messages.sort(key=lambda m: m.when)
         messages = messages[-limit:]
-        thread = self._query("content://mms-sms/conversations?simple=true", ["_id", "recipient_ids"],
-                             where=f"_id={int(thread_id)}")
-        people = self._people(thread_id, thread[0].get("recipient_ids", "")) if thread else []
-        group = bool(people) and people[0] == "groupe RCS"
+        thread = rows_of(thread_out, thread_p)
+        self._archived[tid] = bool(thread) and thread[0].get("archived") == "1"
+        addresses = self._addresses(thread[0].get("recipient_ids", ""), self._canonical(canonical_out)) if thread else []
+        # Membres d'un groupe : adresses des 30 derniers MMS/RCS (toutes lues quand limit < 30).
+        top = {r.get("_id", "") for r in mms_all[:30]} if limit >= 30 else None
+        members = self._members(addresses, addr_rows, top)
+        senders_shown = [m.sender for m in messages if m.sender] if members is not None else []
+        self.resolve((addresses if members is None else members) + senders_shown)
+        people = [self.name(a) for a in addresses] if members is None else ["groupe RCS"] + [
+            self.name(a) for a in members]
         for m in messages:  # expéditeur nommé seulement dans un groupe : à deux, « lui/elle » suffit
-            m.sender = self.name(m.sender) if group and m.sender else ""
+            m.sender = self.name(m.sender) if members is not None and m.sender else ""
         return people, messages
 
     def hidden(self, thread_id: int) -> bool:
+        if int(thread_id) in self._archived:  # relu à l'instant par thread()
+            return self._archived.pop(int(thread_id))
         rows = self._query("content://mms-sms/conversations?simple=true", ["_id", "archived"],
                            where=f"_id={int(thread_id)}")
         return bool(rows) and rows[0].get("archived") == "1"
@@ -231,24 +351,48 @@ class Messages:
         """Contenu brut d'une pièce jointe MMS/RCS (image, vidéo…)."""
         return self.adb.exec_out("content", "read", "--uri", f"content://mms/part/{int(part_id)}", timeout=60)
 
-    def find(self, name: str) -> list[tuple[str, str]]:
-        """Contacts dont le nom contient `name` : (nom, numéro), numéros en double retirés."""
-        rows = self._query(f"content://com.android.contacts/data/phones/filter/{quote(name, safe='')}",
-                           ["display_name", "data1"])
+    def parts(self, part_ids: list[str]) -> dict[str, bytes]:
+        """Plusieurs pièces jointes lues en parallèle, en un seul échange ; une pièce illisible est absente."""
+        ids = list(dict.fromkeys(str(int(i)) for i in part_ids))
+        if not ids:
+            return {}
+        token = secrets.token_hex(8)
+        folder = f"/data/local/tmp/nexus-p-{token}"
+        lines = [f"mkdir -p {folder}"]
+        lines += [f"content read --uri content://mms/part/{i} >{folder}/{i} 2>/dev/null &" for i in ids]
+        lines += ["wait", f"for i in {' '.join(ids)}; do printf '@@{token} %s %s\\n' $i $(wc -c <{folder}/$i); "
+                          f"cat {folder}/$i; done", f"rm -rf {folder}"]
+        return split_parts(self.adb.exec_out("sh", "-c", "\n".join(lines), timeout=120), token)
+
+    @staticmethod
+    def _find_command(name: str) -> str:
+        return query_command(f"content://com.android.contacts/data/phones/filter/{quote(name, safe='')}",
+                             ["display_name", "data1"])
+
+    @staticmethod
+    def _found(output: str) -> list[tuple[str, str]]:
         seen, out = set(), []
-        for r in rows:
+        for r in rows_of(output, ["display_name", "data1"]):
             number = r.get("data1", "")
             if number and normalize(number) not in seen:
                 seen.add(normalize(number))
                 out.append((r.get("display_name", ""), number))
         return out
 
-    def threads_with(self, numbers: list[str]) -> list[int]:
-        """Conversations à deux (pas de groupe) avec l'un de ces numéros, plus récentes d'abord."""
-        wanted = {normalize(n) for n in numbers}
-        ids = {r["_id"] for r in self._query("content://mms-sms/canonical-addresses", ["_id", "address"])
-               if normalize(r.get("address", "")) in wanted}
-        threads = self._query("content://mms-sms/conversations?simple=true",
-                              ["_id", "message_count", "recipient_ids"], sort="date DESC")
-        return [int(t["_id"]) for t in threads
-                if t.get("recipient_ids", "").strip() in ids and t.get("message_count", "0") != "0"]
+    def find(self, name: str) -> list[tuple[str, str]]:
+        """Contacts dont le nom contient `name` : (nom, numéro), numéros en double retirés."""
+        return self._found(self._batch([self._find_command(name)])[0])
+
+    def search(self, name: str) -> tuple[list[tuple[str, str]], list[int]]:
+        """Contacts dont le nom contient `name`, et conversations à deux (pas de groupe) avec l'un de leurs numéros,
+        plus récentes d'abord : contacts et conversations lus dans la même vague."""
+        threads_p = ["_id", "message_count", "recipient_ids"]
+        found_out, canonical_out, threads_out = self._batch([
+            self._find_command(name),
+            query_command("content://mms-sms/canonical-addresses", ["_id", "address"]),
+            query_command("content://mms-sms/conversations?simple=true", threads_p, sort="date DESC")])
+        found = self._found(found_out)
+        wanted = {normalize(n) for _, n in found}
+        ids = {i for i, a in self._canonical(canonical_out).items() if normalize(a) in wanted}
+        return found, [int(t["_id"]) for t in rows_of(threads_out, threads_p)
+                       if t.get("recipient_ids", "").strip() in ids and t.get("message_count", "0") != "0"]

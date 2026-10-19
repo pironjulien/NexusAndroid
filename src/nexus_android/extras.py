@@ -204,9 +204,11 @@ CALL_TYPES = {"1": "reçu", "2": "émis", "3": "manqué", "4": "messagerie", "5"
 
 
 def calls(messages: Messages, limit: int = 20) -> tuple[str, list[Data]]:
-    rows = messages._query("content://call_log/calls", ["date", "duration", "type", "number"], sort="date DESC")
+    rows = messages._query("content://call_log/calls", ["date", "duration", "type", "number"],
+                           sort=f"date DESC LIMIT {int(limit)}")[:limit]
+    messages.resolve([r.get("number", "") for r in rows])  # noms lus ensemble, en une vague
     lines, data = [], []
-    for r in rows[:limit]:
+    for r in rows:
         if not r.get("date", "").isdigit():
             continue
         when = datetime.fromtimestamp(int(r["date"]) / 1000)

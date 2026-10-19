@@ -53,8 +53,9 @@ EXAMPLES = {
     "format (the |this )?(disk|drive|partition|volume)": "Format the drive",
     "format(er|ez) (le |la |l |ce |cette |votre )?(telephone|appareil|tablette)": "Formater le téléphone",
     "format (the |this |your )?(phone|device|tablet)": "Format phone",
-    "reinitialis(er|ez)(?! (les |la |le )?(filtres?|zoom|affichage|vue|recherche|tri|mise en page))":
-        "Réinitialiser le téléphone",
+    "reinitialis(er|ez)(?! (les |la |le |l |ce |cette |vos |mes )?(filtres?|zoom|affichage|vue|recherche|tri|mise en page"
+    "|formulaire|champs?|zone|texte|selection|couleurs?)\\b)": "Réinitialiser les paramètres réseau",
+    "reinitialisation (des donnees )?d usine": "Réinitialisation des données d'usine",
     "factory reset": "Factory reset",
     "reset (this pc|(the )?app|to factory( settings)?|all settings)": "Reset all settings",
     "reset (this |the |your )?(pc|phone|device|tablet)": "Reset phone",

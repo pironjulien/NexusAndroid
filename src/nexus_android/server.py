@@ -8,6 +8,8 @@ import os
 import re
 import threading
 import time
+import weakref
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 from urllib.parse import quote
@@ -94,6 +96,21 @@ SAME_ELEMENT = 40  # pixels d'écart toléré sur les limites d'un [N] entre le 
 TAP_SLOP = 30  # en dessous, un swipe est un appui
 
 
+# Démon HTTP partagé : chaque session MCP garde sa propre vue ([N] du dernier look, numéros de conversation), la
+# liaison ADB et le verrou restent communs. En stdio (une session par processus), la vue globale suffit.
+_SESSION: ContextVar[object | None] = ContextVar("nexus_android_session", default=None)
+_VIEWS: weakref.WeakKeyDictionary[object, tuple[Screen, Messages]] = weakref.WeakKeyDictionary()
+_VIEWS_LOCK = threading.Lock()
+
+
+async def _bind_session(ctx: Any, call_next: Any) -> Any:
+    token = _SESSION.set(ctx.session)
+    try:
+        return await call_next(ctx)
+    finally:
+        _SESSION.reset(token)
+
+
 def _init() -> tuple[Adb, Screen, Messages]:
     global ADB, SCREEN, MESSAGES
     if ADB is None:
@@ -101,7 +118,12 @@ def _init() -> tuple[Adb, Screen, Messages]:
         SCREEN = Screen(ADB)
         MESSAGES = Messages(ADB)
     assert SCREEN and MESSAGES
-    return ADB, SCREEN, MESSAGES
+    if (key := _SESSION.get()) is None:
+        return ADB, SCREEN, MESSAGES
+    with _VIEWS_LOCK:
+        if (view := _VIEWS.get(key)) is None:
+            view = _VIEWS[key] = (Screen(ADB), Messages(ADB))
+    return ADB, *view
 
 
 async def _run(fn, *args, **kwargs):
@@ -742,14 +764,14 @@ MEDIA_LABELS = {"video/": "vidéo", "audio/": "audio", "application/": "fichier"
 
 def _resolve_contact(messages: Messages, contact: str) -> tuple[str, list[str], list[int]]:
     """Nom → (nom affiché, numéros, conversations à deux les plus récentes d'abord)."""
-    found = messages.find(contact)
+    found, threads = messages.search(contact)
     names = sorted({n for n, _ in found})
     if not found:
         raise PhoneError(f"aucun contact ne correspond à « {contact} »")
     if len(names) > 1:
         raise PhoneError("plusieurs contacts correspondent : " + ", ".join(names[:12]) + " ; préciser le nom")
     numbers = [num for _, num in found]
-    return names[0], numbers, messages.threads_with(numbers)
+    return names[0], numbers, threads
 
 
 def _messages(conversation: int | None, contact: str | None, limit: int, images: int) -> list[Any]:
@@ -766,11 +788,14 @@ def _messages(conversation: int | None, contact: str | None, limit: int, images:
     people, items = messages.thread(conversation, limit)
     out: list[Any] = []
     shown = 0
+    wanted = [p for m in reversed(items) for p, ct in m.attachments if ct.startswith("image/")][:images]
+    fetched = messages.parts(wanted)  # lues ensemble ; une image manquante est relue seule ci-dessous
     for m in reversed(items):  # images des messages les plus récents d'abord
         for part_id, ct in m.attachments:
             if ct.startswith("image/") and shown < images:
                 try:
-                    picture = PILImage.open(io.BytesIO(messages.part(part_id)))
+                    data = fetched.get(str(int(part_id))) or messages.part(part_id)
+                    picture = PILImage.open(io.BytesIO(data))
                     picture.thumbnail((1024, 1024))
                     buffer = io.BytesIO()
                     picture.convert("RGB").save(buffer, "JPEG", quality=80)
@@ -1091,11 +1116,49 @@ async def checkup(clean: bool = False) -> str:
     return await _run(_checkup, clean)
 
 
+def _serve_http(port: int) -> None:
+    """Démon unique sur 127.0.0.1 (MCP Streamable HTTP) que Claude, Codex et Antigravity joignent par URL.
+
+    Jeton exigé (Authorization: Bearer) : NEXUS_MCP_TOKEN, ou le fichier NEXUS_MCP_TOKEN_FILE."""
+    import hmac
+
+    import uvicorn
+
+    token = os.environ.get("NEXUS_MCP_TOKEN", "")
+    if not token and (path := os.environ.get("NEXUS_MCP_TOKEN_FILE")):
+        with open(path, encoding="utf-8") as f:
+            token = f.read().strip()
+    if len(token) < 32:
+        raise SystemExit("Jeton absent ou trop court (NEXUS_MCP_TOKEN ou NEXUS_MCP_TOKEN_FILE, 32 caractères au moins)")
+    expected = f"Bearer {token}".encode()
+    mcp.middleware.append(_bind_session)
+    app = mcp.streamable_http_app(host="127.0.0.1")
+
+    async def guarded(scope, receive, send):
+        if scope["type"] == "http":
+            got = dict(scope["headers"]).get(b"authorization", b"")
+            if not hmac.compare_digest(got, expected):
+                await send({"type": "http.response.start", "status": 401,
+                            "headers": [(b"content-type", b"text/plain; charset=utf-8")]})
+                await send({"type": "http.response.body", "body": "Jeton refusé".encode()})
+                return
+        await app(scope, receive, send)
+
+    uvicorn.run(guarded, host="127.0.0.1", port=port, log_level="warning")
+
+
 def main() -> None:
+    import sys
+
+    http = "--http" in sys.argv
     if awake.ENABLED:
         _schedule(0)  # session laissée par un serveur arrêté ou planté : rendue dès qu'elle a expiré
     try:
-        mcp.run("stdio")
+        if http:
+            i = sys.argv.index("--http")
+            _serve_http(int(sys.argv[i + 1]) if len(sys.argv) > i + 1 else 16180)
+        else:
+            mcp.run("stdio")
     finally:
         if awake.ENABLED:
             if _TIMER:

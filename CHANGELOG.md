@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-19
+
+### Security
+
+- Shared policy (`garde-fous.json`) synced with NexusHarness: every "Réinitialiser…" / reset button needs
+  `confirm=true` again, including the bare "Réinitialiser" confirmation button of One UI and Windows and
+  "Réinitialiser les paramètres réseau". Only harmless resets stay free (filters, zoom, view, sort, search, layout,
+  form, fields, text, selection, colours). This reverts the 0.5.0 narrowing, which let the final One UI reset button
+  through without confirmation.
+
+## [0.5.0] - 2026-10-19
+
+### Performance
+
+- `messages()` is about 5 times faster. Every `content query` starts a Java process on the phone (about 1 s), and
+  the tool used to run them one after another: 34 for the conversation list, 7 to 11 per conversation. Queries now
+  run in parallel on the phone inside a single `adb shell` (30 cost about as much as one), the phone returns only the
+  last N rows (`LIMIT`), MMS parts and addresses are chained on the phone instead of going back to the PC, and
+  contact names are cached for 10 minutes, shared by all sessions of the daemon. Measured on a Galaxy Fold over USB:
+  conversation list 35 s → 4.6 s (3.1 s with names cached), one conversation 7-11 s → 2.1 s, with 4 images
+  11.6 s → 3.3 s, by contact name 11.4 s → 4.3 s. Output is byte-for-byte identical, security codes still masked.
+- `info(kind="calls")` reads only the last N calls and resolves their names in one exchange.
+
+### Security
+
+- Shared policy (`garde-fous.json`) synced with NexusHarness: "reset" needs `confirm=true` only for the whole device
+  ("Réinitialiser le téléphone", "Réinitialisation d'usine"); other "Réinitialiser…" buttons inside an app are free.
+
+### Changed (Claude Code plugin, 2026-10-19)
+- `install.ps1` no longer registers the server with Claude Code and never calls a Claude CLI: Claude Code gets
+  `nexus-android` from a Claude Code plugin (shared daemon URL, token read from an environment variable).
+
+### Fixed
+
+- `install.ps1`: without `claude` on the PATH, Claude Code was skipped on a new PC. Falls back to the `claude.exe`
+  shipped with the Claude desktop app, like NexusClaude and NexusBrowser.
+
 ### Changed
 
 - Repository renamed to `pironjulien/NexusAndroid`; GitHub redirects the old address.
@@ -13,6 +50,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   the quick start installs with `uvx --python 3.14 nexus-android`.
 
 ### Added
+
+- Shared daemon mode: `nexus-android --http [port]` serves MCP Streamable HTTP on 127.0.0.1 (default port 16180),
+  so Claude Code, Codex and Antigravity share one process instead of one per session. A bearer token is required
+  (`NEXUS_MCP_TOKEN` or `NEXUS_MCP_TOKEN_FILE`, 32 characters or more); each MCP session keeps its own `[N]`
+  numbering and conversation list, while the ADB link and the phone lock stay shared. Clients reconnect on their
+  own after a daemon restart.
+- `install.ps1` declares the daemon to the Nexus daemon supervisor and registers `nexus-android` by URL for Claude Code,
+  Codex and Antigravity (instead of a stdio process per session).
 - README: animated demo recorded from the real tool on a real phone (docs/assets/demo.webp).
 
 ## [0.4.1] - 2026-10-18

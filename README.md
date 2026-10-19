@@ -196,13 +196,13 @@ Prerequisites: Windows, PowerShell 7, [`uv`](https://docs.astral.sh/uv/), Python
 (`winget install Google.PlatformTools`). On the phone: Developer options → USB debugging.
 
 ```powershell
-pwsh -NoProfile -File install.ps1          # environment, Claude Code/Codex/Antigravity registration, tests
+pwsh -NoProfile -File install.ps1          # environment, Codex/Antigravity registration, tests
 pwsh -NoProfile -File install.ps1 -Live    # plus a run on the connected phone
 ```
 
 The script registers the server in each client present on the PC:
 
-- Claude Code: `claude mcp add`, user scope.
+- Claude Code: not touched (no Claude CLI call); it gets the server from a Claude Code plugin, or with the quick start command above.
 - Codex: `[mcp_servers.nexus-android]` table in `~\.codex\config.toml`, with a backup made first.
 - Antigravity: `nexus-android` entry in `~\.gemini\config\mcp_config.json`.
 
