@@ -69,6 +69,7 @@ SCREEN: Screen | None = None
 MESSAGES: Messages | None = None
 
 Show = Literal["both", "image", "elements", "none"]
+Then = Literal["both", "image", "elements", "changes", "none"]  # act : changes = seulement ce qui a changé
 Marks = Literal["auto", "all", "none"]
 KEYS = {
     "back": "KEYCODE_BACK", "retour": "KEYCODE_BACK", "home": "KEYCODE_HOME", "accueil": "KEYCODE_HOME",
@@ -236,12 +237,41 @@ def _awake_note(adb: Adb) -> str:
 # ---------------------------------------------------------------- vue
 
 
-def _view(show: Show, query: str | None = None, region: list[float] | None = None,
+MAX_LINES = 200  # éléments listés au plus (liste complète ou changements)
+
+
+def _changes(screen: Screen, elements: list[Element], package: str) -> tuple[list[Element], list[str], bool]:
+    """Écran actuel comparé à la dernière liste montrée : éléments renumérotés (les [N] retrouvés gardent leur numéro,
+    les nouveaux en prennent un neuf), lignes du rapport, et True si c'est bien un rapport des changements. Sinon
+    liste complète (numéros de 1 à n), dite en une ligne : pas de liste précédente, autre application au premier plan,
+    ou presque tout a changé."""
+    if not screen.elements:
+        return elements, ["Full list (no previous list to compare with):"], False
+    if package != screen.listed_package:
+        return elements, [f"Full list (foreground app changed: {screen.listed_package or '?'} → {package or '?'}):"], \
+            False
+    diff = screen_mod.diff_elements(screen.elements, elements)
+    if diff.ratio > screen_mod.DIFF_FULL:
+        return elements, [f"Full list (screen changed almost entirely: {round(diff.ratio * 100)} % of elements "
+                          "differ):"], False
+    if not (diff.added or diff.removed or diff.changed):
+        return diff.elements, [f"No change since the last list ({diff.unchanged} elements, same [N])."], True
+    lines = [f"Changes since the last list: {len(diff.added)} added, {len(diff.removed)} removed, {len(diff.changed)} "
+             f"changed, {diff.unchanged} unchanged (same [N], not repeated)."]
+    lines += ["+ " + e.line(screen.scale) for e in diff.added]
+    lines += ["~ " + e.line(screen.scale) + f" ({', '.join(why)})" for e, why in diff.changed]
+    lines += [f"- [{e.index}] {e.role}" + (f" \"{e.label[:60]}\"" if e.label else "") for e in diff.removed]
+    if len(lines) > MAX_LINES + 1:
+        lines = lines[:MAX_LINES + 1] + [f"… {len(lines) - MAX_LINES - 1} more changes not listed: run look"]
+    return diff.elements, lines, True
+
+
+def _view(show: Then, query: str | None = None, region: list[float] | None = None,
           notes: list[str] | None = None, confirm: bool = False, marks: Marks = "auto") -> list[Any]:
     adb, screen, _ = _init()
     wants_image = show in ("both", "image") or bool(region)
     # État, image et arbre en un échange avec le lecteur d'écran du téléphone (sinon dumpsys, screencap, uiautomator).
-    reading = screen.read(image=wants_image, tree=wants_image or show == "elements", full=bool(region))
+    reading = screen.read(image=wants_image, tree=wants_image or show in ("elements", "changes"), full=bool(region))
     state = reading.state
     if awake.ENABLED:
         # Regarder l'écran prolonge une session en cours (sans en ouvrir une) ; une relance du délai de veille d'Android
@@ -269,7 +299,7 @@ def _view(show: Show, query: str | None = None, region: list[float] | None = Non
         if state.awake and not region and is_black(image):
             lines.append("All-black image: screen protected against capture (FLAG_SECURE) or in transition; rely on "
                          "the [N] elements, which stay readable.")
-    elif show == "elements" and screen.size is None:  # échelle des coordonnées @x,y, même sans image jointe
+    elif show in ("elements", "changes") and screen.size is None:  # échelle des coordonnées @x,y, même sans image jointe
         screen.render(screen.capture())
     # Codes masqués dans l'arbre avant tout filtre (query) et zones noircies sur l'image.
     elements: list[Element] = reading.elements
@@ -286,7 +316,7 @@ def _view(show: Show, query: str | None = None, region: list[float] | None = Non
     if query:
         q = plain(query).casefold()
         shown = [e for e in elements if q in plain(e.text).casefold() or q in plain(e.desc).casefold()]
-    shown = shown[:200]
+    shown = shown[:MAX_LINES]
     if image is not None:
         # Numéros [N] seulement à côté de la liste (show=both), sur l'image dont les codes sont déjà noircis.
         drawn = screen_mod.marked(shown, marks) if show == "both" else []
@@ -298,10 +328,17 @@ def _view(show: Show, query: str | None = None, region: list[float] | None = Non
         if drawn:
             header += f"; {len(drawn)} [N] marks drawn"
         out.append(Image(data=data, format="jpeg"))
-    if show in ("both", "elements"):
+    diffed = False
+    if show == "changes" and reading.error is None:
+        # Arbre lu (codes déjà masqués) : comparé à la dernière liste, numéros gardés pour les éléments retrouvés.
+        elements, report, diffed = _changes(screen, elements, state.package)
+        lines += report
+        shown = [] if diffed else elements[:MAX_LINES]
+    if show in ("both", "elements", "changes"):
         screen.elements = elements  # ce que désignent les [N] du prochain act
+        screen.listed_package = state.package
         lines += [e.line(screen.scale) for e in shown]
-        if not shown:
+        if not shown and not diffed:
             lines.append("(no readable element: rely on the image, gestures by coordinates)")
     out.insert(0, "\n".join([header] + lines))
     return out
@@ -774,7 +811,7 @@ def _owner_took_over(adb: Adb) -> bool:
     return idle is not None and asked - idle > _LAST_INPUT + OWNER_SLACK
 
 
-def _act(steps: list[Step], then: Show) -> list[Any]:
+def _act(steps: list[Step], then: Then) -> list[Any]:
     adb, screen, _ = _init()
     state = screen.state()
     _wait_for_owner(adb, state)
@@ -823,7 +860,7 @@ def _act(steps: list[Step], then: Show) -> list[Any]:
 
 
 @mcp.tool(meta=ALWAYS, annotations=_hints("Act on the phone", destructive=True, open_world=True), structured_output=False)
-async def act(steps: list[Step], then: Show = "both") -> list[Any]:
+async def act(steps: list[Step], then: Then = "both") -> list[Any]:
     """Gestures on the phone, in order (stops at the first error), then the updated screen.
     Steps: tap, long_press, double_tap, type (any text, accents and emoji included; target = field to tap
     first; non-ASCII is pasted through the clipboard, which is then given back to the user unchanged), clear, key
@@ -832,6 +869,9 @@ async def act(steps: list[Step], then: Show = "both") -> list[Any]:
     gone=true), open_url (text = address or app link). Target: "[N]" (brackets; a bare number is text), visible text
     or "x,y" image pixels; judged on the screen read again just before the gesture. Report: ✓ effect read back,
     ~ sent not verified, ✗ failed/refused, ? link lost (unknown effect).
+    then: both (default: image and elements), image, elements, changes (text only: elements added "+", changed "~"
+    and removed "-" since the last list, unchanged ones counted; [N] numbers stay valid for the next act; full list
+    when there is no previous list, the foreground app changed or most of the screen did), none.
     Example: steps=[{"do":"tap","target":"Search"},{"do":"type","text":"wifi"}]."""
     return await _run(_act, steps, then)
 

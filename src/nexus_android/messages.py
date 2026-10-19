@@ -27,9 +27,10 @@ _KEYWORDS = re.compile(
     re.I,
 )
 # Codes chiffrés : 4 chiffres ou plus (espaces ou tirets permis), sans prendre les montants (1 250,00 ; 1 250 €), les
-# dates (12/10/2026, 12-10-2026, 2026-10-12) ni les coordonnées (@1234,2000) ; « 482913, valable » reste un code.
-_CODE = re.compile(r"(?<![\d,./$€£-])(?!\d{1,2}-\d{1,2}-\d{2,4}(?!\d)|\d{4}-\d{1,2}-\d{1,2}(?!\d))"
-                   r"(?:[A-Z]-)?\d(?:[ -]?\d){3,}(?!\d|[.,/]\d|\s?(?:€|\$|£|eur\b|EUR\b|%))")
+# dates (12/10/2026, 12-10-2026, 2026-10-12), les coordonnées (@1234,2000) ni les numéros de téléphone (10 chiffres ou plus,
+# « +33… » : « 06 11 22 33 44 ») ; « 482913, valable » reste un code.
+_CODE = re.compile(r"(?<![\d,./$€£+-])(?<!\d[ -])(?!\d{1,2}-\d{1,2}-\d{2,4}(?!\d)|\d{4}-\d{1,2}-\d{1,2}(?!\d))"
+                   r"(?:[A-Z]-)?\d(?:[ -]?\d){3,8}(?![ -]?\d|[.,/]\d|\s?(?:€|\$|£|eur\b|EUR\b|%))")
 # Codes alphanumériques de 4 à 10 caractères mêlant lettres et chiffres (« A7K9P2 »), près d'un mot-clé.
 _ALNUM = re.compile(r"(?<![\w-])(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{4,10}(?![\w-])")
 _NEAR = 60  # caractères entre le mot-clé et un code alphanumérique

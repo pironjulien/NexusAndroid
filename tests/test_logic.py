@@ -66,6 +66,14 @@ def test_mask_codes_leaves_orders_dates_and_amounts(text):
     assert mask_codes(text) == text
 
 
+@pytest.mark.parametrize("text", ["Service client, confirmation : 06 11 22 33 44", "Code envoyé au 0612345678",
+                                  "Votre code arrive au +33 6 12 34 56 78", "Connexion : appelez le 01-23-45-67-89"])
+def test_mask_codes_leaves_phone_numbers(text):
+    """Essai réel du 19/10 : un numéro d'aide (10 chiffres) masqué comme un code ; un code fait 4 à 9 chiffres."""
+    assert mask_codes(text) == text
+    assert mask_codes(text + " ; code : 482913").endswith("[masked code]")
+
+
 def test_parse_rows_multiline_body():
     out = "Row: 0 _id=92, date=1791871247643, type=1, body=Bonjour, ça va ?\nÀ demain\nRow: 1 _id=91, date=1, type=2, body=Ok\n"
     rows = parse_rows(out, ["_id", "date", "type", "body"])

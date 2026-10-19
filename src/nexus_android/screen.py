@@ -147,6 +147,72 @@ def mask_elements(elements: list[Element]) -> list[Element]:
     return out
 
 
+MOVED = 10  # pixels écran : écart des limites en deçà duquel un élément n'a pas bougé (rapport des changements)
+SAME_PLACE = 40  # pixels écran : même endroit, contenu changé (champ dont le texte change, compteur, bascule)
+DIFF_FULL = 0.6  # part d'éléments différents au-delà de laquelle la liste complète est rendue
+
+
+@dataclass
+class Changes:
+    """Écran actuel comparé à la dernière liste montrée : elements porte les numéros à jour (ceux de la liste
+    précédente pour les éléments retrouvés, des numéros neufs pour les autres)."""
+
+    elements: list[Element]
+    added: list[Element]
+    removed: list[Element]
+    changed: list[tuple[Element, list[str]]]
+    unchanged: int
+    ratio: float  # part d'éléments différents (0 : rien n'a changé, 1 : tout)
+
+
+def _gap(a: Element, b: Element) -> int:
+    return max(abs(p - q) for p, q in zip(a.bounds, b.bounds, strict=True))
+
+
+def diff_elements(old: list[Element], new: list[Element]) -> Changes:
+    """Rapprochement en deux passes, au plus près d'abord : même contenu (rôle, texte, description, ressource,
+    application) où qu'il soit, puis même rôle, ressource et application au même endroit (contenu changé). Les deux
+    listes sont déjà masquées : un code qui change sous son masque ne se voit pas."""
+    match: dict[int, int] = {}  # position dans new → position dans old
+    used: set[int] = set()
+
+    def pair(key, limit: int | None) -> None:
+        groups: dict[tuple, list[int]] = {}
+        for i, o in enumerate(old):
+            if i not in used:
+                groups.setdefault(key(o), []).append(i)
+        candidates = sorted((_gap(old[i], n), j, i) for j, n in enumerate(new) if j not in match
+                            for i in groups.get(key(n), []) if limit is None or _gap(old[i], n) <= limit)
+        for _, j, i in candidates:
+            if j not in match and i not in used:
+                match[j] = i
+                used.add(i)
+
+    pair(lambda e: (e.role, e.text, e.desc, e.rid, e.package), None)
+    pair(lambda e: (e.role, e.rid, e.package), SAME_PLACE)
+    following = max((e.index for e in old), default=0)
+    elements, added, changed, unchanged = [], [], [], 0
+    for j, e in enumerate(new):
+        if j in match:
+            before = old[match[j]]
+            e = replace(e, index=before.index)
+            why = [name for name, differs in (("text", (e.text, e.desc) != (before.text, before.desc)),
+                                              ("state", e.states != before.states),
+                                              ("moved", _gap(e, before) > MOVED)) if differs]
+            if why:
+                changed.append((e, why))
+            else:
+                unchanged += 1
+        else:
+            following += 1
+            e = replace(e, index=following)
+            added.append(e)
+        elements.append(e)
+    removed = [o for i, o in enumerate(old) if i not in used]
+    ratio = 1 - unchanged / max(len(old), len(new), 1)
+    return Changes(elements, added, removed, changed, unchanged, ratio)
+
+
 def blackout(image: PILImage.Image, elements: list[Element], shrink: float = 1.0) -> PILImage.Image:
     """Noircit sur l'image la zone des éléments dont un code a été masqué (limites en pixels écran ; shrink : image
     réduite par le téléphone, pixels image = pixels écran × shrink, zone arrondie vers l'extérieur)."""
@@ -165,7 +231,7 @@ def blackout(image: PILImage.Image, elements: list[Element], shrink: float = 1.0
 
 
 MARK_FEW = 21  # marks="auto" : jusqu'à ce nombre d'éléments, tous numérotés ; au-delà, seulement ceux sans nom
-MARK_SIZE = 14  # px du numéro sur l'image rendue (côté long MAX_SIDE)
+MARK_SIZE = 18  # px du numéro sur l'image rendue (côté long MAX_SIDE)
 MARK_FILL = (200, 30, 120, 215)  # pastille (comme nexus-windows), chiffres blancs
 MARK_EDGE = (200, 30, 120, 150)  # contour fin des limites de l'élément
 _FONT: list[ImageFont.FreeTypeFont | ImageFont.ImageFont] = []
@@ -351,6 +417,7 @@ class Screen:
         self.scale = 1.0  # pixels image = pixels écran × scale
         self.shrink = 1.0  # pixels de la dernière capture = pixels écran × shrink (réduite par le téléphone : < 1)
         self.elements: list[Element] = []  # dernière liste montrée à l'agent (look) : ce que désigne [N]
+        self.listed_package = ""  # premier plan au moment de cette liste (rapport des changements)
         self.size: tuple[int, int] | None = None
         self.posture = ""  # pliage au moment de la dernière image (les coordonnées "x,y" en dépendent)
         self.last_state: State | None = None  # état lu avec la dernière lecture d'écran (state ou dump)

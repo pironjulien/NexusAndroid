@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-19
+
+### Added
+
+- `act(then="changes")`: after the gestures, only what changed since the last element list (`+` added, `~` changed
+  text, state or position beyond 10 px, `-` removed; unchanged elements counted, not repeated). Kept elements keep
+  their `[N]`, new ones get fresh numbers, so the next `act` aims on the current screen. Full list, said in one line,
+  when there is no previous list, the foreground app changed or more than 60 % of the elements differ. Codes stay
+  masked (compared masked). About 97 % fewer characters on a 90-element settings screen after one toggle.
+
+### Fixed
+
+- Phone numbers (10 digits or more, or after `+`, such as `06 11 22 33 44`) are no longer masked as security codes
+  (seen on a real helpline button); codes of 4 to 9 digits still are.
+- Screenshot marks are larger (18 px on the 1280 px side, was 14) and easier to read.
+
 ## [0.7.0] - 2026-10-19
 
 ### Security
@@ -461,7 +477,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.7.1
 [0.7.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.7.0
 [0.6.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.6.2
 [0.6.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.6.1
