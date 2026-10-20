@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Non publié] - 2026-10-20 — Jeton commun créé par la synchro seulement
+
+### Corrigé
+- `install.ps1` ne crée plus le jeton commun des démons s'il manque : il s'arrête et renvoie vers Sync-NexusPoste, seul endroit où il naît (et seulement une fois le coffre NexusSecure descendu par OneDrive). Lancé sur un PC neuf trop tôt, il créait un autre jeton qui cassait l'autre PC.
+
 ## [Unreleased]
 
 ## [0.9.2] - 2026-10-20
