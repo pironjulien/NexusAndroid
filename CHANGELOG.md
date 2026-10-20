@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Development dependencies: pyright 1.1.407 to 1.1.414; build backend accepts uv_build up to 0.13.x.
+
 ## [0.9.3] - 2026-10-20
 
 ### Fixed
