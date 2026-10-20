@@ -50,11 +50,41 @@ def has_keyword(*texts: str) -> bool:
     return any(t and _KEYWORDS.search(plain(t)) for t in texts)
 
 
+# Carte bancaire (13 à 19 chiffres, clé de Luhn) et IBAN (clé modulo 97), espaces ou tirets permis : masqués partout,
+# sans mot-clé (un numéro de carte ou de compte n'a pas besoin d'être annoncé pour être sensible).
+_CARD = re.compile(r"(?<![\w.])\d(?:[ -]?\d){12,18}(?![\w.])")
+_IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,30}\b")
+CARD, IBAN = "[masked card]", "[masked IBAN]"
+
+
+def _luhn(digits: str) -> bool:
+    total = 0
+    for i, c in enumerate(reversed(digits)):
+        n = int(c) * (2 if i % 2 else 1)
+        total += n - 9 if n > 9 else n
+    return total % 10 == 0
+
+
+def _card(m: re.Match[str]) -> str:
+    digits = re.sub(r"\D", "", m[0])
+    return CARD if 13 <= len(digits) <= 19 and len(set(digits)) > 1 and _luhn(digits) else m[0]
+
+
+def _iban(m: re.Match[str]) -> str:
+    raw = m[0].replace(" ", "")
+    moved = raw[4:] + raw[:4]
+    number = "".join(str(int(c, 36)) for c in moved)
+    return IBAN if 15 <= len(raw) <= 34 and int(number) % 97 == 1 else m[0]
+
+
 def mask_codes(text: str, context: bool = False) -> str:
-    """Masque les codes de validation des textes qui en parlent ; l'agent ne les voit jamais. context=True : le
-    mot-clé est ailleurs (titre de la notification, nom du champ), tout code du texte est masqué."""
+    """Masquage unique de toutes les sorties texte (écran, notifications, SMS, presse-papiers, agenda, journaux, web,
+    carte) : numéros de carte (Luhn) et IBAN (modulo 97) toujours ; codes de validation des textes qui en parlent.
+    L'agent ne les voit jamais. context=True : le mot-clé est ailleurs (titre de la notification, nom du champ), tout
+    code du texte est masqué."""
     if not text:
         return text
+    text = _CARD.sub(_card, _IBAN.sub(_iban, text))
     keywords = [m.span() for m in _KEYWORDS.finditer(plain(text))]
     if not keywords and not context:
         return text

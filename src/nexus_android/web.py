@@ -235,8 +235,16 @@ def read(adb: Adb, tab: Tab) -> dict[str, object]:
     if "error" in answer or answer.get("result", {}).get("exceptionDetails"):
         raise PhoneError("web: the page could not be read (script refused by the page)")
     value = answer.get("result", {}).get("result", {}).get("value") or {}
+    # Règle revérifiée sur la page réellement lue (même évaluation que le texte) : l'onglet a pu naviguer vers une
+    # banque entre la liste des onglets et la lecture.
+    actual = str(value.get("url") or "")
+    if not actual:
+        raise PhoneError("web: the page did not say its address, nothing returned (it could be a protected site)")
+    if protected_site(actual):
+        raise PhoneError(f"{urllib.parse.urlsplit(actual).hostname}: the tab moved to a banking, payment, tax or "
+                         "identity site before the reading; nothing returned (look at the screen instead, read-only)")
     text = _clean(str(value.get("text", "")))
     links = [(_clean(str(t)), logs_mod.mask(str(h))) for t, h in value.get("links", [])
              if not str(h).startswith("javascript:")]
-    return {"title": _clean(str(value.get("title", ""))), "url": logs_mod.mask(str(value.get("url", tab.url))), "text": text,
+    return {"title": _clean(str(value.get("title", ""))), "url": logs_mod.mask(actual), "text": text,
             "links": links}

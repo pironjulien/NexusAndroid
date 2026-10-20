@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 from . import policy
 from .adb import Adb, PhoneError
-from .messages import _B64, _HEX, _JWT, _KEY_PREFIX, _PEM, mask_codes
+from .messages import _B64, _HEX, _JWT, _KEY_PREFIX, _PEM, CARD, IBAN, mask_codes  # noqa: F401  (CARD, IBAN : noms publics)
 
 MAX_LOG = 30_000  # caractères au plus d'une réponse
 MAX_LINES = 2000
@@ -46,32 +46,8 @@ _ASSIGN = re.compile(r"(?i)\b((?:access|refresh|id|auth|session|csrf|api|client)
                      r"pwd|cookie|authorization|api[_-]?key|session[_-]?id|sid))(\"?'?\s*[:=]\s*\"?'?)"
                      r"([^\s\"',;&}\]]{4,})")
 _EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![\w-])")
-# Carte bancaire (13 à 19 chiffres, clé de Luhn) et IBAN (clé modulo 97), espaces ou tirets permis.
-_CARD = re.compile(r"(?<![\w.])\d(?:[ -]?\d){12,18}(?![\w.])")
-_IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,30}\b")
 _PHONE = re.compile(r"(?<![\w+.:/])(?:\+\d(?:[ .-]?\(?\d\)?){7,14}|0[1-9](?:[ .-]?\d\d){4})(?![\w])")
-SECRET, EMAIL, PHONE, CARD, IBAN = ("[masked secret]", "[masked e-mail]", "[masked phone]", "[masked card]",
-                                    "[masked IBAN]")
-
-
-def _luhn(digits: str) -> bool:
-    total = 0
-    for i, c in enumerate(reversed(digits)):
-        n = int(c) * (2 if i % 2 else 1)
-        total += n - 9 if n > 9 else n
-    return total % 10 == 0
-
-
-def _card(m: re.Match[str]) -> str:
-    digits = re.sub(r"\D", "", m[0])
-    return CARD if 13 <= len(digits) <= 19 and len(set(digits)) > 1 and _luhn(digits) else m[0]
-
-
-def _iban(m: re.Match[str]) -> str:
-    raw = m[0].replace(" ", "")
-    moved = raw[4:] + raw[:4]
-    number = "".join(str(int(c, 36)) for c in moved)
-    return IBAN if 15 <= len(raw) <= 34 and int(number) % 97 == 1 else m[0]
+SECRET, EMAIL, PHONE = "[masked secret]", "[masked e-mail]", "[masked phone]"
 
 
 def _entropy(value: str) -> float:
@@ -110,12 +86,9 @@ def mask(text: str) -> str:
     if text == SECRET:
         return text
     text = _EMAIL.sub(EMAIL, text)
-    text = _IBAN.sub(_iban, text)
-    text = _CARD.sub(_card, text)
-    text = _PHONE.sub(PHONE, text)
-    # Codes masqués près d'un mot qui les annonce (code, OTP, vérification…) : tout nombre masqué rendait les journaux
-    # illisibles (identifiants, tailles, adresses), alors que clés, e-mails et numéros le sont toujours.
-    return mask_codes(text)
+    # Masquage commun (cartes, IBAN, codes près d'un mot qui les annonce : tout nombre masqué rendait les journaux
+    # illisibles), avant les numéros de téléphone : une carte n'est jamais prise pour un numéro.
+    return _PHONE.sub(PHONE, mask_codes(text))
 
 
 @dataclass

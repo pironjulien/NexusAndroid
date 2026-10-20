@@ -371,10 +371,16 @@ def _view(show: Then, query: str | None = None, region: list[float] | None = Non
         q = plain(query).casefold()
         shown = [e for e in elements if q in plain(e.text).casefold() or q in plain(e.desc).casefold()]
     shown = shown[:MAX_LINES]
+    # Texte que l'arbre ne donne pas (arbre sans texte, surface dessinée) : lu sur l'image par OCR AVANT tout encodage,
+    # pour que les codes qu'il y trouve soient noircis sur l'image comme ceux de l'arbre.
+    seen: list[Element] = []
+    wants_ocr = reading.image is not None or show in ("both", "elements")
+    if reading.error is None and wants_ocr and screen_mod.needs_ocr(elements, screen.size, screen.surfaces):
+        seen = _ocr_elements(screen, reading.image)
     if image is not None:
         # Numéros [N] seulement à côté de la liste (show=both), sur l'image dont les codes sont déjà noircis.
         drawn = screen_mod.marked(shown, marks) if show == "both" else []
-        data = screen.render(blackout(image, elements, screen.shrink), region, drawn)
+        data = screen.render(blackout(image, elements + seen, screen.shrink), region, drawn)
         if not region:
             width, height = screen.size or image.size  # pixels écran (image éventuellement réduite par le téléphone)
             header += f" · image {round(width * screen.scale)}×{round(height * screen.scale)}"
@@ -392,8 +398,7 @@ def _view(show: Then, query: str | None = None, region: list[float] | None = Non
         screen.fingerprint = screen_mod.fingerprint(reading.elements, state.package)
     if show in ("both", "elements") and state.package:
         try:
-            names = [n for n in routines_mod.listing(state.package)
-                     if routines_mod.get(n).get("package") == state.package][:10]
+            names = routines_mod.for_app(state.package)[:10]
         except PhoneError:
             names = []
         if names:
@@ -402,13 +407,11 @@ def _view(show: Then, query: str | None = None, region: list[float] | None = Non
         screen.elements = elements  # ce que désignent les [N] du prochain act
         screen.listed_package = state.package
         lines += [e.line(screen.scale) for e in shown]
-        if not any(e.text or e.desc for e in elements) and not diffed and reading.error is None:
-            # Arbre sans aucun texte (jeu, Flutter, dessin) : le texte vu sur l'image, visable par son texte.
-            seen = _ocr_elements(screen, reading.image)
-            if seen:
-                lines.append("No text in the UI tree; text seen on the image (OCR, aim at it by its text or @x,y):")
-                lines += [f"· \"{e.text}\" @{round(e.center[0] * screen.scale)},{round(e.center[1] * screen.scale)}"
-                          for e in seen[:MAX_LINES]]
+        if seen and not diffed:
+            # Arbre sans texte (jeu, Flutter, dessin) ou surface dessinée : le texte vu sur l'image, visable par son texte.
+            lines.append("Text missing from the UI tree; text seen on the image (OCR, aim at it by its text or @x,y):")
+            lines += [f"· \"{e.text}\" @{round(e.center[0] * screen.scale)},{round(e.center[1] * screen.scale)}"
+                      for e in seen[:MAX_LINES]]
         if not shown and not diffed:
             lines.append("(no readable element: rely on the image, gestures by coordinates)")
     elif not screen.elements:  # image ou none : rien n'est listé, les [N] restent ceux de la dernière liste
@@ -507,12 +510,8 @@ def _ocr_elements(screen: Screen, image: PILImage.Image | None = None) -> list[E
         shot = image if image is not None else screen.capture()
     except PhoneError:
         return []
-    width = (screen.size or shot.size)[0]
-    factor = width / shot.width if shot.width else 1.0
     package = screen.last_state.package if screen.last_state else ""
-    found = [Element(index=0, role="OCR", text=line.text, desc="", rid="", package=package, bounds=line.box,
-                     clickable=True) for line in ocr_mod.read(shot, factor)]
-    return screen_mod.mask_elements(found)
+    return screen_mod.ocr_elements(shot, (screen.size or shot.size)[0], package)
 
 
 def _fresh(screen: Screen) -> list[Element] | None:
@@ -631,17 +630,23 @@ def _unnamed_icon(aim: Aim, any_app: bool = False) -> Element | None:
     return None
 
 
-def _guard(screen: Screen, aim: Aim, step: Step, strict: bool = True) -> None:
+def _guard(screen: Screen, aim: Aim, step: Step, strict: bool = True, bound: bool = False) -> bool:
     """Jugé sur l'écran relu juste avant le geste (arbre et état lus dans le même aller-retour).
     Toujours : téléphone verrouillé → refus ; application protégée → défilement libre, navigation avec confirm=true,
     jamais un bouton d'argent ou d'envoi ; libellé de la politique commune → confirm=true. strict (appui, saisie) :
-    rien de lisible sous le point, ou icône sans nom d'une messagerie ou du téléphone → confirm=true."""
+    rien de lisible sous le point, ou icône sans nom d'une messagerie ou du téléphone → confirm=true. Rend True si
+    l'accord de l'étape a été vérifié (et consommé) ici ; bound : déjà consommé par l'autre bout du même glissé."""
     if aim.fresh is not None and screen.last_state and (reason := _allowed(step, screen.last_state)):
         raise PhoneError(reason)
     package = aim.judged[0].package if aim.judged else ""
     context = " ".join(e.label for e in aim.fresh or [] if e.package == package)
+    # Application protégée d'après l'élément touché OU le premier plan lu, même quand l'arbre est illisible.
     protected = next((n for e in aim.judged if (n := policy.protected_app(e.package))), None) or (
-        policy.protected_app(screen.last_state.package) if aim.fresh is not None and screen.last_state else None)
+        policy.protected_app(screen.last_state.package) if screen.last_state else None)
+    if protected and aim.fresh is None:
+        # Sans arbre, rien ne dit si le point est un bouton d'argent : aucun geste visé, même avec confirm=true.
+        raise PhoneError(f"{protected}: UI tree unreadable, what lies under the point cannot be checked; no gesture "
+                         "in a protected app, even with confirm=true. Run look again in a moment.")
     if protected and step.do not in READING:
         if not step.confirm:
             raise PhoneError(f"{protected}: read-only without confirm=true (look and scroll). Navigating (tab, "
@@ -655,9 +660,8 @@ def _guard(screen: Screen, aim: Aim, step: Step, strict: bool = True) -> None:
             raise PhoneError(f"{protected}: unnamed icon ({icon.rid or 'no identifier'}), possibly a transfer or a "
                              "payment: never by the agent in a protected app, the user does it themselves")
     if step.confirm:
-        if strict:
-            _accord_screen(screen, aim, step, context)
-        return
+        # Tout geste confirmé qui part d'un libellé sortant (« Glisser pour envoyer » compris) : accord exigé.
+        return bound or _accord_screen(screen, aim, step, context, strict)
     if strict and not aim.judged:
         raise PhoneError(f"nothing readable on screen at {aim.x},{aim.y} (UI tree empty or unreadable): {ASK}")
     for e in aim.judged:
@@ -667,6 +671,7 @@ def _guard(screen: Screen, aim: Aim, step: Step, strict: bool = True) -> None:
     if strict and (icon := _unnamed_icon(aim)):
         raise PhoneError(f"unnamed icon in a messaging app ({icon.package}{', #' + icon.rid if icon.rid else ''}): "
                          f"possibly Send or Post, nothing was done. {ASK}")
+    return False
 
 
 def _fingers_land_safely(screen: Screen, aim: Aim, points: list[tuple[int, int]]) -> None:
@@ -704,6 +709,13 @@ def _sent() -> None:
     _SENT += 1
 
 
+# Xiaomi (MIUI, HyperOS) : `input` refusé tant que « Débogage USB (paramètres de sécurité) » n'est pas activé.
+INJECT_REFUSED = re.compile(r"INJECT_EVENTS")
+INJECT_HELP = ("Android refused the injected gesture (SecurityException: INJECT_EVENTS permission). On a Xiaomi, Redmi "
+               "or POCO phone (MIUI, HyperOS), the user enables Settings > Developer options > \"USB debugging "
+               "(Security settings)\" (it asks for a Xiaomi account sign-in), then tries again; nothing was sent.")
+
+
 def _input(adb: Adb, *argv: str) -> str:
     """Geste injecté (`input …`), compté juste après l'envoi ; une liaison perdue pendant l'envoi compte aussi (effet
     inconnu)."""
@@ -712,6 +724,12 @@ def _input(adb: Adb, *argv: str) -> str:
     except LinkError:
         _sent()
         raise
+    except PhoneError as e:
+        if INJECT_REFUSED.search(str(e)):
+            raise PhoneError(INJECT_HELP) from None
+        raise
+    if INJECT_REFUSED.search(out):  # certaines versions écrivent l'exception sans code d'erreur : rien n'est parti
+        raise PhoneError(INJECT_HELP)
     _sent()
     return out
 
@@ -781,10 +799,10 @@ def _field(screen: Screen, step: Step) -> Element | None:
     """Champ qui a le focus, vérifié avant toute saisie : jamais un mot de passe ni une application protégée."""
     fresh = _fresh(screen)
     if fresh is None:
-        if step.confirm:
-            return None
+        # Jamais de saisie à l'aveugle, même avec confirm=true : le champ pourrait être un mot de passe ou une banque.
         raise PhoneError(f"active field unreadable: {screen.busy}" if screen.busy else "active field unreadable (UI "
-                         "tree unavailable): ask the user, then confirm=true if they say yes")
+                         "tree unavailable): nothing typed, even with confirm=true (it could be a password field); "
+                         "run look again in a moment")
     if any(e.password and e.focused for e in fresh):
         raise PhoneError("password field: never typed by the agent")
     field = next((e for e in fresh if e.focused and e.editable), None)
@@ -879,32 +897,73 @@ def _height(screen: Screen) -> int:
     return (screen.size or (1080, 2000))[1]
 
 
-def _accord_screen(screen: Screen, aim: Aim, step: Step, context: str) -> None:
-    """Geste sortant confirmé (bouton Envoyer, Appeler, Payer..., icône d'envoi sans nom d'une messagerie, ou point
-    illisible dans une messagerie) : l'accord doit porter sur l'action exacte que montre l'écran."""
+UNBOUND = ("UI tree unreadable: the exact action (recipient, content, attachments) cannot be read, so no accord can "
+           "be bound to it; nothing was done. Run look again in a moment.")
+
+
+def _accord_screen(screen: Screen, aim: Aim, step: Step, context: str, strict: bool = True) -> bool:
+    """Geste sortant confirmé (bouton Envoyer, Appeler, Payer..., glissé « pour envoyer » ; strict : aussi icône d'envoi
+    sans nom d'une messagerie, ou point illisible dans une messagerie) : l'accord doit porter sur l'action exacte que
+    montre l'écran. Arbre illisible : l'action ne peut pas être décrite, refus (jamais un accord sur une action
+    inconnue)."""
     label = next((value for e in aim.judged if (value := policy.outward(e, context))), None)
-    if label is None and (icon := _unnamed_icon(aim)):
+    if label is None and strict and (icon := _unnamed_icon(aim)):
         label = icon.rid or "unnamed icon"
     package = aim.judged[0].package if aim.judged else (screen.last_state.package if screen.last_state else "")
-    if label is None and not aim.judged and policy.communication_app(package):
+    if label is None and strict and not aim.judged and policy.communication_app(package):
         label = f"unreadable point {aim.x},{aim.y}"
     if label is None:
-        return
-    act = policy.screen_action(step.do, label, package, aim.fresh or [], _height(screen))
+        return False
+    if aim.fresh is None:
+        raise PhoneError(UNBOUND)
+    act = policy.screen_action(step.do, label, package, aim.fresh, _height(screen))
     if refusal := policy.ACCORDS.check(act, True, step.accord):
         raise PhoneError(refusal)
+    return True
 
 
-def _accord_keys(screen: Screen, step: Step, gesture: str, typed: str = "") -> None:
-    """Entrée, appel, saut de ligne tapé... confirmés : envoi ou validation possible, accord lié à l'écran exact."""
-    fresh = _fresh(screen) or []
+def _accord_keys(screen: Screen, step: Step, gesture: str, fresh: list[Element] | None, typed: str = "") -> None:
+    """Entrée, appel, saut de ligne tapé... confirmés : envoi ou validation possible, accord lié à l'écran exact et à la
+    séquence entière des touches (gesture) ; arbre illisible : refus."""
+    if fresh is None:
+        raise PhoneError(UNBOUND)
     package = screen.last_state.package if screen.last_state else ""
     act = policy.screen_action(gesture, gesture, package, fresh, _height(screen))
     if typed:
-        act = policy.garde_fous.action("android", gesture, act["target"], act["recipients"],
-                                       content=(act["content"] + " | " + typed).strip(" |"))
+        act = {**act, "content": policy.garde_fous.action("android", gesture, content=(
+            act["content"] + " | " + typed).strip(" |"))["content"]}
     if refusal := policy.ACCORDS.check(act, True, step.accord):
         raise PhoneError(refusal)
+
+
+# Touches qui ne font que naviguer (focus, quitter, volume) : seules permises dans une application protégée sans
+# confirmation de saisie, et seules permises quand le focus est sur un mot de passe.
+NAV_KEYS = LEAVE_KEYS | {
+    "KEYCODE_TAB", "KEYCODE_ESCAPE", "KEYCODE_DPAD_UP", "KEYCODE_DPAD_DOWN", "KEYCODE_DPAD_LEFT", "KEYCODE_DPAD_RIGHT",
+    "KEYCODE_VOLUME_UP", "KEYCODE_VOLUME_DOWN", "KEYCODE_WAKEUP", "KEYCODE_MENU",
+}
+
+
+def _keys_guard(screen: Screen, step: Step, codes: list[str]) -> list[Element] | None:
+    """Touches jugées sur l'écran relu juste avant : mot de passe au focus → seules les touches de navigation ;
+    application protégée → seules les touches sûres (SAFE_KEYS), jamais Entrée ni validation, même avec confirm et
+    accord ; arbre illisible → seules les touches de navigation (le champ au focus ne peut pas être vérifié). Rend
+    l'arbre relu (None : touches de navigation seules, pas de relecture)."""
+    if all(c in NAV_KEYS for c in codes):
+        return None
+    fresh = _fresh(screen)
+    if fresh is None:
+        raise PhoneError(f"key {' '.join(codes)}: active field unreadable (UI tree unavailable), only navigation "
+                         "keys (back, home, recent, tab, arrows) without it; run look again in a moment")
+    if any(e.password and e.focused for e in fresh):
+        raise PhoneError("password field: never typed by the agent (no key but navigation: back, tab, arrows)")
+    focused = next((e for e in fresh if e.focused), None)
+    front = screen.last_state.package if screen.last_state else ""
+    protected = policy.protected_app(front) or (policy.protected_app(focused.package) if focused else None)
+    if protected and (risky := [c for c in codes if c not in SAFE_KEYS]):
+        raise PhoneError(f"{protected}: key {', '.join(risky)} can submit or validate (money or sending): never by the "
+                         "agent in a protected app, even with confirm=true; the user does it themselves")
+    return fresh
 
 
 def _step(adb: Adb, screen: Screen, step: Step) -> Report:
@@ -929,12 +988,13 @@ def _step(adb: Adb, screen: Screen, step: Step) -> Report:
         return "~", f"{do} {aim.label}: sent, not verified"
     if do in ("type", "clear"):
         text = step.text or ""
-        if do == "type":
-            if ("\n" in text or "\r" in text) and not step.confirm:
+        if do == "type" and ("\n" in text or "\r" in text):
+            if not step.confirm:
                 raise PhoneError("line break = Enter key, which can send or submit: ask the user, "
                                  "then confirm=true if they say yes (or write on a single line)")
-            if "\n" in text or "\r" in text:
-                _accord_keys(screen, step, "type with line break", text)
+            # Saut de ligne = Entrée : mêmes règles que la touche (mot de passe, application protégée), puis accord.
+            fresh = _keys_guard(screen, step, ["KEYCODE_ENTER"])
+            _accord_keys(screen, step, "type with line break", fresh, text)
         if step.target is not None:
             aim = _aim(screen, step.target)
             _guard(screen, aim, step)
@@ -956,8 +1016,10 @@ def _step(adb: Adb, screen: Screen, step: Step) -> Report:
         if risky and not step.confirm:
             raise PhoneError(f"key {', '.join(risky)}: can send, submit or call; ask the user, then "
                              "confirm=true if they say yes")
+        fresh = _keys_guard(screen, step, codes)
         if risky:
-            _accord_keys(screen, step, f"key {' '.join(risky)}")
+            # Accord lié à la séquence entière : un jeton pour « enter » ne vaut pas pour « tab enter ».
+            _accord_keys(screen, step, f"key {' '.join(codes)}", fresh)
         for code in codes:
             parts = code.split()
             _input(adb, *(["keycombination"] if len(parts) > 1 else ["keyevent"]), *parts)
@@ -979,8 +1041,8 @@ def _step(adb: Adb, screen: Screen, step: Step) -> Report:
         tap_like = max(abs(start.x - end.x), abs(start.y - end.y)) < TAP_SLOP or any(
             e.clickable and not e.scrollable and _contains(e.bounds, start) and _contains(e.bounds, end)
             for e in start.fresh or [])
-        _guard(screen, start, step, strict=tap_like)
-        _guard(screen, end, step, strict=False)
+        # Un seul accord par glissé : vérifié au départ (« Glisser pour envoyer »), sinon à l'arrivée.
+        _guard(screen, end, step, strict=False, bound=_guard(screen, start, step, strict=tap_like))
         a, b = (start.x, start.y), (end.x, end.y)
         _touch(adb, lambda f: f.swipe(a, b, 400), "swipe", *map(str, (*a, *b)), "400")
         return "~", f"swipe {start.label} → {end.label}: sent, not verified"
@@ -988,8 +1050,8 @@ def _step(adb: Adb, screen: Screen, step: Step) -> Report:
         if step.to is None:
             raise PhoneError('drag: to ("x,y", "[N]" or text) required')
         start, end = _aim(screen, step.target), _aim(screen, step.to)
-        _guard(screen, start, step)  # déplacer une icône, un fichier, un message : règle stricte des deux côtés
-        _guard(screen, end, step)
+        # Déplacer une icône, un fichier, un message : règle stricte des deux côtés, un seul accord pour le geste.
+        _guard(screen, end, step, bound=_guard(screen, start, step))
         a, b = (start.x, start.y), (end.x, end.y)
         _touch(adb, lambda f: f.swipe(a, b, 600, hold_ms=700, release_ms=300),
                "draganddrop", *map(str, (*a, *b)), "1600")
@@ -1077,19 +1139,26 @@ def _gestures_done() -> None:
     _LAST_INPUT = time.time()
 
 
-def _wait_for_owner(adb: Adb, state: State) -> None:
+OWNER_BLIND = ("⚠ This phone does not report its last touch (no lastUserActivityTime in dumpsys power): the check "
+               "\"the user is using the phone\" is inactive, gestures may mix with theirs.")
+
+
+def _wait_for_owner(adb: Adb, state: State) -> str:
     """L'utilisateur se sert du téléphone (toucher récent qui n'est pas un geste d'agent) : attendre qu'il le lâche, sinon
-    refuser. Aucun geste ne doit se mêler aux siens."""
+    refuser. Aucun geste ne doit se mêler aux siens. Rend un avertissement (« » sinon) quand le téléphone ne dit pas
+    l'heure du dernier toucher : la garde est alors inactive, l'agent doit le savoir."""
     if not state.awake:
-        return
+        return ""
     # Dernier geste d'un agent : ce serveur, ou un autre (état commun de l'écran gardé allumé).
     ours = max(_LAST_INPUT, float(KeepAwake(adb).state().get("last") or 0) if awake.ENABLED else 0.0)
     deadline = time.monotonic() + BUSY_WAIT
     while True:
         idle = awake.idle_on_phone(adb)
         mine = idle is not None and time.time() - idle <= ours + 1.0  # activité qui n'est pas plus récente que nous
-        if idle is None or idle >= BUSY_QUIET or mine:
-            return
+        if idle is None:
+            return OWNER_BLIND
+        if idle >= BUSY_QUIET or mine:
+            return ""
         if time.monotonic() >= deadline:
             raise PhoneError("The user is using the phone right now: nothing was done. Try again once they have "
                              "let go, or ask them.")
@@ -1133,7 +1202,7 @@ def _act(steps: list[Step], then: Then, remember: str | None = None, template: l
     global _AIMED, _MORE_STEPS
     adb, screen, _ = _init()
     state = screen.state()
-    _wait_for_owner(adb, state)
+    blind = _wait_for_owner(adb, state)
     state, lifted = _lift(adb, screen, state)
     if not state.awake:
         adb.shell("input", "keyevent", "KEYCODE_WAKEUP")
@@ -1181,6 +1250,8 @@ def _act(steps: list[Step], then: Then, remember: str | None = None, template: l
                 acted = True
                 _gestures_done()
         time.sleep(0.35)
+    if blind and acted:
+        report.append(blind)
     gestures = "|".join(f"{s.do}:{s.target}:{s.to}:{s.text}:{s.direction}:{s.keys}" for s in steps if s.do != "wait")
     if remember:
         report.append(_save_routine(remember, template or steps, recorded, package))
@@ -1277,14 +1348,14 @@ def _packages(adb: Adb, fresh: bool = False) -> list[str]:
 
 
 def _foreground(screen: Screen, wanted: str, limit: float) -> str:
-    """Relit le premier plan toutes les POLL s jusqu'à `wanted`, `limit` s au plus ; renvoie le dernier lu."""
-    front = ""
-    for _ in range(max(1, round(limit / POLL))):
+    """Relit le premier plan toutes les POLL s jusqu'à `wanted`, `limit` s réelles au plus (échéance monotone : une
+    lecture lente ne prolonge pas l'attente) ; renvoie le dernier lu."""
+    deadline = time.monotonic() + limit
+    while True:
         time.sleep(POLL)
         front = screen.state().package
-        if front == wanted or _cancelled():
-            break
-    return front
+        if front == wanted or _cancelled() or time.monotonic() >= deadline:
+            return front
 
 
 def _launcher_activity(adb: Adb, package: str) -> str | None:
@@ -1655,7 +1726,9 @@ async def messages(conversation: int | None = None, contact: str | None = None, 
 def _draft_accord(screen: Screen) -> list[str]:
     """Accord préparé pour l'appui sur le bouton d'envoi du brouillon tel que l'écran le montre (en-tête, texte du
     champ) : l'agent montre ce résumé à l'utilisateur ; si le brouillon change avant l'envoi, le jeton ne vaut plus."""
-    fresh = _fresh(screen) or []
+    fresh = _fresh(screen)
+    if fresh is None:  # brouillon illisible : aucun accord sur une action qu'on ne peut pas décrire
+        return []
     package = screen.last_state.package if screen.last_state else ""
     button = next((e for e in fresh if e.package == package and policy.outward(e)), None)
     label = policy.outward(button) if button else None

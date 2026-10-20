@@ -52,7 +52,12 @@ class Channel:
     def _read(self, n: int) -> bytes:
         data = b""
         while len(data) < n:
-            chunk = self.sock.recv(n - len(data))
+            try:
+                chunk = self.sock.recv(n - len(data))
+            except TimeoutError:
+                # Délai dépassé au milieu d'une réponse : message clair plutôt que l'exception brute du socket.
+                raise PhoneError(f"clipboard: the phone stopped answering (no reply within "
+                                 f"{self.sock.gettimeout() or 0:g} s)") from None
             if not chunk:
                 raise PhoneError("clipboard: the phone closed the channel")
             data += chunk
@@ -63,11 +68,14 @@ class Channel:
         self.sock.sendall(bytes([GET_CLIPBOARD, 0]))
         self.sock.settimeout(wait)
         try:
-            kind = self._read(1)[0]
+            first = self.sock.recv(1)
         except TimeoutError:
-            return None
+            return None  # aucune réponse : presse-papiers vide
         finally:
             self.sock.settimeout(5)
+        if not first:
+            raise PhoneError("clipboard: the phone closed the channel")
+        kind = first[0]
         if kind != CLIPBOARD:
             raise PhoneError(f"clipboard: unexpected reply ({kind})")
         return self._read(struct.unpack(">I", self._read(4))[0]).decode("utf-8", "replace")

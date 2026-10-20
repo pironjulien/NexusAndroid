@@ -184,13 +184,26 @@ def outward(element: Element, screen_text: str = "") -> str | None:
     return None
 
 
+# Pièce jointe nommée à l'écran (« photo-a.jpg », « Facture 12.pdf ») ; adresse e-mail n'importe où à l'écran.
+_ATTACHMENT = re.compile(r"[^\s/\\:*?\"<>|][^/\\:*?\"<>|]{0,120}\.(?:jpe?g|png|gif|webp|heic|bmp|mp4|mov|3gp|webm|mkv|"
+                         r"avi|mp3|m4a|aac|ogg|opus|wav|amr|pdf|docx?|xlsx?|pptx?|odt|ods|odp|txt|csv|zip|rar|7z|apk|"
+                         r"vcf|ics|json|xml|html?)", re.I)
+_MAIL = re.compile(r"[\w.+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+
+
 def screen_action(gesture: str, label: str, package: str, elements: list[Element], height: int) -> dict:
-    """L'action telle que l'écran la montre : bouton visé, en-tête de l'écran comme destinataires (nom ou numéro du
-    correspondant) et texte des champs de l'application."""
-    same = [e for e in elements if e.package == package]
+    """L'action telle que l'écran la montre, liée tout entière au jeton d'accord : bouton visé ; destinataires (en-tête
+    de l'écran, plus tout numéro de téléphone ou adresse e-mail affiché ailleurs : composeur, champ « À ») ; texte des
+    champs ; pièces jointes nommées ; et le reste du texte de l'application à l'écran (aperçu, corps, vignettes
+    décrites) en contexte. Un seul de ces textes change entre l'accord et le geste : l'accord ne vaut plus."""
+    same = sorted((e for e in elements if e.package == package and not e.password),
+                  key=lambda e: (e.bounds[1], e.bounds[0]))
     top = height * HEADING_SHARE
-    heading = [e.label for e in sorted(same, key=lambda e: (e.bounds[1], e.bounds[0]))
-               if e.label and not e.editable and e.bounds[3] <= top]
-    fields = [e.text for e in sorted(same, key=lambda e: (e.bounds[1], e.bounds[0]))
-              if e.editable and e.text and not e.password]
-    return garde_fous.action("android", gesture, f"{label} ({package})", recipients=heading, content=" | ".join(fields))
+    heading = [e.label for e in same if e.label and not e.editable and e.bounds[3] <= top]
+    shown = [v for e in same if not e.editable and e.bounds[3] > top for v in dict.fromkeys((e.text, e.desc)) if v]
+    numbers = [m for v in shown for m in (*garde_fous.PHONE.findall(v), *_MAIL.findall(v))]
+    attachments = [v for v in shown if _ATTACHMENT.fullmatch(v.strip())]
+    fields = [e.text for e in same if e.editable and e.text]
+    rest = [v for v in shown if v not in attachments]
+    return garde_fous.action("android", gesture, f"{label} ({package})", recipients=heading + numbers,
+                             content=" | ".join(fields), attachments=attachments, context=" | ".join(rest))

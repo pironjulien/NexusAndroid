@@ -24,6 +24,7 @@ FINGER = -2  # POINTER_ID_GENERIC_FINGER (scrcpy) : un doigt ; les autres doigts
 PRESSURE = 0xFFFF  # 1.0 en virgule fixe 16 bits
 ENABLED = True  # False : toujours input (tests sans téléphone)
 IDLE = 60.0  # s sans geste avant d'arrêter le serveur scrcpy
+RETRY = 60.0  # s après un échec du canal avant de le retenter (input entre-temps), comme query.RETRY
 STEP_MS = 8  # intervalle entre deux positions d'un glissé (≈ 120 Hz, comme un vrai doigt)
 
 Point = tuple[int, int]
@@ -130,6 +131,10 @@ class Control:
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
         self.failed = ""  # dernière raison d'indisponibilité (repli sur input)
+        # Dernier échec du canal : instant et liaison (numéro adb, nombre de connexions) ; retenté après RETRY s, ou tout
+        # de suite après une reconnexion (sinon chaque geste reprendrait le délai de démarrage avant le repli).
+        self._failed_at = -RETRY
+        self._failed_link: tuple[str | None, int] | None = None
 
     def _open(self) -> clip.Channel:
         if self._channel is not None and self._serial == self.adb.serial:
@@ -168,11 +173,16 @@ class Control:
         with self._lock:
             if self._timer:
                 self._timer.cancel()
+            link = (self.adb.serial, getattr(self.adb, "links", 0))
+            if link == self._failed_link and time.monotonic() - self._failed_at < RETRY:
+                return None  # échec récent sur la même liaison : input tout de suite, self.failed garde la raison
             try:
                 channel = self._open()
             except (PhoneError, OSError) as e:
                 self.failed = str(e)[:200]
+                self._failed_at, self._failed_link = time.monotonic(), link
                 return None
+            self._failed_link = None
             self._timer = threading.Timer(IDLE, self._idle)
             self._timer.daemon = True
             self._timer.start()

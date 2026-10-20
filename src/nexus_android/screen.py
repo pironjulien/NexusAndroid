@@ -17,7 +17,7 @@ from typing import Any
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
 
-from . import query
+from . import ocr, query
 from .adb import STATE_WAIT, Adb, PhoneError
 from .messages import has_keyword, mask_codes
 
@@ -82,8 +82,14 @@ class Element:
 _BOUNDS = re.compile(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
 
 
-def parse_ui(xml_text: str) -> list[Element]:
-    """Éléments utiles de l'arbre uiautomator : cliquables, saisissables, défilables ou porteurs de texte."""
+# Surfaces dessinées sans arbre (vidéo, jeu, carte, aperçu de caméra) : leur texte n'est visible que sur l'image.
+_OPAQUE = re.compile(r"(?:Surface|Texture|GLSurface)View$")
+Box = tuple[int, int, int, int]
+
+
+def parse_ui(xml_text: str, surfaces: list[Box] | None = None) -> list[Element]:
+    """Éléments utiles de l'arbre uiautomator : cliquables, saisissables, défilables ou porteurs de texte (surfaces :
+    reçoit les limites des surfaces dessinées sans texte, voir elements_of)."""
     start = xml_text.find("<?xml")
     if start < 0:
         start = xml_text.find("<hierarchy")
@@ -97,7 +103,7 @@ def parse_ui(xml_text: str) -> list[Element]:
             yield {**node.attrib, PATH: here}
             yield from walk(node, here)
 
-    return elements_of(walk(root, ()))
+    return elements_of(walk(root, ()), surfaces)
 
 
 PATH = "nexus-path"  # clé ajoutée aux attributs d'un nœud : sa place dans l'arbre (Element.path)
@@ -129,9 +135,11 @@ def with_paths(nodes: list[dict[str, Any]], depths: list[int], orders: list[int]
 _EDIT_CLASS = re.compile(r"(EditText|AutoCompleteTextView|SearchAutoComplete|SearchEditText)$")
 
 
-def elements_of(nodes: Iterable[Mapping[str, Any]]) -> list[Element]:
+def elements_of(nodes: Iterable[Mapping[str, Any]], surfaces: list[Box] | None = None) -> list[Element]:
     """Éléments utiles d'après les attributs des nœuds (ceux du XML de uiautomator, ou rendus par le serveur dans les
-    mêmes termes), dans l'ordre du document : une seule règle de tri et de numérotation pour les deux lectures."""
+    mêmes termes), dans l'ordre du document : une seule règle de tri et de numérotation pour les deux lectures.
+    surfaces : reçoit les limites des surfaces dessinées sans texte (SurfaceView, TextureView), jamais des éléments
+    (rien de lisible à viser) mais lues par OCR pour y noircir un code."""
     elements: list[Element] = []
     for a in nodes:
         match = _BOUNDS.match(a.get("bounds", ""))
@@ -146,6 +154,8 @@ def elements_of(nodes: Iterable[Mapping[str, Any]]) -> list[Element]:
         # saisie connues, sous-classes comprises (AutoCompleteTextView de la recherche des Paramètres, SearchView).
         editable = a.get("editable") == "true" or bool(_EDIT_CLASS.search(a.get("class", "")))
         scrollable = a.get("scrollable") == "true"
+        if surfaces is not None and not (text or desc) and _OPAQUE.search(a.get("class", "")):
+            surfaces.append((x1, y1, x2, y2))
         if not (text or desc or clickable or editable or scrollable):
             continue
         states = []
@@ -276,6 +286,34 @@ def blackout(image: PILImage.Image, elements: list[Element], shrink: float = 1.0
             draw.rectangle((math.floor(x1 * shrink), math.floor(y1 * shrink), math.ceil(x2 * shrink),
                             math.ceil(y2 * shrink)), fill=(0, 0, 0))
     return image
+
+
+OPAQUE_SHARE = 0.25  # part de l'écran au-delà de laquelle une surface sans texte fait lire l'image par OCR
+
+
+def needs_ocr(elements: list[Element], size: tuple[int, int] | None, surfaces: Iterable[Box] = ()) -> bool:
+    """Texte que l'arbre ne donne pas : arbre sans aucun texte (jeu, Flutter, dessin), ou grande surface dessinée
+    (SurfaceView, TextureView : surfaces, ou élément de ce rôle) sans texte dedans. Seule l'OCR y repère un code."""
+    if not any(e.text or e.desc for e in elements):
+        return True
+    width, height = size or (1080, 2000)
+    boxes = list(surfaces) + [e.bounds for e in elements if _OPAQUE.search(e.role)]
+    for x1, y1, x2, y2 in boxes:
+        if (x2 - x1) * (y2 - y1) >= OPAQUE_SHARE * width * height and not any(
+                (e.text or e.desc) and x1 <= e.center[0] <= x2 and y1 <= e.center[1] <= y2 for e in elements):
+            return True
+    return False
+
+
+def ocr_elements(image: PILImage.Image, width: int, package: str) -> list[Element]:
+    """Texte vu sur l'image (OCR local de Windows) en éléments « OCR » (pixels écran ; width : largeur de l'écran),
+    codes masqués comme ceux de l'arbre : un élément masqué est noirci sur l'image comme un élément de l'arbre."""
+    if not ocr.available():
+        return []
+    factor = width / image.width if image.width else 1.0
+    found = [Element(index=0, role="OCR", text=line.text, desc="", rid="", package=package, bounds=line.box,
+                     clickable=True) for line in ocr.read(image, factor)]
+    return mask_elements(found)
 
 
 MARK_FEW = 21  # marks="auto" : jusqu'à ce nombre d'éléments, tous numérotés ; au-delà, seulement ceux sans nom
@@ -568,6 +606,7 @@ class Screen:
         self.busy = ""  # message de la dernière lecture d'arbre bloquée par un autre outil (UiAutomation prise)
         self.fingerprint: str | None = None  # empreinte du dernier écran lu (tourner en rond)
         self.loops = LoopWatch()
+        self.surfaces: list[Box] = []  # surfaces dessinées sans texte de la dernière lecture de l'arbre (OCR)
 
     def _server(self) -> query.QueryServer | None:
         return query.server_for(self.adb) if FAST and self.fast else None
@@ -601,8 +640,9 @@ class Screen:
         snap = self.snapshot("full" if full else "scaled" if image else "none") if (image or tree) else None
         state = snap.state if snap and snap.state else self.state()
         reading = Reading(state)
-        if not image and snap and snap.size[0] > 0 and snap.size[1] > 0 and self.size is None:
-            # Échelle des coordonnées @x,y même sans image jointe (show=elements avant toute capture).
+        if not image and snap and snap.size[0] > 0 and snap.size[1] > 0:
+            # Échelle des coordonnées @x,y même sans image jointe, relue à chaque lecture : rotation ou pliage depuis la
+            # dernière image (défilement, zoom et coordonnées de la liste suivent l'écran actuel).
             self.size = snap.size
             self.scale = min(1.0, MAX_SIDE / max(snap.size))
             self.posture = snap.posture or self.posture
@@ -616,7 +656,8 @@ class Screen:
                 reading.image = self.capture()
         if tree:
             if snap and snap.nodes is not None:
-                reading.elements = mask_elements(elements_of(snap.nodes))
+                self.surfaces = []
+                reading.elements = mask_elements(elements_of(snap.nodes, self.surfaces))
             else:
                 try:
                     ps = self._holders_check(snap.tree_error) if snap else None
@@ -735,7 +776,8 @@ class Screen:
         self.busy = ""
         if fast and (snap := self.snapshot()) is not None:
             if snap.nodes is not None:
-                return mask_elements(elements_of(snap.nodes))
+                self.surfaces = []
+                return mask_elements(elements_of(snap.nodes, self.surfaces))
             ps = self._holders_check(snap.tree_error)
         self.release()
         last = ""
@@ -747,7 +789,8 @@ class Screen:
             if status.strip():  # état lu dans le même aller-retour que l'arbre : jugé sur le même instant
                 self.last_state = parse_state(status, status)
             if "<hierarchy" in tree:
-                return mask_elements(parse_ui(tree))
+                self.surfaces = []
+                return mask_elements(parse_ui(tree, self.surfaces))
             last = out.strip()
             if ps is None and (ps := self._holders_check(last)) is None:
                 ps = ""  # racine vide : connexion obtenue, aucun `ps` de plus

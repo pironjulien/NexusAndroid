@@ -303,7 +303,7 @@ def calendar(messages: Messages, days: int = 7) -> tuple[str, list[Data]]:
         start = datetime.fromtimestamp(int(r["begin"]) / 1000)
         when = f"{start:%a %d/%m}" + ("" if r.get("allDay") == "1" else f" {start:%H:%M}")
         place = r.get("eventLocation", "")
-        place = "" if place == "NULL" else place
+        place = "" if place == "NULL" else mask_codes(place)
         title = mask_codes(r.get("title", ""))
         lines.append(f"{when} · {title}" + (f" · {place}" if place else ""))
         end = datetime.fromtimestamp(int(r["end"]) / 1000) if r.get("end", "").isdigit() else None

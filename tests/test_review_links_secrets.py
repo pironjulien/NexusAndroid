@@ -88,7 +88,8 @@ def test_protected_app_among_link_handlers_refused_even_when_one_is_chosen(phone
     assert not [c for c in phone.calls if c[0] == "am"]
 
 
-def test_settings_screen_needs_no_extra_read(phone: FakePhone):  # noqa: F811
+def test_settings_screen_needs_no_extra_read(phone: FakePhone, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(server, "LAUNCH_WAIT", 0.2)  # échéance réelle (monotone) : pas 5 s d'attente dans le test
     _resolving(phone, "com.android.settings/.Settings$WifiSettingsActivity\n", "")
     server._launch(action="android.settings.WIFI_SETTINGS")
     assert ("cmd", "package", "query-activities") not in [c[:3] for c in phone.calls]

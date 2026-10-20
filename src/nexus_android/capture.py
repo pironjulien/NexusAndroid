@@ -15,13 +15,13 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from . import extras, policy
-from .adb import Adb, PhoneError
-from .screen import LIFTED, Element, Screen, State, blackout, is_black
+from .adb import STATE_WAIT, Adb, PhoneError
+from .screen import LIFTED, STATE_SH, Element, Screen, State, blackout, is_black, needs_ocr, ocr_elements, parse_state
 
 MAX_SECONDS = 180  # limite de screenrecord (Android)
 RECORD_SECONDS = 30  # record sans durée donnée
@@ -146,6 +146,9 @@ def screenshot(adb: Adb, name: str | None, dest: str | None, confirm: bool, unma
                              "out, screenshot not saved. Try again in a moment, or unmasked=true if the user accepts "
                              "the file without masking.")
         notes.append("Saved without code masking (UI tree unreadable, unmasked=true).")
+    elif needs_ocr(elements, image.size, screen.surfaces):
+        # Texte absent de l'arbre (surface dessinée, jeu) : codes repérés sur l'image par OCR, noircis avant l'écriture.
+        elements += [e for e in ocr_elements(image, image.width, state.package) if e.masked]
     masked = len({e.bounds for e in elements if e.masked})
     if masked:
         notes.append(f"{masked} area(s) with a security code blacked out.")
@@ -169,6 +172,10 @@ def screenshot(adb: Adb, name: str | None, dest: str | None, confirm: bool, unma
 # ---------------------------------------------------------------- enregistrement vidéo
 
 
+WATCH_EVERY = 1.0  # s entre deux lectures du premier plan pendant un enregistrement
+WATCH_GAP = 5.0  # s sans lecture réussie du premier plan : surveillance tenue pour interrompue, vidéo jetée
+
+
 @dataclass
 class Recording:
     adb: Adb
@@ -181,6 +188,14 @@ class Recording:
     limit: int
     size: str  # « 720x1136 », ou "" (résolution de l'écran)
     started: float  # time.monotonic()
+    # Surveillance continue du premier plan (fil _watch) : une appli protégée vue une fois rend la vidéo inutilisable,
+    # pour de bon (tainted) ; un trou de surveillance trop long aussi (blind).
+    tainted: str = ""
+    last_seen: float = 0.0  # dernière lecture réussie du premier plan (time.monotonic())
+    blind: float = 0.0  # plus long intervalle sans lecture réussie pendant l'enregistrement
+    ended: float | None = None  # fin de screenrecord constatée par la surveillance
+    stop_watch: threading.Event = field(default_factory=threading.Event)
+    watcher: threading.Thread | None = None
 
     def running(self) -> bool:
         return self.proc.poll() is None
@@ -188,27 +203,86 @@ class Recording:
     def elapsed(self) -> float:
         return time.monotonic() - self.started
 
+    def unseen(self) -> float:
+        """Plus long moment de l'enregistrement sans lecture du premier plan (jusqu'à sa fin, ou maintenant)."""
+        end = self.ended if self.ended is not None else time.monotonic()
+        return max(self.blind, end - self.last_seen)
+
+
+class Discarded(PhoneError):
+    """Vidéo jetée (appli protégée vue, ou premier plan non surveillé) : effacée du téléphone, rien sur le PC."""
+
 
 _CURRENT: Recording | None = None  # un enregistrement à la fois par serveur, et un seul screenrecord sur le téléphone
 _GUARD = threading.Lock()
-_DROPPED = ""  # appli protégée qui a fait jeter l'enregistrement en cours (dit au prochain stop)
+_DROPPED = ""  # raison du rejet de l'enregistrement en cours, jeté par la surveillance (dite au prochain stop)
+
+
+def _discarded(why: str) -> str:
+    return f"recording discarded: {why}; the file was erased from the phone and nothing was saved on the PC"
+
+
+def _erase(rec: Recording) -> None:
+    """screenrecord tué (aucune image de plus) et fichier effacé du téléphone ; rien n'est rapatrié."""
+    rec.stop_watch.set()
+    rec.adb.shell("kill", "-KILL", rec.pid, check=False)
+    if rec.running():
+        rec.proc.kill()
+    rec.adb.shell("rm", "-f", rec.remote, check=False)
+
+
+def _taint(rec: Recording, protected: str) -> None:
+    """Appli protégée au premier plan pendant l'enregistrement : marque irréversible, vidéo effacée aussitôt. Si
+    l'enregistrement était en cours (personne ne le rapatrie), la raison est gardée pour le prochain stop."""
+    global _CURRENT, _DROPPED
+    with _GUARD:
+        first = not rec.tainted
+        if first:
+            rec.tainted = protected
+        if _CURRENT is rec:
+            _CURRENT = None
+            _DROPPED = f"{protected} (banking, payment or identity app) came to the foreground while recording"
+    if first:
+        try:
+            _erase(rec)
+        except PhoneError:
+            pass  # liaison perdue : la marque suffit, le fichier ne sera jamais rapatrié (effacé à la prochaine vidéo)
+
+
+def _observe(rec: Recording) -> None:
+    """Une lecture du premier plan : appli protégée → vidéo marquée et effacée ; lecture réussie notée (trou de
+    surveillance mesuré entre deux lectures réussies)."""
+    try:
+        out = rec.adb.shell("sh", "-c", STATE_SH, check=False, timeout=STATE_WAIT)
+    except (PhoneError, OSError):
+        return
+    if "mWakefulness=" not in out:  # liaison coupée : sortie vide, rien n'est su du premier plan
+        return
+    now = time.monotonic()
+    rec.blind = max(rec.blind, now - rec.last_seen)
+    rec.last_seen = now
+    if protected := policy.protected_app(parse_state(out, out).package):
+        _taint(rec, protected)
+
+
+def _watch(rec: Recording) -> None:
+    """Fil de surveillance : le premier plan relu toutes les WATCH_EVERY s tant que screenrecord tourne."""
+    while not rec.stop_watch.wait(WATCH_EVERY):
+        alive = rec.running()
+        _observe(rec)
+        if rec.tainted:
+            return
+        if not alive:
+            rec.ended = time.monotonic()
+            return
 
 
 def guard(adb: Adb, package: str) -> None:
-    """Appli bancaire, de paiement ou d'identité au premier plan pendant un enregistrement : screenrecord arrêté et
-    fichier effacé du téléphone, rien ne vient sur le PC (une vidéo ne se masque pas)."""
-    global _CURRENT, _DROPPED
-    if _CURRENT is None or not (protected := policy.protected_app(package)):
-        return
-    with _GUARD:
-        rec, _CURRENT = _CURRENT, None
-    if rec is None:
-        return
-    adb.shell("kill", "-KILL", rec.pid, check=False)
-    if rec.running():
-        rec.proc.kill()
-    adb.shell("rm", "-f", rec.remote, check=False)
-    _DROPPED = protected
+    """Appli bancaire, de paiement ou d'identité au premier plan pendant un enregistrement (lu par un outil) : même
+    marque que la surveillance, screenrecord arrêté et fichier effacé du téléphone (une vidéo ne se masque pas)."""
+    rec = _CURRENT
+    if rec is not None and (protected := policy.protected_app(package)):
+        _taint(rec, protected)
 
 
 def video_size(width: int, height: int) -> str:
@@ -277,8 +351,10 @@ def start(adb: Adb, seconds: int | None, name: str | None, dest: str | None, con
 
 def begin(adb: Adb, seconds: int | None, name: str | None, dest: str | None,
           confirm: bool) -> tuple[Recording, list[str]]:
-    """Enregistrement lancé (un seul à la fois) ; renvoie l'enregistrement et les remarques à dire."""
-    global _CURRENT
+    """Enregistrement lancé (un seul à la fois) ; renvoie l'enregistrement et les remarques à dire. Une vidéo
+    précédente finie seule est rapatriée par le même contrôle que stop, après les vérifications de celle-ci ; si elle
+    ne peut pas l'être, rien n'est lancé et sa poignée est gardée (stop la retente)."""
+    global _CURRENT, _DROPPED
     notes: list[str] = []
     with _GUARD:
         previous = _CURRENT
@@ -286,12 +362,6 @@ def begin(adb: Adb, seconds: int | None, name: str | None, dest: str | None,
             left = max(0, round(previous.limit - previous.elapsed()))
             raise PhoneError(f"a recording is already running (for {round(previous.elapsed())} s, ends by itself "
                              f"within {left} s): capture(action=\"stop\") first")
-        _CURRENT = None
-    if previous:  # fini seul (limite atteinte) sans avoir été rapatrié : rangé avant d'en lancer un autre
-        try:
-            notes.append("Previous recording, which had ended, collected: " + collect(previous))
-        except PhoneError as e:
-            notes.append(f"Previous recording not collected ({e}).")
     limit = max(1, min(int(seconds or MAX_SECONDS), MAX_SECONDS))
     screen = Screen(adb)
     state, woken = ready(adb, screen)
@@ -302,6 +372,26 @@ def begin(adb: Adb, seconds: int | None, name: str | None, dest: str | None,
     folder = extras.pc_path(dest or extras.PC_INBOX, confirm, "written")
     file = file_name(name, "screen-recording", VIDEO_TYPES)
     extras.pc_path(folder / file, confirm, "written")  # nom refusé (.env…) avant de lancer quoi que ce soit
+    if previous:  # fini seul (limite atteinte) sans avoir été rapatrié : rangé avant d'en lancer un autre
+        with _GUARD:
+            if _CURRENT is previous:
+                _CURRENT = None
+            else:
+                previous = None  # jeté entre-temps par la surveillance
+    if previous:
+        try:
+            notes.append("Previous recording, which had ended, collected: " + collect(previous))
+        except Discarded as e:
+            notes.append(f"Previous {e}.")
+        except PhoneError as e:
+            with _GUARD:
+                if _CURRENT is None:
+                    _CURRENT = previous  # fichier gardé sur le téléphone : stop le rapatrie au prochain essai
+            raise PhoneError(f"previous recording not collected ({e}); nothing new was started") from None
+    with _GUARD:
+        if _DROPPED:  # vidéo précédente jetée par la surveillance, jamais dite : dite ici
+            notes.append("Previous " + _discarded(_DROPPED) + ".")
+            _DROPPED = ""
     running = adb.shell("pidof", "screenrecord", check=False).strip()
     if running:
         raise PhoneError(f"Android is already recording the screen (screenrecord, pid {running}: another agent or "
@@ -320,9 +410,12 @@ def begin(adb: Adb, seconds: int | None, name: str | None, dest: str | None,
     if error:
         adb.shell("rm", "-f", remote, check=False)
         raise PhoneError(f"screen recording not started: {error}")
-    rec = Recording(adb, proc, pid, remote, folder, file, confirm, limit, size, time.monotonic())
+    now = time.monotonic()
+    rec = Recording(adb, proc, pid, remote, folder, file, confirm, limit, size, now, last_seen=now)
+    rec.watcher = threading.Thread(target=_watch, args=(rec,), name="nexus-android-video-watch", daemon=True)
     with _GUARD:
         _CURRENT = rec
+    rec.watcher.start()
     if not state.awake:
         notes.append("Screen off: the video stays black until it is turned on.")
     return rec, notes
@@ -340,14 +433,13 @@ def wait_end(timeout: float) -> None:
 
 def stop(adb: Adb) -> str:
     global _CURRENT, _DROPPED
-    if _CURRENT is not None:
-        guard(adb, Screen(adb).state().package)
     with _GUARD:
         rec, _CURRENT = _CURRENT, None
-    if rec is None and _DROPPED:
-        dropped, _DROPPED = _DROPPED, ""
-        raise PhoneError(f"recording discarded: {dropped} (banking, payment or identity app) came to the foreground "
-                         "while recording; the file was erased from the phone and nothing was saved on the PC")
+        dropped = _DROPPED if rec is None else ""
+        if dropped:
+            _DROPPED = ""
+    if dropped:
+        raise Discarded(_discarded(dropped))
     if rec is None:
         running = adb.shell("pidof", "screenrecord", check=False).strip()
         raise PhoneError("no recording started by this server" + (
@@ -355,6 +447,8 @@ def stop(adb: Adb) -> str:
             else ": capture(action=\"start\") or capture(action=\"record\", seconds=N)"))
     try:
         return collect(rec)
+    except Discarded:
+        raise
     except PhoneError:
         with _GUARD:
             if _CURRENT is None:
@@ -362,19 +456,42 @@ def stop(adb: Adb) -> str:
         raise
 
 
+def _vet(rec: Recording) -> None:
+    """Contrôle commun à toute collecte (stop, begin, arrêt du serveur), screenrecord arrêté : appli protégée vue au
+    premier plan pendant l'enregistrement, ou premier plan resté sans surveillance plus de WATCH_GAP s → vidéo effacée
+    du téléphone, Discarded (rien ne vient sur le PC)."""
+    rec.stop_watch.set()
+    if rec.watcher is not None and rec.watcher is not threading.current_thread():
+        rec.watcher.join(timeout=STATE_WAIT + WATCH_EVERY)
+    if rec.tainted:
+        raise Discarded(_discarded(f"{rec.tainted} (banking, payment or identity app) came to the foreground while "
+                                   "recording"))
+    if (unseen := rec.unseen()) > WATCH_GAP:
+        try:
+            _erase(rec)
+        except PhoneError:
+            pass
+        raise Discarded(_discarded(f"the foreground app could not be checked for {unseen:.0f} s during the recording "
+                                   "(link lost?), so a banking or identity screen may be in it"))
+
+
 def collect(rec: Recording) -> str:
-    """Arrête screenrecord s'il tourne (SIGINT : MP4 terminé proprement), rapatrie le fichier puis l'efface du
-    téléphone."""
+    """Arrête screenrecord s'il tourne (SIGINT : MP4 terminé proprement), passe le contrôle commun (_vet), rapatrie le
+    fichier puis l'efface du téléphone."""
     adb, notes = rec.adb, []
     limited = not rec.running()
     if rec.running():
-        adb.shell("kill", "-INT", rec.pid, check=False)
-        try:
-            rec.proc.wait(timeout=STOP_WAIT)
-        except subprocess.TimeoutExpired:
-            adb.shell("kill", "-KILL", rec.pid, check=False)
-            rec.proc.kill()
-            notes.append("screenrecord did not stop cleanly: the video may be incomplete.")
+        _observe(rec)  # dernière lecture du premier plan avant l'arrêt
+        if not rec.tainted:
+            adb.shell("kill", "-INT", rec.pid, check=False)
+            try:
+                rec.proc.wait(timeout=STOP_WAIT)
+            except subprocess.TimeoutExpired:
+                adb.shell("kill", "-KILL", rec.pid, check=False)
+                rec.proc.kill()
+                notes.append("screenrecord did not stop cleanly: the video may be incomplete.")
+            rec.ended = time.monotonic()
+    _vet(rec)
     elapsed = min(rec.elapsed(), float(rec.limit))
     output = _output(rec.proc)
     target = extras.free_path(rec.folder / rec.name)
@@ -386,6 +503,9 @@ def collect(rec: Recording) -> str:
         detail = f" (screenrecord: {output[:200]})" if output else ""
         raise PhoneError(f"recording not copied to the PC: {e}{detail}. The file stays on the phone: "
                          "capture(action=\"stop\") tries again") from None
+    if rec.tainted:  # marquée pendant le rapatriement (outil lancé en parallèle) : la copie du PC est effacée aussi
+        target.unlink(missing_ok=True)
+        _vet(rec)
     adb.shell("rm", "-f", rec.remote, check=False)
     duration = mp4_duration(target)
     if duration is None:
@@ -402,7 +522,8 @@ def collect(rec: Recording) -> str:
 
 
 def shutdown() -> None:
-    """Arrêt du serveur : un enregistrement encore en cours est arrêté et rapatrié (au mieux, sans erreur)."""
+    """Arrêt du serveur : un enregistrement encore en cours est arrêté et rapatrié par le même contrôle que stop (au
+    mieux, sans erreur ; vidéo jetée si une appli protégée y est passée)."""
     global _CURRENT
     with _GUARD:
         rec, _CURRENT = _CURRENT, None

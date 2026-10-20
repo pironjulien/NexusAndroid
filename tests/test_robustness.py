@@ -445,6 +445,7 @@ def test_launch_resolves_the_launcher_activity_and_polls_the_foreground(phone, m
 
 def test_launch_falls_back_to_monkey_and_reports_unverified(phone, monkeypatch):
     monkeypatch.setattr(server, "_PACKAGES", {})
+    monkeypatch.setattr(server, "LAUNCH_WAIT", 0.2)  # échéance réelle (monotone) : pas 5 s d'attente dans le test
     original = phone.run
     phone.run = lambda *a, timeout=30.0: (0, "package:com.example.tool\n", "") if a[:2] == ("pm", "list") else (
         (0, "No activity found\n", "") if a[:3] == ("cmd", "package", "resolve-activity") else original(*a, timeout=timeout))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from nexus_android import awake, clip, control, messages, ocr, screen, server
+from nexus_android import awake, capture, clip, control, messages, ocr, screen, server
 
 
 @pytest.fixture(autouse=True)
@@ -50,3 +50,10 @@ def gestures_by_input(monkeypatch):
 def no_ocr(monkeypatch):
     """Pas d'OCR de Windows pendant les tests (lent, dépend du poste) ; un test de l'OCR le simule."""
     monkeypatch.setattr(ocr, "available", lambda: False)
+
+
+@pytest.fixture(autouse=True)
+def quiet_video_watch(monkeypatch):
+    """Surveillance du premier plan pendant une vidéo : au repos dans les tests (déterministes) ; un test de la
+    surveillance raccourcit WATCH_EVERY."""
+    monkeypatch.setattr(capture, "WATCH_EVERY", 3600.0)

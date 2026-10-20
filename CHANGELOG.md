@@ -6,6 +6,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-20
+
+### Security
+
+- Banking, payment and identity apps: when the UI tree cannot be read, a gesture aimed by coordinates is refused even
+  with `confirm=true` (the protected app is now taken from the foreground state, not only from a readable tree).
+- Keys: in a protected app only navigation and safe keys go through; Enter, D-pad center and any other validation
+  key are refused even with `confirm=true` and an accord, and so is a typed line break. With a password field
+  focused, no key but navigation (back, tab, arrows). Keys other than navigation need a readable tree. The accord of
+  a key now covers the whole key sequence: a token for `enter` is refused for `tab enter` or `delete enter`.
+- A swipe that starts on an outward label ("Glisser pour envoyer", "Slide to pay") needs the accord like a tap, not
+  `confirm=true` alone; one accord per swipe or drag.
+- The action bound to an accord now covers every phone number and e-mail address shown on screen (the dialer number
+  anywhere, not only in the top 18 %), named attachments and the rest of the app's text (body, preview). A token for
+  number A no longer calls number B. When the UI tree cannot be read, no token is given and the outward gesture is
+  refused.
+- Screen recording: the foreground app is checked about every second while recording; a banking, payment or
+  identity app seen even once marks the video for good, which is erased from the phone without being pulled. A gap
+  of more than 5 s in that check discards the video too. `stop`, the collection of a finished video by the next
+  `start`, and the server shutdown all go through the same check; `start` checks the foreground before collecting
+  the previous video.
+- OCR: security codes found on the image (UI tree without text, or a large drawn surface such as a SurfaceView or
+  TextureView without text) are blacked out on the image `look` returns and in saved screenshots, before encoding.
+- Masking: bank card numbers (Luhn) and IBANs (mod 97) are masked by the same function as security codes, so in every
+  text output (screen, notifications, SMS, clipboard, calendar title and place, logs, web, map).
+- `web`: the banking, payment, tax and identity site rule is checked again on the address returned with the page
+  text; a page that moved to such a site, or that does not give its address, returns nothing.
+- No typing when the active field cannot be read, even with `confirm=true` (it could be a password field).
+
+### Fixed
+
+- A finished video whose collection fails no longer loses its handle: `start` stops, nothing new is recorded, and
+  `stop` tries again.
+- After a failure, the scrcpy gesture channel waits 60 s before trying again (`input` meanwhile), or retries at once
+  after a reconnection, instead of paying the start-up delay on every gesture.
+- Screen size and fold posture are read again on every screen reading, image or not (rotation, folding).
+- Waiting for an app to come to the foreground is a real 5 s deadline, slow reads included.
+- `act` says when the phone does not report its last touch (no `lastUserActivityTime`): the "user is using the phone"
+  check is then inactive.
+- Settings map: the phone's language falls back to `ro.product.locale` when `persist.sys.locale` is empty.
+- Xiaomi, Redmi, POCO: a gesture refused by Android (`INJECT_EVENTS`) now says to turn on "USB debugging (Security
+  settings)" and is not counted as sent.
+- Clipboard: a phone that stops answering in the middle of a reply gives a clear error instead of a raw socket
+  timeout.
+- `look` reads the routines file once instead of once per routine.
+
 ## [0.9.0] - 2026-10-20
 
 ### Added

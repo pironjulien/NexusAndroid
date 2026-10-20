@@ -120,6 +120,11 @@ def fill(steps: list[dict[str, Any]], params: dict[str, str]) -> list[dict[str, 
             for s in safe]
 
 
+def for_app(package: str) -> list[str]:
+    """Noms des routines enregistrées dans cette application (fichier lu une seule fois)."""
+    return sorted(name for name, routine in _load().items() if routine.get("package") == package)
+
+
 def listing(package: str | None = None) -> list[str]:
     """Noms des routines (celles de l'application au premier plan d'abord quand package est donné)."""
     data = _load()

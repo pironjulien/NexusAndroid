@@ -172,6 +172,7 @@ class Adb:
         self._ids: dict[str, str] = {}  # numéro adb → ro.serialno (identité réelle de l'appareil)
         self.rebooted = False  # le téléphone a redémarré depuis le dernier contact (à dire une fois, puis False)
         self._absent_until = 0.0  # heure (monotonic) avant laquelle la recherche Wi-Fi n'est pas refaite
+        self.links = 0  # connexions réussies : un canal en échec est retenté sans attendre après une reconnexion
 
     def _raw(self, args: list[str], timeout: float = 30.0, serial: bool = True) -> subprocess.CompletedProcess[bytes]:
         cmd = [self.path]
@@ -293,6 +294,7 @@ class Adb:
         elif re.fullmatch(r"\d+\.\d+\.\d+\.\d+:\d+", chosen.serial) and chosen.serial != remembered.get("address"):
             self._save({**remembered, "serialno": ident, "address": chosen.serial})  # port du débogage sans fil changé
         self.serial = chosen.serial
+        self.links += 1
         self.note_boot()
         return chosen
 
@@ -368,6 +370,7 @@ class Adb:
         if not chosen:
             raise PhoneError(f"Device set by NEXUS_ANDROID_SERIAL ({serial}) unreachable.")
         self.serial = serial
+        self.links += 1
         return chosen
 
     def run(self, *argv: str, timeout: float = 30.0) -> tuple[int, str, str]:

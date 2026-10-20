@@ -487,7 +487,9 @@ def _apk_stamp(adb: Adb) -> tuple[str, str, str]:
     path = adb.shell("pm", "path", SETTINGS_PACKAGE).strip().splitlines()[0].removeprefix("package:").strip()
     stat = adb.shell("stat", "-c", "%s:%Y", path, check=False).strip()
     build = adb.shell("getprop", "ro.build.fingerprint", check=False).strip()
-    locale = adb.shell("getprop", "persist.sys.locale", check=False).strip() or "fr-FR"
+    # Langue choisie par l'utilisateur, sinon celle d'usine (persist.sys.locale vide tant qu'elle n'a pas été changée).
+    locale = (adb.shell("getprop", "persist.sys.locale", check=False).strip()
+              or adb.shell("getprop", "ro.product.locale", check=False).strip() or "fr-FR")
     key = f"{path}|{stat}|{build}|{locale}|{INDEX_VERSION}"
     return path, hashlib.sha256(key.encode()).hexdigest()[:12], locale
 
