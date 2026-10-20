@@ -4,12 +4,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Non publié] - 2026-10-20 — Jeton commun créé par la synchro seulement
-
-### Corrigé
-- `install.ps1` ne crée plus le jeton commun des démons s'il manque : il s'arrête et renvoie vers Sync-NexusPoste, seul endroit où il naît (et seulement une fois le coffre NexusSecure descendu par OneDrive). Lancé sur un PC neuf trop tôt, il créait un autre jeton qui cassait l'autre PC.
-
 ## [Unreleased]
+
+## [0.9.3] - 2026-10-20
+
+### Fixed
+
+- Windows installer of the maintainer's own setup no longer creates the shared daemon token when it is missing (it stops and points to the sync script, the only place the token is created).
+
+- Screen recording: readings and recording start and end times are dated with a fine clock (`time.perf_counter`).
+  Under Python 3.12 on Windows, `time.monotonic` only ticks every ~16 ms, so a banking app read just after a video
+  ended got the same date as that end and wrongly discarded a sound video (CI failure under Python 3.12 only).
 
 ## [0.9.2] - 2026-10-20
 

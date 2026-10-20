@@ -309,6 +309,14 @@ def blackout(image: PILImage.Image, elements: list[Element], shrink: float = 1.0
 # Toute lecture de l'état, par n'importe quel Screen (session, capture...) : (appli au premier plan, début de la
 # lecture). Branché par capture : une appli protégée vue pendant une vidéo la fait jeter aussitôt.
 ON_STATE: Callable[[str, float], None] | None = None
+
+
+def stamp() -> float:
+    """Horodatage des lectures et des enregistrements vidéo, comparés entre eux (preuve prise pendant ou après une
+    vidéo) : horloge fine. time.monotonic n'a qu'environ 16 ms de résolution sous Windows avant Python 3.13 : une
+    lecture faite juste après la fin d'une vidéo y recevait la même date que cette fin et passait pour prise
+    pendant."""
+    return time.perf_counter()
 OPAQUE_SHARE = 0.25  # part de l'écran au-delà de laquelle une surface sans texte fait lire l'image par OCR
 
 
@@ -631,7 +639,7 @@ class Screen:
         self.size: tuple[int, int] | None = None
         self.posture = ""  # pliage au moment de la dernière image (les coordonnées "x,y" en dépendent)
         self.last_state: State | None = None  # état lu avec la dernière lecture d'écran (state ou dump)
-        self.last_seen_at = 0.0  # début (time.monotonic()) de la lecture qui a donné last_state
+        self.last_seen_at = 0.0  # début (stamp()) de la lecture qui a donné last_state
         self.busy = ""  # message de la dernière lecture d'arbre bloquée par un autre outil (UiAutomation prise)
         self.fingerprint: str | None = None  # empreinte du dernier écran lu (tourner en rond)
         self.loops = LoopWatch()
@@ -641,7 +649,7 @@ class Screen:
         return query.server_for(self.adb) if FAST and self.fast else None
 
     def _observed(self, state: State, since: float) -> None:
-        """État lu par une lecture commencée à `since` (time.monotonic()) : gardé, et signalé à ON_STATE (garde de la
+        """État lu par une lecture commencée à `since` (stamp()) : gardé, et signalé à ON_STATE (garde de la
         vidéo en cours), quel que soit l'outil ou la session qui l'a lu."""
         self.last_state, self.last_seen_at = state, since
         if ON_STATE is not None:
@@ -655,7 +663,7 @@ class Screen:
         server = self._server()
         if server is None:
             return None
-        since = time.monotonic()
+        since = stamp()
         tables = server.run([["screen", "--image", image, "--max", str(MAX_SIDE), "--quality", str(PHONE_QUALITY)]
                              + ([] if settle else ["--quiet", "0"])])
         if not tables or not tables[0].raw:
@@ -729,7 +737,7 @@ class Screen:
 
     def state(self) -> State:
         """État lu en un seul aller-retour (trois dumpsys filtrés sur le téléphone)."""
-        since = time.monotonic()
+        since = stamp()
         out = self.adb.shell("sh", "-c", STATE_SH, check=False, timeout=STATE_WAIT)
         self._observed(parse_state(out, out), since)
         assert self.last_state is not None
@@ -823,7 +831,7 @@ class Screen:
         self.release()
         last = ""
         for _ in range(3):
-            since = time.monotonic()
+            since = stamp()
             out = self.adb.shell("sh", "-c", f"uiautomator dump {UI_DUMP} 2>&1; cat {UI_DUMP} 2>/dev/null; "
                                  f"rm -f {UI_DUMP}; echo; echo {STATE_MARK}; {STATE_SH}", timeout=20, check=False)
             # La dernière marque est la nôtre (un texte de l'écran qui la recopierait est avant, dans l'arbre).

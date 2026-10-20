@@ -4,7 +4,6 @@ un test qui échoue sur la 0.9.1 et passe après correction. Téléphone simulé
 from __future__ import annotations
 
 import io
-import time
 
 import pytest
 from PIL import Image as PILImage
@@ -14,6 +13,7 @@ from test_guards import accorded, act, field, node, phone, ui  # noqa: F401  (fi
 from test_review_final import _code_on_a_surface
 
 from nexus_android import capture, ocr, server
+from nexus_android import screen as screen_mod
 from nexus_android.adb import PhoneError
 from nexus_android.messages import CARD, IBAN, mask_codes
 from nexus_android.server import Step
@@ -158,8 +158,8 @@ def test_retried_collection_does_not_erase_a_sound_video(rec, home, monkeypatch)
     rec.pull_fails = True
     with pytest.raises(PhoneError, match="not copied"):
         capture.stop(rec)  # type: ignore[arg-type]
-    real = time.monotonic
-    monkeypatch.setattr(capture.time, "monotonic", lambda: real() + 30)  # stop retenté 30 s plus tard
+    real = screen_mod.stamp
+    monkeypatch.setattr(screen_mod, "stamp", lambda: real() + 30)  # stop retenté 30 s plus tard
     rec.pull_fails = False
     assert "Screen recording saved on the PC" in capture.stop(rec)  # type: ignore[arg-type]
     assert len(inbox(home)) == 1

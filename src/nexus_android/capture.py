@@ -213,11 +213,11 @@ class Recording:
     confirm: bool
     limit: int
     size: str  # « 720x1136 », ou "" (résolution de l'écran)
-    started: float  # time.monotonic()
+    started: float  # screen_mod.stamp()
     # Surveillance continue du premier plan (fil _watch) : une appli protégée vue une fois rend la vidéo inutilisable,
     # pour de bon (tainted) ; un trou de surveillance trop long aussi (blind).
     tainted: str = ""
-    last_seen: float = 0.0  # dernière lecture réussie du premier plan (time.monotonic())
+    last_seen: float = 0.0  # dernière lecture réussie du premier plan (screen_mod.stamp())
     blind: float = 0.0  # plus long intervalle sans lecture réussie pendant l'enregistrement
     ended: float | None = None  # fin de screenrecord constatée par la surveillance
     stop_watch: threading.Event = field(default_factory=threading.Event)
@@ -227,11 +227,11 @@ class Recording:
         return self.proc.poll() is None
 
     def elapsed(self) -> float:
-        return time.monotonic() - self.started
+        return screen_mod.stamp() - self.started
 
     def unseen(self) -> float:
         """Plus long moment de l'enregistrement sans lecture du premier plan (jusqu'à sa fin, ou maintenant)."""
-        end = self.ended if self.ended is not None else time.monotonic()
+        end = self.ended if self.ended is not None else screen_mod.stamp()
         return max(self.blind, end - self.last_seen)
 
 
@@ -293,7 +293,7 @@ def _observe(rec: Recording) -> None:
         # Premier plan illisible : seule la preuve d'un écran sans appli vaut lecture surveillée (Asleep, ou Always On
         # Display : Dozing ET tous les affichages en DOZE ou OFF) ; Dreaming (écran de veille) affiche encore une appli.
         return
-    now = time.monotonic()
+    now = screen_mod.stamp()
     rec.blind = max(rec.blind, now - rec.last_seen)
     rec.last_seen = now
 
@@ -318,7 +318,7 @@ def _watch(rec: Recording) -> None:
     """Fil de surveillance : le premier plan relu toutes les WATCH_EVERY s tant que screenrecord tourne."""
     while not rec.stop_watch.wait(WATCH_EVERY):
         if not rec.running():  # fin constatée : plus rien n'est filmé, aucune lecture ne peut marquer la vidéo
-            rec.ended = time.monotonic()
+            rec.ended = screen_mod.stamp()
             return
         _observe(rec)
         if rec.tainted:
@@ -501,7 +501,7 @@ def begin(adb: Adb, seconds: int | None, name: str | None, dest: str | None,
     if error:
         adb.shell("rm", "-f", remote, check=False)
         raise PhoneError(f"screen recording not started: {error}")
-    now = time.monotonic()
+    now = screen_mod.stamp()
     rec = Recording(adb, proc, pid, remote, folder, file, confirm, limit, size, now, last_seen=now)
     rec.watcher = threading.Thread(target=_watch, args=(rec,), name="nexus-android-video-watch", daemon=True)
     with _GUARD:
@@ -581,11 +581,11 @@ def collect(rec: Recording) -> str:
                 adb.shell("kill", "-KILL", rec.pid, check=False)
                 rec.proc.kill()
                 notes.append("screenrecord did not stop cleanly: the video may be incomplete.")
-            rec.ended = time.monotonic()
+            rec.ended = screen_mod.stamp()
     if rec.ended is None:
         # Fini seul avant que la surveillance ne le voie : fin figée dès la première collecte, pour qu'une collecte
         # retentée plus tard (rapatriement échoué) ne compte pas l'attente comme du temps non surveillé.
-        rec.ended = time.monotonic()
+        rec.ended = screen_mod.stamp()
     _vet(rec)
     elapsed = min(rec.elapsed(), float(rec.limit))
     output = _output(rec.proc)

@@ -193,8 +193,7 @@ def test_previous_video_is_not_collected_before_the_checks(rec, home):  # noqa: 
     previous = capture._CURRENT
     rec.procs[0].code = 0  # finie seule
     assert previous is not None
-    previous.ended = time.monotonic()  # fin constatée par la surveillance (au repos dans les tests)
-    time.sleep(0.05)  # horloge de Windows à ~15 ms : la lecture suivante doit être datée strictement après la fin
+    previous.ended = screen.stamp()  # fin constatée par la surveillance (au repos dans les tests)
     rec.package = BANK  # ouverte APRÈS la fin : ne marque pas la vidéo finie
     with pytest.raises(PhoneError, match="no screen recording"):
         capture.begin(rec, 1, None, None, False)  # type: ignore[arg-type]
