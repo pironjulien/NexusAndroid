@@ -44,7 +44,8 @@ def payload(status: str | None, size: tuple[int, int], nodes: list[dict[str, str
             out += [_text(a.get(k, "")) for k in ("text", "resource-id", "class", "package", "content-desc")]
             out.append(_int(sum(1 << bit for bit, name in enumerate(NODE_FLAGS) if a.get(name) == "true")))
             x1, y1, x2, y2 = map(int, re.findall(r"-?\d+", a["bounds"]))
-            out += [_int(x1), _int(y1), _int(x2), _int(y2)]
+            out += [_int(x1), _int(y1), _int(x2), _int(y2), _int(int(a.get("depth", 0))),
+                    _int(int(a.get("drawing-order", 0)))]
     if image is None:
         out.append(_int(2))
     elif isinstance(image, str):
@@ -81,7 +82,15 @@ UI = """<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotat
  checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false"
  long-clickable="false" password="false" selected="false" bounds="[0,0][0,0]" />
 </node></hierarchy>"""
-NODES = [dict(n.attrib) for n in ET.fromstring(UI[UI.find("<hierarchy"):]).iter("node")]
+def _nodes(parent: ET.Element, depth: int = 0) -> list[dict[str, str]]:
+    """Nœuds dans l'ordre du document, avec leur profondeur (comme NexusQuery.walk)."""
+    out = []
+    for n in parent.findall("node"):
+        out += [{**n.attrib, "depth": str(depth)}, *_nodes(n, depth + 1)]
+    return out
+
+
+NODES = _nodes(ET.fromstring(UI[UI.find("<hierarchy"):]))
 STATUS = ("  mWakefulness=Awake\n  mCurrentFocus=Window{abc u0 com.app/com.app.Main}\n    isKeyguardShowing=false\n"
           f"{POSTURE_MARK}\n  mCommittedState=Optional[DeviceState{{identifier=3, name='OPENED', app_accessible=true}}]\n")
 
@@ -151,6 +160,7 @@ def test_served_nodes_give_the_same_elements_as_the_xml():
     assert snap.nodes is not None
     served, dumped = screen.mask_elements(elements_of(snap.nodes)), screen.mask_elements(parse_ui(UI))
     assert [_key(e) for e in served] == [_key(e) for e in dumped]
+    assert [e.path for e in served] == [e.path for e in dumped] and served[1].path == ((0, 0), (0, 0))  # même arbre
     assert [e.text for e in served][:3] == ["", "Wi-Fi", "Ligne 1\nLigne 2"]  # retour à la ligne gardé, comme le XML
     assert served[1].states == ["checked", "selected", "disabled"]
     assert served[3].masked and "482913" not in served[3].text

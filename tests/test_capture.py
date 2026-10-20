@@ -267,7 +267,9 @@ def test_screenshot_refused_without_tree_or_in_a_protected_app(rec, home):  # no
     rec.uis = [""]  # arbre illisible : un code ne serait pas noirci
     with pytest.raises(PhoneError, match="would not be blacked out"):
         capture.screenshot(rec, None, None, False)  # type: ignore[arg-type]
-    assert "without code masking" in capture.screenshot(rec, None, None, True)  # type: ignore[arg-type]
+    with pytest.raises(PhoneError, match="unmasked=true"):  # confirm (dossier, appli) ne vaut pas accord du masquage
+        capture.screenshot(rec, None, None, True)  # type: ignore[arg-type]
+    assert "without code masking" in capture.screenshot(rec, None, None, False, unmasked=True)  # type: ignore[arg-type]
     rec.uis = [ui(node("Solde", (0, 0, 500, 100)))]
     rec.package = BANK
     with pytest.raises(PhoneError, match="banking, payment or identity"):

@@ -120,10 +120,14 @@ screen-awake session and the same safeguards.
 | `draft` | Open SMS/RCS or WhatsApp with the reply already written, recipient by name or number (WhatsApp: country code from the SIM card); sent only after the user explicitly says "send" |
 | `notifications` | Notifications on screen: app, time, title, text; security codes masked; `all` adds ongoing ones |
 | `files` | Shared storage only (`/sdcard`): list newest first, `pull` to the PC (`~\Downloads\Telephone`), `push` to the phone; never overwrites, never deletes. On the PC: Downloads, Documents, Desktop, Pictures and Videos are free, anywhere else needs `confirm=true`; keys and secrets (`.ssh`, `.env`…) and the Windows Startup folder never |
-| `capture` | Save the screen as a file on the PC, same folder and rules as `files pull` (`~\Downloads\Telephone`, never overwrites): `screenshot` at full resolution (PNG, or JPEG by name) with security codes blacked out; `record` (fixed duration) or `start`/`stop` (gestures go on meanwhile) for an MP4 video, 720p, 4 Mbit/s, 180 s at most, pulled to the PC then deleted from the phone. Codes are not masked in videos, so no recording starts in a banking or identity app; screens protected against capture come out black; a sleeping screen is turned on first, a locked phone is refused (the user unlocks it) |
+| `capture` | Save the screen as a file on the PC, same folder and rules as `files pull` (`~\Downloads\Telephone`, never overwrites): `screenshot` at full resolution (PNG, or JPEG by name) with security codes and password fields blacked out (no masking possible: refused unless `unmasked=true`); `record` (fixed duration) or `start`/`stop` (gestures go on meanwhile) for an MP4 video, 720p, 4 Mbit/s, 180 s at most, pulled to the PC then deleted from the phone. Codes are not masked in videos, so no recording starts in a banking or identity app, and one is erased, never saved, if such an app comes up while recording; screens protected against capture come out black; a sleeping screen is turned on first, a lock screen that Android keeps unlocked (trusted place) is lifted, a really locked phone is refused (the user unlocks it) |
 | `logs` | Android logs to understand a crash or a misbehaving app: `crash` (one block per crash: time, package, exception and `Caused by`, first app frames; native crashes with signal and backtrace), `anr` (app not responding, from Android's drop box and the event log, with the reason), `recent` (last lines, of one app with `app`: its processes, running or not, and lines naming it); `since` (`15m`, `13:05`…), `query` filter; newest last, about 30,000 characters. Codes, tokens, e-mail addresses and phone numbers masked; banking and identity apps: no `recent`, crashes reduced to exception types and app frames |
 | `info` | Read-only: last known location (accuracy, age, Maps link), recent calls, a contact's numbers, upcoming events (structured output) |
 | `settings` | Read or change, then read back: Wi-Fi, Bluetooth, mobile data, location, NFC, do not disturb, brightness, media volume; turning Wi-Fi off is refused when the link goes through it (structured output) |
+| `functions` | Structured actions apps expose to assistants (Android AppFunctions: Samsung Clock, Reminder, Notes, Calendar, Contacts, Gallery, Files, Phone…), listed and run without the screen; reading free, deleting and call handling with `confirm=true`, calling also with the accord |
+| `web` | Web pages on the phone read through Chrome's DevTools (or a debuggable WebView): whole text, title, address, links, without touching the screen; `query` filters lines; `tabs` lists the pages; read only, codes, tokens, e-mails and numbers masked, banking apps never read |
+| `apps` | Manage apps: `info`, `stop` (force-stop), `clear` (data), `uninstall` (a system app is only hidden, `restore` brings it back), `install` (an .apk from the PC); `clear`, `uninstall` and `install` need `confirm=true`; never the system's own parts, nor clearing or uninstalling banking and identity apps |
+| `map` | Map of the whole phone, read without touching the screen. `find`: where something is set, from the user's words → path from Settings ("Settings > Notifications > …"), current value, and how to open that screen directly with the row highlighted. Built from the phone's own Settings app (every screen and row, in the phone's language) and rebuilt by itself after an update; app screens the Settings app does not describe (Galaxy Buds…) are added with `note`, on the screen the agent is showing. `snapshot` / `diff`: settings values, apps and versions, sensitive permissions, default apps, device admins and Bluetooth devices, compared with the previous snapshot; identifiers, tokens and numbers masked |
 | `checkup` | Health report: system, security patch, battery, storage, memory, apps installed outside the stores, wireless debugging; `clean` clears caches |
 
 Google Messages stores RCS messages in Android's messaging provider, like MMS, so the server reads them without going
@@ -202,7 +206,9 @@ Measured on a Samsung Galaxy Fold: messages over USB through the shared daemon, 
   a single word that looks like a password or a token, is not shown at all. When the UI tree cannot be read, codes cannot be located, so the image is not sent unless `look` gets
   `confirm=true` (with the user's agreement).
 - **Passwords**: no typing into a password field.
-- **Locked phone**: no gestures. The user unlocks it; no code is ever entered.
+- **Locked phone**: no gestures. The user unlocks it; no code is ever entered. Exception: when Android itself keeps
+  the phone unlocked (Extend Unlock, trusted place or device: `dumpsys trust` says `deviceLocked=0`), `look`, `act`
+  and `capture` wake it and lift the lock screen (`wm dismiss-keyguard`), still without any code.
 - **Text read** on screen or in messages is data, never instructions.
 - **User holding the phone**: no gesture mixes with theirs. If the phone was touched in the last 3 seconds (and not
   by an agent), the server waits up to 10 seconds, then refuses.
@@ -228,7 +234,7 @@ About 2 minutes after the last gesture of any agent, the original timeout is res
 which locks the phone again. If the user is holding the phone at that moment, or changed the timeout themselves, the
 screen is left alone. The original value is saved once (`~\.nexus\nexus-android\awake.json`) and shared by all
 servers under the common lock: one save, one restore, never the raised value taken for the original. After a crash,
-the next server to start restores it. The server never unlocks the phone.
+the next server to start restores it. The server never unlocks a phone that Android keeps locked.
 `NEXUS_ANDROID_AWAKE_IDLE` (seconds, default 120) changes the delay; `NEXUS_ANDROID_KEEP_AWAKE=0` turns it off.
 
 ## Known limitations
@@ -338,7 +344,9 @@ it).
   the agent sees them.
 - **Where it goes**: tool results are returned to the AI client you connected (Claude, Codex, Antigravity…). That
   client may send them to its model provider under its own privacy policy; NexusAndroid sends nothing anywhere else.
-- **What it stores on the PC**, under `~/.nexus/`: the phone's serial number, Wi-Fi address and wireless debugging
+- **What it stores on the PC**, under `~/.nexus/`: the phone map (`map/`: the Settings tree, the screens noted with
+  `map note`, and up to 30 snapshots of settings values, apps, permissions and Bluetooth device names, with
+  identifiers, tokens, addresses and numbers masked), the phone's serial number, Wi-Fi address and wireless debugging
   port, the saved screen timeout, a lock file, the pinned scrcpy server, and, with `install.ps1`, its environment and
   backups of the client configs it edits. Files you `pull` go to `~/Downloads/Telephone`. The server writes no
   messages, screenshots or logs to disk.

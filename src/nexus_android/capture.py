@@ -21,7 +21,7 @@ from pathlib import Path
 
 from . import extras, policy
 from .adb import Adb, PhoneError
-from .screen import Element, Screen, State, blackout, is_black
+from .screen import LIFTED, Element, Screen, State, blackout, is_black
 
 MAX_SECONDS = 180  # limite de screenrecord (Android)
 RECORD_SECONDS = 30  # record sans durée donnée
@@ -50,12 +50,15 @@ ON_WAKE: Callable[[Adb, State], None] | None = None
 
 def ready(adb: Adb, screen: Screen) -> tuple[State, list[str]]:
     """Avant une capture : téléphone verrouillé → refus (jamais de code tapé) ; écran éteint et déverrouillé → allumé
-    par KEYCODE_WAKEUP, pour ne jamais enregistrer une image noire ni une vidéo vide."""
-    state = screen.state()
+    par KEYCODE_WAKEUP, pour ne jamais enregistrer une image noire ni une vidéo vide. Écran de verrouillage qu'Android
+    tient déverrouillé (lieu de confiance) : levé sans code avant la capture."""
+    state, lifted = screen.lift_keyguard(screen.state())
+    if lifted and ON_WAKE:
+        ON_WAKE(adb, state)
     if state.locked:
         raise PhoneError(LOCKED)
     if state.awake:
-        return state, []
+        return state, [LIFTED] if lifted else []
     adb.shell("input", "keyevent", "KEYCODE_WAKEUP")
     deadline = time.monotonic() + WAKE_WAIT
     while True:
@@ -65,8 +68,11 @@ def ready(adb: Adb, screen: Screen) -> tuple[State, list[str]]:
             break
     if ON_WAKE:
         ON_WAKE(adb, state)
+    state, lifted = screen.lift_keyguard(state)
     if state.locked:
         raise PhoneError("Screen was off; once woken, the phone shows its lock screen. " + LOCKED)
+    if lifted:
+        return state, ["Screen was off: turned on (KEYCODE_WAKEUP) before the capture.", LIFTED]
     if not state.awake:
         raise PhoneError("Screen off and still off after KEYCODE_WAKEUP: nothing captured. Ask the user to turn the "
                          "screen on.")
@@ -106,9 +112,11 @@ def _size(path: Path) -> str:
 # ---------------------------------------------------------------- capture d'écran
 
 
-def screenshot(adb: Adb, name: str | None, dest: str | None, confirm: bool) -> str:
-    """Écran actuel en pleine résolution (PNG, ou JPEG selon le nom), codes noircis d'après l'arbre UI relu juste
-    après la capture. Application protégée ou arbre illisible : seulement avec confirm=true (ordre de l'utilisateur)."""
+def screenshot(adb: Adb, name: str | None, dest: str | None, confirm: bool, unmasked: bool = False) -> str:
+    """Écran actuel en pleine résolution (PNG, ou JPEG selon le nom), codes et mots de passe noircis d'après l'arbre UI
+    lu juste avant ET juste après la capture (un code apparu ou disparu entre les deux reste couvert). Application
+    protégée : confirm=true ; arbre illisible : unmasked=true, accord à part (un confirm donné pour le dossier ne
+    suffit pas)."""
     screen = Screen(adb)  # lecture à part : la liste [N] et l'échelle du dernier look restent celles de la session
     state, notes = ready(adb, screen)
     protected = policy.protected_app(state.package)
@@ -116,20 +124,29 @@ def screenshot(adb: Adb, name: str | None, dest: str | None, confirm: bool) -> s
         raise PhoneError(f"{protected}: banking, payment or identity app in the foreground, screenshot not saved. "
                          "Only on the user's explicit order for this screen: confirm=true")
     target = _destination(dest, file_name(name, "screenshot", IMAGE_TYPES), confirm)
-    image = screen.capture()
     elements: list[Element] = []
+    error: PhoneError | None = None
     try:
-        elements = screen.dump()
-    except PhoneError as e:
-        if not confirm:
-            raise PhoneError(f"UI tree unreadable ({str(e)[:160]}): a visible security code would not be blacked out, "
-                             "screenshot not saved. Try again in a moment, or confirm=true if the user accepts the "
-                             "file without masking.") from None
-        notes.append("Saved without code masking (UI tree unreadable, confirm=true).")
+        try:
+            elements = screen.dump()
+        except PhoneError as e:
+            error = e
+        image = screen.capture()
+        if error is None:
+            try:
+                elements += [e for e in screen.dump() if e.masked or e.password]
+            except PhoneError as e:
+                error = e
     finally:
         if protected:
             screen.release()  # comme look : connexion d'accessibilité rendue devant une appli bancaire
-    masked = sum(e.masked for e in elements)
+    if error is not None:
+        if not unmasked:
+            raise PhoneError(f"UI tree unreadable ({str(error)[:160]}): a visible security code would not be blacked "
+                             "out, screenshot not saved. Try again in a moment, or unmasked=true if the user accepts "
+                             "the file without masking.")
+        notes.append("Saved without code masking (UI tree unreadable, unmasked=true).")
+    masked = len({e.bounds for e in elements if e.masked})
     if masked:
         notes.append(f"{masked} area(s) with a security code blacked out.")
     if protected:
@@ -174,6 +191,24 @@ class Recording:
 
 _CURRENT: Recording | None = None  # un enregistrement à la fois par serveur, et un seul screenrecord sur le téléphone
 _GUARD = threading.Lock()
+_DROPPED = ""  # appli protégée qui a fait jeter l'enregistrement en cours (dit au prochain stop)
+
+
+def guard(adb: Adb, package: str) -> None:
+    """Appli bancaire, de paiement ou d'identité au premier plan pendant un enregistrement : screenrecord arrêté et
+    fichier effacé du téléphone, rien ne vient sur le PC (une vidéo ne se masque pas)."""
+    global _CURRENT, _DROPPED
+    if _CURRENT is None or not (protected := policy.protected_app(package)):
+        return
+    with _GUARD:
+        rec, _CURRENT = _CURRENT, None
+    if rec is None:
+        return
+    adb.shell("kill", "-KILL", rec.pid, check=False)
+    if rec.running():
+        rec.proc.kill()
+    adb.shell("rm", "-f", rec.remote, check=False)
+    _DROPPED = protected
 
 
 def video_size(width: int, height: int) -> str:
@@ -304,9 +339,15 @@ def wait_end(timeout: float) -> None:
 
 
 def stop(adb: Adb) -> str:
-    global _CURRENT
+    global _CURRENT, _DROPPED
+    if _CURRENT is not None:
+        guard(adb, Screen(adb).state().package)
     with _GUARD:
         rec, _CURRENT = _CURRENT, None
+    if rec is None and _DROPPED:
+        dropped, _DROPPED = _DROPPED, ""
+        raise PhoneError(f"recording discarded: {dropped} (banking, payment or identity app) came to the foreground "
+                         "while recording; the file was erased from the phone and nothing was saved on the PC")
     if rec is None:
         running = adb.shell("pidof", "screenrecord", check=False).strip()
         raise PhoneError("no recording started by this server" + (

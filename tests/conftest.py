@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from nexus_android import awake, clip, messages, screen, server
+from nexus_android import awake, clip, control, messages, ocr, screen, server
 
 
 @pytest.fixture(autouse=True)
@@ -37,3 +37,16 @@ def fresh_country(monkeypatch):
 def no_screen_server(monkeypatch):
     """Téléphones simulés : écran lu par uiautomator et screencap ; un test du lecteur d'écran le rallume."""
     monkeypatch.setattr(screen, "FAST", False)
+
+
+@pytest.fixture(autouse=True)
+def gestures_by_input(monkeypatch):
+    """Téléphones simulés : gestes par `input` (enregistrés) ; un test du canal scrcpy le réactive."""
+    monkeypatch.setattr(control, "ENABLED", False)
+    monkeypatch.setattr(server, "_CONTROL", None)
+
+
+@pytest.fixture(autouse=True)
+def no_ocr(monkeypatch):
+    """Pas d'OCR de Windows pendant les tests (lent, dépend du poste) ; un test de l'OCR le simule."""
+    monkeypatch.setattr(ocr, "available", lambda: False)

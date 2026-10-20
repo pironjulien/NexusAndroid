@@ -20,5 +20,7 @@ public class AccessibilityNodeInfo {
     public boolean isLongClickable() { throw new RuntimeException("stub"); }
     public boolean isPassword() { throw new RuntimeException("stub"); }
     public boolean isSelected() { throw new RuntimeException("stub"); }
+    public boolean isEditable() { throw new RuntimeException("stub"); }
+    public int getDrawingOrder() { throw new RuntimeException("stub"); }
     public void getBoundsInScreen(android.graphics.Rect outBounds) { throw new RuntimeException("stub"); }
 }

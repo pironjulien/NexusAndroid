@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import math
 import os
@@ -11,6 +12,7 @@ import time
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
+from typing import Any
 
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
@@ -45,6 +47,13 @@ class Element:
     editable: bool = False
     masked: bool = False  # un code y a été masqué : zone noircie sur l'image
     scrollable: bool = False  # liste ou zone défilable (un glissé dedans n'est pas un appui)
+    # Place dans l'arbre : (ordre de dessin, rang) de chaque nœud depuis la racine. Un ancêtre en est un préfixe ; le
+    # plus grand chemin est dessiné devant. () : inconnue.
+    path: tuple[tuple[int, int], ...] = ()
+
+    def holds(self, other: Element) -> bool:
+        """Lui-même ou un ancêtre de other (chemins connus)."""
+        return bool(self.path) and other.path[:len(self.path)] == self.path
 
     @property
     def center(self) -> tuple[int, int]:
@@ -81,10 +90,46 @@ def parse_ui(xml_text: str) -> list[Element]:
     if start < 0:
         raise PhoneError("UI tree unreadable: " + xml_text.strip()[:200])
     root = ET.fromstring(xml_text[start: xml_text.rfind(">") + 1])
-    return elements_of(node.attrib for node in root.iter("node"))
+
+    def walk(parent: ET.Element, path: tuple[tuple[int, int], ...]) -> Iterable[Mapping[str, Any]]:
+        for rank, node in enumerate(parent.findall("node")):
+            here = (*path, (_number(node.get("drawing-order")), rank))
+            yield {**node.attrib, PATH: here}
+            yield from walk(node, here)
+
+    return elements_of(walk(root, ()))
 
 
-def elements_of(nodes: Iterable[Mapping[str, str]]) -> list[Element]:
+PATH = "nexus-path"  # clé ajoutée aux attributs d'un nœud : sa place dans l'arbre (Element.path)
+
+
+def _number(value: str | None) -> int:
+    try:
+        return int(value or 0)
+    except ValueError:
+        return 0
+
+
+def with_paths(nodes: list[dict[str, Any]], depths: list[int], orders: list[int]) -> None:
+    """Chemins (Element.path) des nœuds rendus par le serveur du téléphone dans l'ordre du document, d'après la
+    profondeur et l'ordre de dessin de chacun."""
+    stack: list[tuple[tuple[tuple[int, int], ...], list[int]]] = []  # chemin du nœud ouvert, rangs déjà donnés
+    for node, depth, order in zip(nodes, depths, orders, strict=True):
+        del stack[max(depth, 0):]
+        if len(stack) < depth:  # profondeur sautée (arbre tronqué) : chemins inconnus pour la suite
+            return
+        parent, ranks = stack[-1] if stack else ((), [0])
+        rank = ranks[0]
+        ranks[0] += 1
+        here = (*parent, (order, rank))
+        node[PATH] = here
+        stack.append((here, [0]))
+
+
+_EDIT_CLASS = re.compile(r"(EditText|AutoCompleteTextView|SearchAutoComplete|SearchEditText)$")
+
+
+def elements_of(nodes: Iterable[Mapping[str, Any]]) -> list[Element]:
     """Éléments utiles d'après les attributs des nœuds (ceux du XML de uiautomator, ou rendus par le serveur dans les
     mêmes termes), dans l'ordre du document : une seule règle de tri et de numérotation pour les deux lectures."""
     elements: list[Element] = []
@@ -97,7 +142,9 @@ def elements_of(nodes: Iterable[Mapping[str, str]]) -> list[Element]:
             continue
         text, desc = a.get("text", "").strip(), a.get("content-desc", "").strip()
         clickable = a.get("clickable") == "true" or a.get("long-clickable") == "true"
-        editable = a.get("class", "").endswith("EditText")
+        # Drapeau d'Android (isEditable, envoyé par le lecteur d'écran) ; `uiautomator dump` ne le donne pas : classes de
+        # saisie connues, sous-classes comprises (AutoCompleteTextView de la recherche des Paramètres, SearchView).
+        editable = a.get("editable") == "true" or bool(_EDIT_CLASS.search(a.get("class", "")))
         scrollable = a.get("scrollable") == "true"
         if not (text or desc or clickable or editable or scrollable):
             continue
@@ -121,7 +168,7 @@ def elements_of(nodes: Iterable[Mapping[str, str]]) -> list[Element]:
             text=text, desc=desc, rid=rid.split("/", 1)[-1] if rid else "",
             package=a.get("package", ""), bounds=(x1, y1, x2, y2), clickable=clickable or editable,
             states=states, password=a.get("password") == "true", focused=a.get("focused") == "true",
-            editable=editable, scrollable=scrollable,
+            editable=editable, scrollable=scrollable, path=tuple(a.get(PATH, ())),
         ))
     return elements
 
@@ -214,9 +261,10 @@ def diff_elements(old: list[Element], new: list[Element]) -> Changes:
 
 
 def blackout(image: PILImage.Image, elements: list[Element], shrink: float = 1.0) -> PILImage.Image:
-    """Noircit sur l'image la zone des éléments dont un code a été masqué (limites en pixels écran ; shrink : image
-    réduite par le téléphone, pixels image = pixels écran × shrink, zone arrondie vers l'extérieur)."""
-    hidden = [e.bounds for e in elements if e.masked]
+    """Noircit sur l'image la zone des éléments dont un code a été masqué et des champs de mot de passe (limites en
+    pixels écran ; shrink : image réduite par le téléphone, pixels image = pixels écran × shrink, zone arrondie vers
+    l'extérieur)."""
+    hidden = [e.bounds for e in elements if e.masked or e.password]
     if not hidden:
         return image
     image = image.convert("RGB")
@@ -309,6 +357,19 @@ def parse_state(power: str, window: str) -> State:
     return State(awake, "true" in flags, focus.group(1) if focus else "", lock_known=bool(flags))
 
 
+# Android tient-il le téléphone déverrouillé malgré l'écran de verrouillage (Extend Unlock : lieu ou appareil de
+# confiance) ? Ligne de l'utilisateur courant de `dumpsys trust`, deviceLocked=0.
+TRUST_SH = "dumpsys trust | grep -F '(current):'; true"
+_TRUSTED = re.compile(r"\(current\):.*\bdeviceLocked=0\b")
+LIFT_WAIT = 2.0  # s au plus pour que l'écran de verrouillage se lève
+LIFTED = ("Lock screen lifted: Android keeps the phone unlocked (trusted place or device, deviceLocked=0); no code "
+          "typed.")
+
+
+def parse_trusted(dumpsys_trust: str) -> bool:
+    return bool(_TRUSTED.search(dumpsys_trust))
+
+
 def parse_posture(device_state: str) -> str:
     """Pliage du Fold (CLOSED, HALF_OPENED, OPENED…) d'après `dumpsys device_state` ; "" si illisible."""
     match = re.search(r"mCommittedState=Optional\[DeviceState\{identifier=\d+, name='(\w+)'", device_state)
@@ -340,7 +401,10 @@ def parse_helpers(ps: str) -> list[str]:
 _HOLDERS = re.compile(r"mobilecli|io\.appium\.uiautomator2|com\.github\.uiautomator|atx-agent|uiautomator2|"
                       r"androidx\.test\.runner|UiAutomatorStub|uiautomator|(?:^|[\s/])app_process", re.I)
 # Les nôtres (NexusQuery, scrcpy pour le collage) et des app_process qui ne prennent pas l'accessibilité (Shizuku).
-_NOT_HOLDERS = re.compile(r"NexusQuery|nexus-scrcpy|com\.genymobile\.scrcpy|shizuku", re.I)
+# Les commandes d'Android (am, pm, input, settings, wm…) tournent elles aussi dans app_process
+# (com.android.commands.*) sans garder l'accessibilité, sauf uiautomator.
+_NOT_HOLDERS = re.compile(r"NexusQuery|nexus-scrcpy|com\.genymobile\.scrcpy|shizuku|"
+                          r"com\.android\.commands\.(?!uiautomator\b)", re.I)
 
 
 def parse_holders(ps: str) -> list[tuple[str, str]]:
@@ -370,9 +434,51 @@ def holders_message(holders: list[tuple[str, str]]) -> str:
 
 
 NODE_FLAGS = ("checkable", "checked", "clickable", "enabled", "focusable", "focused", "scrollable", "long-clickable",
-              "password", "selected")  # bits des drapeaux d'un nœud, dans l'ordre de NexusQuery.walk
+              "password", "selected", "editable")  # bits des drapeaux d'un nœud, dans l'ordre de NexusQuery.walk
 POSTURE_MARK = "@@NEXUS-POSTURE@@"
 MAX_NODES = 20_000
+
+
+def fingerprint(elements: Iterable[Element], package: str) -> str:
+    """Empreinte d'un écran : textes, descriptions, identifiants et positions (à 16 px près) de ses éléments, sans la
+    barre d'état (son horloge change chaque minute) ni le focus (un appui sans effet le déplace). Deux écrans identiques
+    pour l'agent ont la même empreinte."""
+    parts = [package] + sorted(
+        f"{e.text}|{e.desc}|{e.rid}|{e.bounds[0] // 16},{e.bounds[1] // 16},{e.bounds[2] // 16},{e.bounds[3] // 16}|"
+        f"{','.join(s for s in e.states if s != 'focused')}" for e in elements if e.package != "com.android.systemui")
+    return hashlib.sha1("\n".join(parts).encode()).hexdigest()[:16]
+
+
+LOOP_REPEATS = 3  # même lot de gestes sur le même écran, sans effet : l'agent tourne en rond
+LOOP_STILL = 3  # lots de gestes d'affilée sans aucun changement de l'écran
+
+
+class LoopWatch:
+    """Repère un agent qui tourne en rond : mêmes gestes sur le même écran sans effet, ou écran figé malgré les gestes.
+    Une vue par session MCP (chaque agent la sienne)."""
+
+    def __init__(self) -> None:
+        self.last: tuple[str, str] | None = None  # (gestes, écran avant) du lot précédent
+        self.repeats = 0
+        self.still = 0
+
+    def record(self, gestures: str, before: str | None, after: str | None) -> str | None:
+        if before is None or after is None:
+            return None
+        changed = before != after
+        self.still = 0 if changed else self.still + 1
+        same = self.last == (gestures, before) and not changed
+        self.repeats = self.repeats + 1 if same else (1 if not changed else 0)
+        self.last = (gestures, before)
+        if self.repeats >= LOOP_REPEATS:
+            return (f"⚠ Going in circles: the same gestures on the same screen {self.repeats} times, nothing changed. "
+                    "Stop repeating them: map(query=…) says where a setting is, look re-reads the screen (the target "
+                    "may be elsewhere or need a scroll), try another target or way, or ask the user.")
+        if self.still >= LOOP_STILL:
+            return (f"⚠ The screen has not changed after the last {self.still} batches of gestures: they have no "
+                    "effect here (wrong target, disabled element, popup elsewhere?). Look again and change approach "
+                    "rather than repeating.")
+        return None
 
 
 @dataclass
@@ -383,7 +489,7 @@ class Snapshot:
     state: State | None
     posture: str
     size: tuple[int, int]
-    nodes: list[dict[str, str]] | None
+    nodes: list[dict[str, Any]] | None
     tree_error: str = ""
     image: PILImage.Image | None = None
     shot: tuple[int, int] = (0, 0)
@@ -400,7 +506,7 @@ def parse_snapshot(data: bytes) -> Snapshot:
         head, _, tail = status.rpartition(POSTURE_MARK) if POSTURE_MARK in status else (status, "", "")
         state, posture = parse_state(head, head), parse_posture(tail)
     _, width, height = reader.number(), reader.number(), reader.number()
-    nodes: list[dict[str, str]] | None = None
+    nodes: list[dict[str, Any]] | None = None
     tree_error = ""
     kind = reader.number()
     if kind == 0:
@@ -408,14 +514,18 @@ def parse_snapshot(data: bytes) -> Snapshot:
         if not 0 <= count <= MAX_NODES:
             raise ValueError("response from another protocol")
         nodes = []
+        depths, orders = [], []
         for _ in range(count):
             text, rid, cls, package, desc = (reader.text() or "" for _ in range(5))
             flags = reader.number()
             x1, y1, x2, y2 = (reader.number() for _ in range(4))
-            node = {"text": text, "resource-id": rid, "class": cls, "package": package, "content-desc": desc,
-                    "bounds": f"[{x1},{y1}][{x2},{y2}]"}
+            depths.append(reader.number())
+            orders.append(reader.number())
+            node: dict[str, Any] = {"text": text, "resource-id": rid, "class": cls, "package": package,
+                                    "content-desc": desc, "bounds": f"[{x1},{y1}][{x2},{y2}]"}
             node.update({name: "true" if flags >> bit & 1 else "false" for bit, name in enumerate(NODE_FLAGS)})
             nodes.append(node)
+        with_paths(nodes, depths, orders)
     elif kind == 1:
         tree_error = reader.text() or "UI tree unavailable"
     else:
@@ -456,6 +566,8 @@ class Screen:
         self.posture = ""  # pliage au moment de la dernière image (les coordonnées "x,y" en dépendent)
         self.last_state: State | None = None  # état lu avec la dernière lecture d'écran (state ou dump)
         self.busy = ""  # message de la dernière lecture d'arbre bloquée par un autre outil (UiAutomation prise)
+        self.fingerprint: str | None = None  # empreinte du dernier écran lu (tourner en rond)
+        self.loops = LoopWatch()
 
     def _server(self) -> query.QueryServer | None:
         return query.server_for(self.adb) if FAST and self.fast else None
@@ -540,6 +652,24 @@ class Screen:
         out = self.adb.shell("sh", "-c", STATE_SH, check=False, timeout=STATE_WAIT)
         self.last_state = parse_state(out, out)
         return self.last_state
+
+    def lift_keyguard(self, state: State) -> tuple[State, bool]:
+        """Écran de verrouillage affiché alors qu'Android tient le téléphone déverrouillé (deviceLocked=0) : réveil et
+        levée (KEYCODE_WAKEUP, wm dismiss-keyguard), état relu. Jamais de code tapé : verrouillé pour de bon, rien
+        n'est envoyé et l'état reste celui lu. Rend l'état et True si l'écran de verrouillage a été levé."""
+        if not state.locked:
+            return state, False
+        if not parse_trusted(self.adb.shell("sh", "-c", TRUST_SH, check=False, timeout=STATE_WAIT)):
+            return state, False
+        self.adb.shell("input", "keyevent", "KEYCODE_WAKEUP", check=False)
+        self.adb.shell("wm", "dismiss-keyguard", check=False)
+        deadline = time.monotonic() + LIFT_WAIT
+        while True:
+            time.sleep(0.2)
+            state = self.state()
+            lifted = state.lock_known and not state.locked  # état illisible : jamais pris pour une levée
+            if lifted or time.monotonic() >= deadline:
+                return state, lifted
 
     def _display_id(self) -> str | None:
         ids = self.adb.shell("dumpsys", "SurfaceFlinger", "--display-id", check=False)

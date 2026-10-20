@@ -28,7 +28,8 @@
 //   Lecture d'écran (screen [--image none|scaled|full] [--max côté] [--quality q]), dans les octets :
 //     état (sortie de STATUS_SH), rotation, largeur, hauteur de l'affichage 0,
 //     arbre : 0, nombre de nœuds, puis par nœud (ordre du document de `uiautomator dump`) texte, resource-id, classe,
-//             paquet, content-desc, drapeaux (bits dans l'ordre de walk), limites visibles x1 y1 x2 y2 ; ou 1, message
+//             paquet, content-desc, drapeaux (bits dans l'ordre de walk), limites visibles x1 y1 x2 y2, profondeur
+//             (0 pour la racine), ordre de dessin parmi ses frères (getDrawingOrder) ; ou 1, message
 //     image : 0, largeur et hauteur de la capture, taille, JPEG ; 1, message ; 2 (non demandée)
 
 import android.accessibilityservice.AccessibilityServiceInfo;
@@ -544,7 +545,7 @@ public final class NexusQuery {
             if (root == null) {
                 treeError = "ERROR: null root node returned by UiTestAutomationBridge.";
             } else {
-                walk(root, nodes, count, width, height);
+                walk(root, nodes, count, width, height, 0);
             }
         } catch (Throwable e) {
             treeError = "UI tree unavailable (" + e + ")";
@@ -636,8 +637,8 @@ public final class NexusQuery {
     }
 
     /** Nœud puis enfants visibles, dans l'ordre et avec les valeurs d'AccessibilityNodeInfoDumper (`uiautomator dump`). */
-    private static void walk(AccessibilityNodeInfo node, DataOutputStream out, int[] count, int width, int height)
-            throws IOException {
+    private static void walk(AccessibilityNodeInfo node, DataOutputStream out, int[] count, int width, int height,
+                             int depth) throws IOException {
         if (count[0] >= MAX_NODES) {
             return;
         }
@@ -650,7 +651,8 @@ public final class NexusQuery {
         int flags = (node.isCheckable() ? 1 : 0) | (node.isChecked() ? 1 << 1 : 0) | (node.isClickable() ? 1 << 2 : 0)
                 | (node.isEnabled() ? 1 << 3 : 0) | (node.isFocusable() ? 1 << 4 : 0) | (node.isFocused() ? 1 << 5 : 0)
                 | (node.isScrollable() ? 1 << 6 : 0) | (node.isLongClickable() ? 1 << 7 : 0)
-                | (node.isPassword() ? 1 << 8 : 0) | (node.isSelected() ? 1 << 9 : 0);
+                | (node.isPassword() ? 1 << 8 : 0) | (node.isSelected() ? 1 << 9 : 0)
+                | (node.isEditable() ? 1 << 10 : 0);
         out.writeInt(flags);
         Rect bounds = new Rect();
         node.getBoundsInScreen(bounds);
@@ -661,11 +663,15 @@ public final class NexusQuery {
         out.writeInt(bounds.top);
         out.writeInt(bounds.right);
         out.writeInt(bounds.bottom);
+        // Profondeur et ordre de dessin : le PC sait quel élément est devant (il reçoit le toucher) et lequel est
+        // derrière (une bannière sous la barre du bas n'est pas ce que l'appui touche).
+        out.writeInt(depth);
+        out.writeInt(node.getDrawingOrder());
         int children = node.getChildCount();
         for (int i = 0; i < children; i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null && child.isVisibleToUser()) {
-                walk(child, out, count, width, height);
+                walk(child, out, count, width, height, depth + 1);
             }
         }
     }

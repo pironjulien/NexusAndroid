@@ -1,9 +1,10 @@
 # Full offline check, no phone needed: lint, types, unit tests. Exit code 0 when everything passes.
 # Works from any copy of the repository: each checkout gets its own test environment under ~\.nexus\nexus-android
 # (outside the sources, never the environment of the installed server); nothing is written to the source tree.
-# Real phone test: install.ps1 -Live.
+# Real phone test: install.ps1 -Live. -Full: also the real scenarios (tests/scenarios.py, graded by the phone's state;
+# phone reachable and unlocked; every changed setting is restored).
 # -Python 3.12 (or 3.13...): run everything under that Python version, in its own test environment (CI matrix).
-param([string]$Python = '')
+param([string]$Python = '', [switch]$Full)
 $ErrorActionPreference = 'Stop'
 $state = Join-Path $HOME '.nexus\nexus-android'
 $key = [BitConverter]::ToString([Security.Cryptography.SHA256]::HashData(
@@ -34,5 +35,9 @@ try {
     if ($LASTEXITCODE) { throw 'pyright reported type errors.' }
     uv run --frozen pytest -q
     if ($LASTEXITCODE) { throw 'Unit tests failed.' }
+    if ($Full) {
+        uv run --frozen python tests/scenarios.py
+        if ($LASTEXITCODE) { throw 'Real scenarios failed (or phone locked).' }
+    }
 } finally { Pop-Location }
 exit 0

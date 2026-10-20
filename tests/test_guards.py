@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import time
+from dataclasses import replace
 
 import pytest
 from PIL import Image as PILImage
@@ -207,6 +208,66 @@ def test_clickable_parent_judged(phone):
     assert "confirm=true" in act(Step(do="tap", target="12,00 €"))
 
 
+def group(*children: str, bounds=(0, 0, W, H), package="com.app") -> str:
+    """Conteneur non cliquable (FrameLayout) : ses enfants sont dessinés dans l'ordre, le dernier devant."""
+    x1, y1, x2, y2 = bounds
+    return (f'<node text="" resource-id="" class="android.widget.FrameLayout" package="{package}" content-desc="" '
+            f'clickable="false" bounds="[{x1},{y1}][{x2},{y2}]">' + "".join(children) + "</node>")
+
+
+STORE = "com.sec.android.app.samsungapps"
+BANNER = node("Offre exclusive, Méga-récompenses. Économisez jusqu'à 43 €", (0, 1500, W, 2000), package=STORE,
+              cls="android.view.View")
+BOTTOM_BAR = group(group(node("", (810, 1880, 1080, 2000), desc="Menu", package=STORE, cls="android.widget.FrameLayout"),
+                         node("Menu", (900, 1950, 990, 1990), package=STORE, cls="android.widget.TextView",
+                              clickable=False), bounds=(810, 1880, 1080, 2000), package=STORE),
+                   bounds=(0, 1880, W, 2000), package=STORE)
+
+
+def test_background_banner_under_bottom_bar_not_judged(phone):
+    """Galaxy Store, 20/10 : la bannière d'offre passe sous la barre du bas ; l'onglet « Menu », devant, reçoit
+    l'appui. Seul lui est jugé (par son nom comme par ses coordonnées) ; la bannière reste gardée là où elle est
+    visible."""
+    phone.package = STORE
+    phone.uis = [ui(group(group(BANNER, package=STORE), BOTTOM_BAR, package=STORE))]
+    assert act(Step(do="tap", target="Menu")).startswith(("✓", "~"))
+    assert act(Step(do="tap", target="945,1940")).startswith(("✓", "~"))
+    assert phone.inputs == [("input", "tap", "945", "1940")] * 2
+    report = act(Step(do="tap", target="300,1700"))
+    assert report.startswith("✗") and "irreversible" in report
+    assert len(phone.inputs) == 2
+
+
+def test_banner_drawn_in_front_still_judged(phone):
+    """Même bannière dessinée devant la barre (dernier enfant, ou ordre de dessin plus grand) : elle reçoit l'appui."""
+    phone.package = STORE
+    phone.uis = [ui(group(BOTTOM_BAR, group(BANNER, package=STORE), package=STORE))]
+    assert "irreversible" in act(Step(do="tap", target="945,1940"))
+    on_top = group(BANNER, package=STORE).replace("<node ", '<node drawing-order="2" ', 1)  # premier enfant, dessiné après
+    phone.uis = [ui(group(on_top, BOTTOM_BAR.replace("<node ", '<node drawing-order="1" ', 1), package=STORE))]
+    assert "irreversible" in act(Step(do="tap", target="945,1940"))
+    assert phone.inputs == []
+
+
+def test_unknown_tree_judges_every_clickable_under_the_point():
+    """Sans place dans l'arbre (lecture d'un autre format), tout cliquable qui contient le point est jugé, comme avant."""
+    banner = Element(1, "View", "Payer 43 €", "", "", "com.app", (0, 1500, W, 2000), True)
+    tab = Element(2, "FrameLayout", "", "Menu", "", "com.app", (810, 1880, W, 2000), True)
+    assert server.Aim(945, 1940, None, [banner, tab]).under == [tab, banner]
+    placed = [replace(banner, path=((0, 0), (0, 0))), replace(tab, path=((0, 0), (0, 1)))]
+    assert server.Aim(945, 1940, None, placed).under == [placed[1]]
+
+
+def test_empty_list_message_after_look_without_list(phone):
+    phone.uis = [ui(node("OK", (0, 0, 500, 200)))]
+    assert "No element list yet" in server._view("none")[0]
+    report = act(Step(do="tap", target="[1]"))
+    assert "show=both or elements" in report and phone.inputs == []
+    server._view("elements")
+    assert "No element list yet" not in server._view("none")[0]  # la liste précédente reste valable
+    assert act(Step(do="tap", target="[1]")).startswith(("✓", "~"))
+
+
 # ---------------------------------------------------------------- 3. verrou commun aux trois serveurs
 
 
@@ -397,6 +458,19 @@ def test_type_checks_focused_field(phone):
     assert phone.inputs == []
 
 
+def test_search_fields_are_input_fields(phone):
+    """Recherche des Paramètres (AutoCompleteTextView, 20/10) : « no active input field » alors que le champ avait le
+    focus. Sous-classes de saisie reconnues dans uiautomator dump, et drapeau isEditable du lecteur d'écran."""
+    search = node("", (0, 500, 880, 600), rid="android:id/search_src_text",
+                  cls="android.widget.AutoCompleteTextView", focused=True, package="com.android.settings.intelligence")
+    phone.uis = [ui(search), ui(search.replace('text=""', 'text="lire"', 1))]
+    assert act(Step(do="type", text="lire")).startswith("✓")
+    assert ("input", "text", "lire") in phone.inputs
+    custom = {"class": "com.x.FancyInput", "editable": "true", "focused": "true", "bounds": "[0,0][10,10]"}
+    assert screen.elements_of([custom])[0].editable  # drapeau envoyé par NexusQuery, quelle que soit la classe
+    assert screen.elements_of([{**custom, "editable": "false"}]) == []  # ni texte ni saisie : pas un élément
+
+
 def test_unknown_lock_state_refuses_typing(phone):
     phone.lock = "rien de lisible"
     phone.uis = [ui(field())]
@@ -451,8 +525,22 @@ def test_type_reports_only_what_was_sent(phone):
 def test_type_verified_only_when_reread(phone):
     phone.uis = [ui(field()), ui(field("bonjour"))]
     assert act(Step(do="type", text="bonjour")).startswith("✓")
-    phone.uis = [ui(field()), ui(field(""))]
-    assert act(Step(do="type", text="bonjour")).startswith("~ 1. 7 characters sent, not read back")
+    phone.uis = [ui(field()), ui(field(""))]  # relu deux fois, toujours vide : écart, le lot s'arrête
+    assert act(Step(do="type", text="bonjour")).startswith("✗ 1. typed 7 characters but the field reads «» instead "
+                                                           "of «bonjour»")
+
+
+def test_typed_text_compared_exactly(phone):
+    phone.uis = [ui(field("Bonjour ")), ui(field("Bonjour a tous"))]  # ancien contenu + texte : exact
+    assert "reads exactly the text" in act(Step(do="type", text="a tous"))
+    phone.uis = [ui(field()), ui(field("RDV à 18h"))]  # correction automatique : arrêt avant l'envoi
+    report = server._act([Step(do="type", text="rdv a 18h"), Step(do="tap", target="0,1750")], "none")[0]
+    assert report.startswith("✗ 1.") and "«RDV à 18h» instead of «rdv a 18h»" in report
+    assert "2." not in report  # appui suivant jamais envoyé
+    phone.uis = [ui(field()), ui(field("paris, France"))]  # suggestion ajoutée au texte
+    assert act(Step(do="type", text="paris")).startswith("~ 1. typed 5 characters; the field reads «paris, France»")
+    phone.uis = [ui(field()), ui(field(""))][:1] + [ui(field("lent"))]  # champ mis à jour au second regard
+    assert act(Step(do="type", text="lent")).startswith("✓")
 
 
 # ---------------------------------------------------------------- 9. faux succès
@@ -606,3 +694,34 @@ def test_batch_stops_when_owner_touches_the_phone(phone, monkeypatch):
     reads.clear()
     act(Step(do="tap", target="Un"))
     assert len(reads) == 1  # un seul geste : seulement la vérification d'avant le lot
+
+
+# ---------------------------------------------------------------- tourner en rond
+
+
+def test_loop_watch_counts_repeats_and_still_screens():
+    watch = screen.LoopWatch()
+    assert watch.record("tap:[3]", "A", "A") is None and watch.record("tap:[3]", "A", "A") is None
+    assert "Going in circles" in (watch.record("tap:[3]", "A", "A") or "")
+    watch = screen.LoopWatch()
+    assert watch.record("tap:[3]", "A", "B") is None  # l'écran a changé : rien
+    assert watch.record("tap:[4]", "B", "B") is None and watch.record("swipe", "B", "B") is None
+    assert "has not changed after the last 3 batches" in (watch.record("tap:[9]", "B", "B") or "")
+    assert watch.record("tap:[9]", "B", "C") is None  # un changement remet à zéro
+    assert watch.record("tap", None, "C") is None  # écran de départ inconnu : pas de jugement
+
+
+def test_act_warns_when_the_same_tap_changes_nothing(phone):
+    phone.uis = [ui(node("Valider", (0, 0, 500, 200)))]  # le même écran, quoi qu'on touche
+    server._view("elements")
+    texts = [server._act([Step(do="tap", target="Valider")], "elements")[0] for _ in range(3)]
+    assert "Going in circles" not in texts[0] + texts[1]
+    assert "⚠ Going in circles: the same gestures on the same screen 3 times" in texts[2]
+
+
+def test_fingerprint_ignores_the_status_bar_clock():
+    def els(clock):
+        return [Element(1, "TextView", clock, "", "", "com.android.systemui", (0, 0, 100, 40), False),
+                Element(2, "Button", "OK", "", "", "com.app", (0, 100, 200, 200), True)]
+    assert screen.fingerprint(els("02:41"), "com.app") == screen.fingerprint(els("02:42"), "com.app")
+    assert screen.fingerprint(els("02:41"), "com.app") != screen.fingerprint(els("02:41")[1:], "com.other")

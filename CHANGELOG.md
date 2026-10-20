@@ -6,6 +6,119 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-20
+
+### Added
+
+- `map` tool: the agents know the whole phone instead of searching on screen. `find` answers "where is X set" from
+  the user's words with the path from Settings, the current value and a direct way in (`launch(action=…)` with the
+  row highlighted, or `map(action="open", target=…)`; for a sub-screen without its own entry, the nearest screen to
+  open and what to tap). The phone's search index is reserved for system apps (`READ_SEARCH_INDEXABLES`, refused to
+  ADB), so the map is rebuilt offline from the phone's own Settings APK (pulled compressed, about 10 s over Wi-Fi):
+  every screen (`res/xml`, about 420 on One UI 8) and row, titles in the phone's language, the fragment each screen
+  belongs to (read from the app's code) and the exported activity that opens it. It is cached on the PC and rebuilt
+  by itself when the Settings app or the system build changes. Screens drawn by code (Galaxy Buds, Galaxy Wearable)
+  are added with `note`, which records the screen being shown under the path the agent gives (switch states
+  included). `snapshot` and `diff` save and compare the phone state: settings values (`system`, `secure`, `global`),
+  apps and versions, sensitive permissions granted, default apps, device admins, paired Bluetooth devices; secrets,
+  identifiers, addresses and numbers are masked before anything is written, with a short fingerprint so a change is
+  still seen. Pure Python readers for resource tables, binary XML and dex files (`apkres`), no Android tool needed:
+  sizes and offsets checked, dex decoded at instruction boundaries, a truncated or forged file is refused
+  (`FormatError`), never a crash. English titles are indexed too ("Extend Unlock" finds "Prolonger le
+  déverrouillage"). `open` only opens a screen the map gives (with the row highlighted); `note` refuses banking,
+  payment, identity and password manager apps, checked on the screen read, the foreground activity and every
+  element, never records a password field, and refuses when the foreground changed during the read.
+
+- Gestures go through scrcpy's control channel instead of one `adb shell input` per gesture: a tap leaves in under
+  1 ms instead of about 150 ms (measured on the Fold), the channel opens once (about 1 s) and closes after 60 s
+  without a gesture; `input` remains the fallback. Two new gestures need several fingers: `zoom` (in or out around a
+  target, strength 1 to 3; the fingers stay out of the status bar, the edges and the search bars, a pinch is
+  horizontal when there is room) and `drag` (held, moved, dropped: icons, files, list items; guarded at both ends,
+  `input draganddrop` as fallback).
+
+- Going in circles is reported: the same gestures on the same screen 3 times with nothing changed, or 3 batches in a
+  row that leave the screen unchanged, add a warning at the top of the response with what to do instead (map,
+  look, another target, ask the user). Screens are compared by a short fingerprint of their elements, without the
+  status bar clock and the keyboard focus; each agent session keeps its own count.
+
+- Routines shared by the three agents (`~/.nexus/nexus-android/routines.json`): `act(remember="name")` saves a
+  batch that went through every step, with stable targets (resource id, then visible text, then accessibility
+  description; never `[N]` or coordinates, a coordinate tap is saved by the element it hit); `act(routine="name",
+  params={...})` replays it; a typed text made only of `{{x}}` is a parameter, and while recording `params` gives the
+  values actually typed. Guardrails apply on replay (confirm and accord are never saved); `look` lists the routines
+  of the app in the foreground. New stable targets for any gesture: `id:<resource id>` and `desc:<description>`.
+
+- `apps` tool: `info` (version, dates, source), `stop` (force-stop, free), `clear` (all the app's data),
+  `uninstall` (a system app is only hidden for the user, `restore` brings it back), `install` (an .apk from the PC,
+  sensitive folders refused, update keeping the data). `clear`, `uninstall` and `install` need `confirm=true`; the
+  system's own parts (phone, interface, Settings, store, keyboard, Google services) are never cleared or
+  uninstalled, nor banking, payment and identity apps (the user does it).
+
+- `web` tool: web pages on the phone read through Chrome's DevTools protocol (`adb forward` to
+  `chrome_devtools_remote`, or an app's `webview_devtools_remote_<pid>` when its WebView allows debugging), without
+  scrolling or touching the screen: whole text of the page (also outside the screen), title, address, links;
+  default = the page of the app in the foreground; `query` keeps the matching lines; `tabs` lists the pages. Read
+  only (`innerText` and links, never a field value); codes masked line by line, tokens, e-mails and numbers masked;
+  banking, payment and identity apps never read. Minimal WebSocket client in the standard library (no dependency).
+  Chrome answers only in the foreground (Android freezes it in the background).
+
+- Visual fallback when the UI tree has no text (games, Flutter or hand-drawn apps, map labels): the text seen on
+  the image is read by Windows' own OCR engine (`Windows.Media.Ocr`, the user's installed languages; local, no
+  online service, no dependency; about 0.5 s), listed by `look`, and a gesture aimed at a visible text missing from
+  the tree finds it on the image, tolerating OCR noise (at least 75 % alike: « Champ-de-Mars » read « *dhamp7de-Mars »
+  on the satellite view of Maps, tapped). OCR text goes through the same guardrails (sending or paying words, protected apps)
+  and the same code masking as the tree.
+
+- `functions` tool: the structured actions apps expose to assistants (Android 16+ AppFunctions), reached through
+  `cmd app_function`, reserved to shell and root, so to adb: 99 on the Fold (Samsung Clock alarms and timers,
+  Reminder, Notes, Calendar, Contacts, Gallery, My Files, Phone; some Google ones), without the screen and even with
+  the phone locked. `list` shows them per app; `run` calls one by its short name with the app's parameters
+  (`{"findAlarmsParams": {}}`; the app's error names a missing field). Reading is free; delete, accept or reject a
+  call, block a number need `confirm=true`; making a call also needs the accord for that exact call; banking apps
+  never. Android 17's "computer control" (agents acting on a virtual screen) exists but is closed by an allowlist of
+  agents: not used.
+
+### Changed
+
+- `launch` of a screen whose app is already open on another page no longer fails with "brought to the front": it
+  opens again closing the pages above the asked screen (`--activity-clear-top`), and says so.
+- `act type` compares the field with the text after typing: ✓ only when it reads exactly the text (or the old
+  content followed by it); a field that differs (autocorrection, length limit, another field) is a ✗ that stops the
+  batch, so a following "Send" is never tapped on a wrong text; a suggestion added after the text is reported (~).
+- A lock screen that Android itself keeps unlocked (Extend Unlock: trusted place or device, `dumpsys trust` reports
+  `deviceLocked=0` for the current user) no longer blocks the agents: `look`, `act` and `capture` wake the phone,
+  lift the lock screen (`KEYCODE_WAKEUP`, `wm dismiss-keyguard`), read the state again and go on, saying so in the
+  response. A phone that is really locked is refused as before; no code is ever typed.
+  A `look` that lifts it does not keep the screen on (only a gesture does), and an unreadable state after the lift
+  is never taken for a lifted lock screen.
+
+### Fixed
+
+- Antigravity's review of `capture` and `logs`: password fields are blacked out on screenshots like codes; the UI
+  tree is read before and after the screenshot, so a code that appears or goes away in between stays covered; a
+  screenshot without masking (tree unreadable) needs its own `unmasked=true`, a `confirm=true` given for the folder
+  or a protected app no longer allows it; a video is erased from the phone, never saved on the PC, when a banking,
+  payment or identity app comes to the foreground while recording (checked after every tool and at `stop`); card
+  numbers (Luhn) and IBANs (mod 97) masked in logs; a crash whose block has no process name takes the name of its
+  still running pid, so a protected app keeps its reduced view; Android's own shell commands (`am`, `input`, `pm`…,
+  also run by `app_process`) are no longer taken for another tool holding accessibility; native crashes that only
+  differ by addresses (`0x…`) are grouped.
+- Typing into a search field works: `act type` answered "no active input field" in the Settings search and the
+  Galaxy Buds search, because only classes named `…EditText` counted as input fields while these are
+  `AutoCompleteTextView`. The phone's screen reader now sends Android's own `isEditable` flag, and the
+  `uiautomator dump` fallback also knows the usual subclasses (`AutoCompleteTextView`, `SearchAutoComplete`).
+- `[N]` targets work again on the shared HTTP daemon: each call used to start from an empty view, because the MCP SDK
+  2.x builds a new session object per request, so `act(target="[18]")` right after a `look` answered "no element
+  list". Views are now keyed by the transport session id (`Mcp-Session-Id`), stable for the whole session; the 32
+  most recent sessions are kept. When there really is no list yet, the message says why (`look` with `show=image` or
+  `none` lists nothing) and what to do, and such a `look` says so too.
+- The guardrail judges what actually receives the tap, not everything behind it: the phone's screen reader now sends
+  each node's depth and drawing order, and only the clickable element drawn in front, its clickable ancestors and its
+  own label are judged. A promotional banner passing under the Galaxy Store bottom bar ("Économisez jusqu'à 43 €")
+  no longer blocks the "Menu" tab, by name or by coordinates; the banner stays guarded where it is visible, and a
+  banner drawn in front of a button is still judged. A tree read without that information keeps the previous, wider
+  rule.
+
 ## [0.8.0] - 2026-10-19
 
 ### Changed

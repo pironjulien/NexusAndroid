@@ -42,6 +42,53 @@ def test_views_are_per_session(monkeypatch):
     server._SESSION.reset(tok)
 
 
+def test_session_key_stable_across_calls_over_http(monkeypatch):
+    """Vrai SDK, vrai transport HTTP : la clé de vue est la même pour tous les appels d'une session et diffère d'une
+    session à l'autre (le SDK 2.x crée un ctx.session par requête : la liste [N] du look se perdait à l'appel suivant)."""
+    import threading
+
+    import uvicorn
+
+    seen: list[object] = []
+
+    async def record(ctx, call_next):
+        if ctx.method == "tools/list":
+            seen.append(server._SESSION.get())
+        return await call_next(ctx)
+
+    chain = server.mcp.middleware
+    before = list(chain)
+    chain += [server._bind_session, record]
+    port = _free_port()
+    web = uvicorn.Server(uvicorn.Config(server.mcp.streamable_http_app(host="127.0.0.1"), host="127.0.0.1", port=port,
+                                        log_level="warning"))
+    thread = threading.Thread(target=web.run, daemon=True)
+    thread.start()
+    try:
+        deadline = time.time() + 30
+        while not web.started and time.time() < deadline:
+            time.sleep(0.05)
+
+        async def session() -> None:
+            async with streamable_http_client(f"http://127.0.0.1:{port}/mcp") as (r, w), ClientSession(r, w) as s:
+                await s.initialize()
+                await s.list_tools()
+                await s.list_tools()
+
+        async def check() -> None:
+            with anyio.fail_after(60):
+                await session()
+                await session()
+
+        anyio.run(check)
+    finally:
+        chain[:] = before
+        web.should_exit = True
+        thread.join(10)
+    assert len(seen) == 4 and all(isinstance(k, str) and k for k in seen)
+    assert seen[0] == seen[1] and seen[2] == seen[3] and seen[0] != seen[2]
+
+
 def test_daemon_token_and_two_sessions(tmp_path):
     port = _free_port()
     env = {**os.environ, "HOME": str(tmp_path), "USERPROFILE": str(tmp_path), "NEXUS_ANDROID_KEEP_AWAKE": "0",

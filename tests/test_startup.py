@@ -14,7 +14,7 @@ from mcp.client.stdio import stdio_client
 
 from nexus_android import __version__
 
-TOOLS = {"look", "act", "launch", "clipboard", "messages", "draft", "notifications", "files", "info", "settings", "phone",
+TOOLS = {"look", "act", "launch", "clipboard", "messages", "draft", "notifications", "files", "info", "settings", "map", "apps", "web", "functions", "phone",
          "checkup", "capture", "logs"}
 
 
