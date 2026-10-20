@@ -161,3 +161,36 @@ def irreversible(element: Element, screen_text: str = "") -> str | None:
     if element.rid and _SEND_IDS.search(element.rid):
         return element.rid
     return None
+
+
+# ---------------------------------------------------------------- accord lié à l'action exacte (trinité, 19/10/2026)
+# Geste SORTANT (envoyer, appeler, payer, publier, transférer) : confirm=true ET accord=<jeton> rendu par l'outil pour
+# CETTE action (application, bouton, en-tête de l'écran où figure le destinataire, texte des champs) ; tout changement
+# entre l'accord et le geste l'annule. Destructions locales (désinstaller, réinitialiser...) : confirm=true seul.
+# `garde_fous.py` : copie identique de NexusHarness\shared (vérifiée par les tests), comme garde-fous.json.
+from . import garde_fous  # noqa: E402
+
+ACCORDS = garde_fous.Accords()
+HEADING_SHARE = 0.18  # haut de l'écran lu comme en-tête (nom ou numéro du correspondant dans une messagerie)
+
+
+def outward(element: Element, screen_text: str = "") -> str | None:
+    """Libellé (ou identifiant d'icône d'envoi) d'un geste sortant, qui exige l'accord lié à l'action ; None sinon."""
+    for value in (element.text, element.desc):
+        if value and garde_fous.outward_word(value, screen_text):
+            return value
+    if element.rid and _SEND_IDS.search(element.rid):
+        return element.rid
+    return None
+
+
+def screen_action(gesture: str, label: str, package: str, elements: list[Element], height: int) -> dict:
+    """L'action telle que l'écran la montre : bouton visé, en-tête de l'écran comme destinataires (nom ou numéro du
+    correspondant) et texte des champs de l'application."""
+    same = [e for e in elements if e.package == package]
+    top = height * HEADING_SHARE
+    heading = [e.label for e in sorted(same, key=lambda e: (e.bounds[1], e.bounds[0]))
+               if e.label and not e.editable and e.bounds[3] <= top]
+    fields = [e.text for e in sorted(same, key=lambda e: (e.bounds[1], e.bounds[0]))
+              if e.editable and e.text and not e.password]
+    return garde_fous.action("android", gesture, f"{label} ({package})", recipients=heading, content=" | ".join(fields))

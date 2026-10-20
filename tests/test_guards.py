@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -113,6 +114,13 @@ def act(*steps: Step) -> str:
     return server._act(list(steps), "none")[0]
 
 
+def accorded(report: str) -> str:
+    """Jeton d'accord rendu par l'outil pour l'action exacte (après le oui de l'utilisateur à son résumé)."""
+    found = re.search(r'accord"?[=:]"([0-9a-f]+)"', report)
+    assert found, report
+    return found.group(1)
+
+
 def look(fake: FakePhone, *nodes: str) -> None:
     fake.uis = [ui(*nodes)]
     server._view("elements")
@@ -151,7 +159,10 @@ def test_keys_closed_list(phone):
     for keys in ("back", "home", "recent", "delete", "ctrl+a", "up down left right", "tab", "volume_up",
                  "KEYCODE_BACK"):
         assert act(Step(do="key", keys=keys)).startswith("~"), keys
-    assert act(Step(do="key", keys="enter", confirm=True)).startswith("~")
+    sent = len(phone.inputs)
+    request = act(Step(do="key", keys="enter", confirm=True))  # peut envoyer : accord lié à l'écran exact
+    assert request.startswith("✗") and "Nothing was done" in request and len(phone.inputs) == sent
+    assert act(Step(do="key", keys="enter", confirm=True, accord=accorded(request))).startswith("~")
     assert ("input", "keyevent", "KEYCODE_ENTER") in phone.inputs
 
 
@@ -160,7 +171,9 @@ def test_newline_in_type_needs_confirmation(phone):
     for text in ("ok\nmerci", "ok\r"):
         assert "Enter key" in act(Step(do="type", text=text))
     assert phone.inputs == []
-    act(Step(do="type", text="ok\nmerci", confirm=True))
+    request = act(Step(do="type", text="ok\nmerci", confirm=True))
+    assert "content" in request and phone.inputs == []
+    act(Step(do="type", text="ok\nmerci", confirm=True, accord=accorded(request)))
     assert phone.inputs == [("input", "text", "ok"), ("input", "keyevent", "KEYCODE_ENTER"), ("input", "text", "merci")]
 
 
@@ -532,7 +545,9 @@ def test_swipe_inside_one_clickable_element_is_a_tap(phone):
     phone.uis = [ui(send, row, scroller.replace('clickable="true"', 'clickable="true" scrollable="true"'))]
     report = act(Step(do="swipe", target="910,1710", to="1050,1850"))
     assert report.startswith("✗") and "unnamed icon" in report and phone.inputs == []
-    assert act(Step(do="swipe", target="910,1710", to="1050,1850", confirm=True)).startswith("~")
+    request = act(Step(do="swipe", target="910,1710", to="1050,1850", confirm=True))
+    assert act(Step(do="swipe", target="910,1710", to="1050,1850", confirm=True,
+                    accord=accorded(request))).startswith("~")
     assert act(Step(do="swipe", target="100,400", to="1000,400")).startswith("~")  # ligne nommée : glissé permis
     assert act(Step(do="swipe", target="500,1500", to="500,700")).startswith("~")  # liste défilable : vrai glissé
     assert act(Step(do="swipe", target="1000,1800", to="500,1000")).startswith("~")  # sort du bouton : vrai glissé

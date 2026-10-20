@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-19
+
+### Changed
+
+- Sending, calling, paying, publishing and transferring need the user's accord bound to the EXACT action, on top of
+  `confirm=true` (shared guardrail policy, version 2). The first confirmed attempt is refused with the action as the
+  screen shows it (app, button, the header where the recipient appears, the text of the fields) and a single-use
+  token valid 10 minutes; the gesture goes through only when sent again with `accord="<token>"`, after the user's yes.
+  Any change in between (other conversation, edited text, other gesture) voids the token. Covered paths: tap,
+  double tap, long press, tap-like swipe, unnamed send icons and unreadable points in messaging apps, Enter, call and
+  other risky keys, typed line breaks, `open_url` payment links, and `launch` intents that call, send or pay (new
+  `accord` parameter). Uninstalling, resetting and deleting for good keep `confirm=true` alone.
+- `draft` returns the accord token for the draft it opened, with its exact summary, so sending it needs no extra
+  round trip; a draft edited after that is refused.
+
+### Added
+
+- `messages` and `notifications` note what they read: a recipient found in a recently read text is flagged in the
+  accord summary, and text that looks like instructions aimed at an AI gets a warning in the response (a signal
+  only, never a block or a guarantee).
+- `garde_fous.py`, the shared policy module, is embedded next to `garde-fous.json` (identical to the shared copy,
+  checked by the tests).
+
+### Security
+
+- Supply chain hardened (OpenSSF): every GitHub Action pinned by commit SHA, no persisted checkout credentials, no
+  template injection, no cache in release builds (zizmor clean); Dependabot keeps the actions and the `uv`
+  dependencies up to date with a 7-day cooldown; OpenSSF Scorecard workflow and badge. The MCP registry publication
+  is now a job of `publish.yml` instead of a separate `workflow_run` workflow.
+
 ## [0.7.2] - 2026-10-19
 
 ### Added

@@ -5,6 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/pironjulien/NexusAndroid)](https://github.com/pironjulien/NexusAndroid/releases)
 [![PyPI](https://img.shields.io/pypi/v/nexus-android)](https://pypi.org/project/nexus-android/)
 [![Tests](https://github.com/pironjulien/NexusAndroid/actions/workflows/tests.yml/badge.svg)](https://github.com/pironjulien/NexusAndroid/actions/workflows/tests.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pironjulien/NexusAndroid/badge)](https://scorecard.dev/viewer/?uri=github.com/pironjulien/NexusAndroid)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/pironjulien/NexusAndroid/blob/main/LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue?logo=python&logoColor=white)](https://github.com/pironjulien/NexusAndroid/blob/main/pyproject.toml)
 [![MCP](https://img.shields.io/badge/MCP-server-7ee2a8)](https://modelcontextprotocol.io)
@@ -113,7 +114,7 @@ screen-awake session and the same safeguards.
 | `phone` | Connected phone (USB or Wi-Fi), model, screen, foreground app, fold posture, reboot detection (structured output) |
 | `look` | Screen image and numbered `[N]` elements with text, state and center `@x,y`; `marks` draws the `[N]` numbers on the image (`auto`: all when few, else the unnamed elements; `all`; `none`) |
 | `act` | Batched gestures: tap, long press, typing (accents and emoji included), clear, keys, scroll, swipe, wait, links (`geo:`, `google.navigation:`, `tel:` opens the dialer without calling, `mailto:`, `https://`); `then="changes"` returns only the elements added, changed and removed since the last list (unchanged ones counted, `[N]` kept valid), or the full list when the app or most of the screen changed |
-| `launch` | Open an app by package or part of its name, or a precise screen: `action` (`android.settings.WIFI_SETTINGS`), `data` (deep link), `extras`; target resolved first and reported; calling, sending or paying directly needs `confirm=true`, banking and identity apps are never opened this way |
+| `launch` | Open an app by package or part of its name, or a precise screen: `action` (`android.settings.WIFI_SETTINGS`), `data` (deep link), `extras`; target resolved first and reported; calling, sending or paying directly needs `confirm=true` and the accord for that exact intent, banking and identity apps are never opened this way |
 | `clipboard` | Read the phone's clipboard (codes masked, a lone code, password or token never shown) or write text to it, without pasting |
 | `messages` | SMS and RCS conversations, read by contact name or number, attached photos; security codes masked; answers capped at about 60,000 characters, cut between messages, with a `before` cursor to read older ones |
 | `draft` | Open SMS/RCS or WhatsApp with the reply already written, recipient by name or number (WhatsApp: country code from the SIM card); sent only after the user explicitly says "send" |
@@ -171,6 +172,18 @@ Measured on a Samsung Galaxy Fold: messages over USB through the shared daemon, 
   A generic "OK" or "Validate" needs it on a screen that talks about a payment or a format. In a messaging, mail,
   social or phone app, a clickable icon with no name at all (often the send or call button) needs it too. Enter, call keys and any key
   outside a short safe list need it as well.
+- **Accord bound to the exact action** (sending, calling, paying, publishing, transferring): `confirm=true` alone is
+  not enough. The tool answers with the exact action as the screen shows it (app, button, the header where the
+  recipient appears, the text of the fields) and a single-use token valid 10 minutes; the agent shows that summary
+  to the user and sends the gesture again with `accord="<token>"` only after their yes. `draft` returns the token for
+  its own draft. Any change in between (other conversation, edited text) voids the token: a new accord is needed.
+  The same rule covers every way to send: tap, swipe-tap, Enter or call keys, typed line breaks, `open_url` payment
+  links and `launch` intents that call, send or pay. Local destructive gestures (uninstall, reset, delete for good)
+  keep `confirm=true` alone.
+- **Text read never authorizes anything**: SMS, notifications and screens are data. A recipient that appears in a
+  recently read text is flagged in the accord summary (allowed only if the user asked for it themselves), and text
+  that looks like instructions aimed at an AI is flagged in the response. That detector is a signal only, never a
+  block and never a guarantee.
 - **Target checked on the current screen**: the UI and the phone state (lock, foreground app) are read again in
   one round trip just before each gesture; a changed `[N]` or a spot with nothing readable is refused. Reports: ✓ effect read back, ~ sent but not verified, ✗ refused or failed.
 - **One phone only**: the owner's phone is identified by its hardware serial number, recorded at the first USB
@@ -182,7 +195,8 @@ Measured on a Samsung Galaxy Fold: messages over USB through the shared daemon, 
   even with `confirm=true`; a link (`open_url`) or an intent (`launch` with `action`/`data`) that would open one of
   them, even as one choice among others, is refused (a deep link can prepare a payment).
 - **Intents and links that act on their own** (`CALL`, sending a text without review, uninstalling, resetting,
-  payment actions, `upi:`/`bitcoin:`/`payto:` links, auto-send extras): `confirm=true`.
+  payment actions, `upi:`/`bitcoin:`/`payto:` links, auto-send extras): `confirm=true`, plus the accord bound to
+  the exact intent for calls, sends and payments.
 - **Codes received by SMS or shown in notifications**: masked before the agent reads them, and blacked out on the
   image (the `[N]` badges are drawn afterwards: they can only cover, never reveal). In the clipboard, a lone code, or
   a single word that looks like a password or a token, is not shown at all. When the UI tree cannot be read, codes cannot be located, so the image is not sent unless `look` gets

@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 import pytest
-from test_guards import FakePhone, act, field, node, ui
+from test_guards import FakePhone, accorded, act, field, node, ui
 
 from nexus_android import policy, screen, server
 from nexus_android.screen import Element, Screen
@@ -201,7 +201,9 @@ def test_unnamed_icon_in_messaging_needs_confirmation(phone):
     report = act(Step(do="tap", target="1000,1750"))
     assert "unnamed icon" in report and "confirm=true" in report and phone.inputs == []
     assert act(Step(do="tap", target="300,450")).startswith("~")  # ligne de conversation : nommée par son texte
-    assert act(Step(do="tap", target="1000,1750", confirm=True)).startswith("~")
+    request = act(Step(do="tap", target="1000,1750", confirm=True))
+    assert "btn_x" in request and len(phone.inputs) == 1
+    assert act(Step(do="tap", target="1000,1750", confirm=True, accord=accorded(request))).startswith("~")
     assert len(phone.inputs) == 2
 
 

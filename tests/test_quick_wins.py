@@ -8,7 +8,7 @@ from contextlib import contextmanager
 
 import pytest
 from PIL import Image as PILImage
-from test_guards import FakePhone, node, phone, ui  # noqa: F401  (fixture phone)
+from test_guards import FakePhone, accorded, node, phone, ui  # noqa: F401  (fixture phone)
 
 from nexus_android import clip, extras, messages, server
 from nexus_android.adb import PhoneError
@@ -179,7 +179,9 @@ def test_calling_sending_or_paying_intents_need_confirm(phone: FakePhone, monkey
     with pytest.raises(PhoneError, match="confirm=true"):
         server._launch(**kwargs)
     assert _starts(phone) == [] and phone.calls == []  # rien demandé au téléphone
-    server._launch(**kwargs, confirm=True)  # ordre explicite de l'utilisateur : envoyé
+    with pytest.raises(PhoneError, match="Nothing was done") as request:  # accord lié à l'intention exacte
+        server._launch(**kwargs, confirm=True)
+    server._launch(**kwargs, confirm=True, accord=accorded(str(request.value)))  # oui de l'utilisateur : envoyé
     assert len(_starts(phone)) == 1
 
 
@@ -191,8 +193,10 @@ def test_intent_to_a_protected_app_refused_even_with_confirm(phone: FakePhone, m
     # Choix d'Android entre plusieurs applications dont une protégée : refusé aussi.
     _resolving(phone, monkeypatch, "android/com.android.internal.app.ResolverActivity\n",
                "  com.android.chrome/.Main\n  com.revolut.revolut/.Deeplink\n")
-    with pytest.raises(PhoneError, match="Revolut"):
-        server._launch(data="https://revolut.me/someone", confirm=True)  # lien de paiement : confirm, puis refus
+    with pytest.raises(PhoneError, match="Nothing was done") as request:
+        server._launch(data="https://revolut.me/someone", confirm=True)
+    with pytest.raises(PhoneError, match="Revolut"):  # lien de paiement : confirm et accord, puis refus
+        server._launch(data="https://revolut.me/someone", confirm=True, accord=accorded(str(request.value)))
     assert _starts(phone) == []
 
 
