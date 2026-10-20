@@ -82,10 +82,15 @@ def parse(out: str, factor: float) -> list[Line]:
     return lines
 
 
+class OcrError(RuntimeError):
+    """Lecture impossible (moteur absent, script en échec, délai dépassé) : distincte d'une image lue sans texte."""
+
+
 def read(image: PILImage.Image, factor: float = 1.0) -> list[Line]:
-    """Texte de l'image (PNG écrit dans un dossier temporaire, effacé aussitôt) ; [] si le moteur manque."""
+    """Texte de l'image (PNG écrit dans un dossier temporaire, effacé aussitôt) ; [] : image lue, aucun texte.
+    OcrError si le moteur manque ou échoue (jamais pris pour « aucun code » par le masquage)."""
     if not available():
-        return []
+        raise OcrError("Windows OCR engine unavailable")
     fd, path = tempfile.mkstemp(suffix=".png")
     os.close(fd)
     try:
@@ -99,10 +104,10 @@ def read(image: PILImage.Image, factor: float = 1.0) -> list[Line]:
              ENCODED], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT,
             env={**os.environ, "NEXUS_OCR_IMAGE": path}, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if result.returncode:
-            return []
+            raise OcrError((result.stderr or "OCR script failed").strip()[:200])
         return parse(result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "[]", factor)
-    except (OSError, subprocess.TimeoutExpired, ValueError):
-        return []
+    except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+        raise OcrError(str(e)[:200] or type(e).__name__) from None
     finally:
         try:
             os.unlink(path)

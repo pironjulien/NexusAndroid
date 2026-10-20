@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import extras, policy
+from . import screen as screen_mod
 from .adb import STATE_WAIT, Adb, PhoneError
 from .screen import LIFTED, STATE_SH, Element, Screen, State, blackout, is_black, needs_ocr, ocr_elements, parse_state
 
@@ -126,29 +127,54 @@ def screenshot(adb: Adb, name: str | None, dest: str | None, confirm: bool, unma
     target = _destination(dest, file_name(name, "screenshot", IMAGE_TYPES), confirm)
     elements: list[Element] = []
     error: PhoneError | None = None
+    # Chaque lecture complète de l'arbre (avant et après la capture) : ses éléments et surfaces, jugés chacun ; et
+    # chaque appli vue (premier plan relu, appli des éléments) : une banque apparue pendant la capture compte.
+    readings: list[tuple[list[Element], list[tuple[int, int, int, int]]]] = []
+    seen_apps = {state.package}
+
+    def read_tree() -> list[Element]:
+        try:
+            tree = screen.dump()
+        finally:  # même si l'arbre échoue : le premier plan lu avec lui compte (une banque n'est jamais perdue)
+            seen_apps.add(screen.last_state.package if screen.last_state else "")
+        readings.append((tree, list(screen.surfaces)))
+        seen_apps.update(_shown_apps(tree))
+        return tree
+
     try:
         try:
-            elements = screen.dump()
+            elements = read_tree()
         except PhoneError as e:
             error = e
         image = screen.capture()
-        if error is None:
-            try:
-                elements += [e for e in screen.dump() if e.masked or e.password]
-            except PhoneError as e:
-                error = e
+        try:  # toujours relue après l'image, même si la première lecture a échoué (banque apparue pendant screencap)
+            elements += [e for e in read_tree() if e.masked or e.password]
+        except PhoneError as e:
+            error = error or e
     finally:
+        protected = next((n for p in sorted(seen_apps) if (n := policy.protected_app(p))), None) or protected
         if protected:
             screen.release()  # comme look : connexion d'accessibilité rendue devant une appli bancaire
+    if protected and not confirm:
+        raise PhoneError(f"{protected}: banking, payment or identity app shown during the capture, screenshot not "
+                         "saved. Only on the user's explicit order for this screen: confirm=true")
     if error is not None:
         if not unmasked:
             raise PhoneError(f"UI tree unreadable ({str(error)[:160]}): a visible security code would not be blacked "
                              "out, screenshot not saved. Try again in a moment, or unmasked=true if the user accepts "
                              "the file without masking.")
         notes.append("Saved without code masking (UI tree unreadable, unmasked=true).")
-    elif needs_ocr(elements, image.size, screen.surfaces):
+    elif any(needs_ocr(tree, image.size, surfaces) for tree, surfaces in readings):  # besoin d'une lecture = OCR
         # Texte absent de l'arbre (surface dessinée, jeu) : codes repérés sur l'image par OCR, noircis avant l'écriture.
-        elements += [e for e in ocr_elements(image, image.width, state.package) if e.masked]
+        seen = ocr_elements(image, image.width, state.package)
+        if seen is not None:
+            elements += [e for e in seen if e.masked]
+        elif not unmasked:
+            raise PhoneError("text drawn on the screen (not in the UI tree) could not be read by OCR, so a visible "
+                             "security code would not be blacked out: screenshot not saved. Try again, or "
+                             "unmasked=true if the user accepts the file without masking.")
+        else:
+            notes.append("Saved without masking of the drawn text (OCR unavailable, unmasked=true).")
     masked = len({e.bounds for e in elements if e.masked})
     if masked:
         notes.append(f"{masked} area(s) with a security code blacked out.")
@@ -252,37 +278,98 @@ def _taint(rec: Recording, protected: str) -> None:
 def _observe(rec: Recording) -> None:
     """Une lecture du premier plan : appli protégée → vidéo marquée et effacée ; lecture réussie notée (trou de
     surveillance mesuré entre deux lectures réussies)."""
-    try:
+    if not rec.running():
+        return  # prélevée après la fin de screenrecord : ce premier plan n'est pas dans la vidéo
+    try:  # datée au début du prélèvement : une preuve prélevée pendant l'enregistrement vaut, même livrée après la fin
         out = rec.adb.shell("sh", "-c", STATE_SH, check=False, timeout=STATE_WAIT)
     except (PhoneError, OSError):
         return
-    if "mWakefulness=" not in out:  # liaison coupée : sortie vide, rien n'est su du premier plan
+    state = parse_state(out, out)
+    if protected := policy.protected_app(state.package):
+        _taint(rec, protected)  # preuve positive : marque la vidéo même si la lecture est partielle
+    if "mWakefulness=" not in out:  # sortie tronquée : la lecture ne compte pas comme surveillance réussie
+        return
+    if not state.package and "mWakefulness=Asleep" not in out and not _dozing_off(rec, out):
+        # Premier plan illisible : seule la preuve d'un écran sans appli vaut lecture surveillée (Asleep, ou Always On
+        # Display : Dozing ET tous les affichages en DOZE ou OFF) ; Dreaming (écran de veille) affiche encore une appli.
         return
     now = time.monotonic()
     rec.blind = max(rec.blind, now - rec.last_seen)
     rec.last_seen = now
-    if protected := policy.protected_app(parse_state(out, out).package):
-        _taint(rec, protected)
+
+
+DISPLAY_SH = "dumpsys display | grep -E 'Display State='; true"
+_DISPLAY_STATE = re.compile(r"Display State=(\w+)")
+
+
+def _dozing_off(rec: Recording, out: str) -> bool:
+    """Always On Display (vu sur le Fold : mWakefulness=Dozing, aucun premier plan, « Display State=DOZE » et « OFF ») :
+    seule l'horloge est affichée, aucune appli ; compte comme un écran éteint."""
+    if "mWakefulness=Dozing" not in out:
+        return False
+    try:
+        states = _DISPLAY_STATE.findall(rec.adb.shell("sh", "-c", DISPLAY_SH, check=False, timeout=STATE_WAIT))
+    except (PhoneError, OSError):
+        return False
+    return bool(states) and all(s in ("DOZE", "DOZE_SUSPEND", "OFF") for s in states)
 
 
 def _watch(rec: Recording) -> None:
     """Fil de surveillance : le premier plan relu toutes les WATCH_EVERY s tant que screenrecord tourne."""
     while not rec.stop_watch.wait(WATCH_EVERY):
-        alive = rec.running()
+        if not rec.running():  # fin constatée : plus rien n'est filmé, aucune lecture ne peut marquer la vidéo
+            rec.ended = time.monotonic()
+            return
         _observe(rec)
         if rec.tainted:
             return
-        if not alive:
-            rec.ended = time.monotonic()
-            return
 
 
-def guard(adb: Adb, package: str) -> None:
+def guard(adb: Adb, package: str, seen_at: float | None = None) -> None:
     """Appli bancaire, de paiement ou d'identité au premier plan pendant un enregistrement (lu par un outil) : même
-    marque que la surveillance, screenrecord arrêté et fichier effacé du téléphone (une vidéo ne se masque pas)."""
+    marque que la surveillance, screenrecord arrêté et fichier effacé du téléphone (une vidéo ne se masque pas).
+    Seulement une lecture commencée après le début de l'enregistrement (seen_at), et pendant qu'il tourne."""
     rec = _CURRENT
-    if rec is not None and (protected := policy.protected_app(package)):
+    if rec is None:
+        return
+    if seen_at is None:  # lecture non datée : seulement si la vidéo tourne encore
+        if not rec.running():
+            return
+    elif seen_at < rec.started or (rec.ended is not None and seen_at > rec.ended):
+        return  # preuve datée hors de l'enregistrement (avant son début ou après sa fin constatée)
+    if protected := policy.protected_app(package):
         _taint(rec, protected)
+
+
+def _seen(package: str, since: float) -> None:
+    """Branché sur screen.ON_STATE : toute lecture de l'état, par n'importe quel outil, sert au garde de la vidéo."""
+    if _CURRENT is not None:
+        try:
+            guard(_CURRENT.adb, package, since)
+        except PhoneError:
+            pass
+
+
+screen_mod.ON_STATE = _seen
+
+
+APP_SHARE = 0.25  # part de l'écran qu'une appli doit couvrir pour compter comme affichée (pas une poignée)
+
+
+def _shown_apps(tree: list[Element]) -> set[str]:
+    """Applis réellement affichées d'après l'arbre : celles dont les éléments couvrent au moins APP_SHARE de l'écran.
+    La poignée de Samsung Wallet sur l'accueil (un petit élément d'une appli de paiement) n'est pas une banque à
+    l'écran ; une fenêtre bancaire ouverte par-dessus, si."""
+    if not tree:
+        return set()
+    width = max(e.bounds[2] for e in tree) or 1
+    height = max(e.bounds[3] for e in tree) or 1
+    boxes: dict[str, list[int]] = {}
+    for e in tree:
+        box = boxes.setdefault(e.package, list(e.bounds))
+        box[:] = [min(box[0], e.bounds[0]), min(box[1], e.bounds[1]), max(box[2], e.bounds[2]),
+                  max(box[3], e.bounds[3])]
+    return {p for p, b in boxes.items() if (b[2] - b[0]) * (b[3] - b[1]) >= APP_SHARE * width * height}
 
 
 def video_size(width: int, height: int) -> str:
@@ -400,6 +487,10 @@ def begin(adb: Adb, seconds: int | None, name: str | None, dest: str | None,
     adb.shell("find", REMOTE_DIR, "-maxdepth", "1", "-name", f"{PREFIX}*.mp4", "-mmin", "+60", "-delete", check=False)
     remote = f"{REMOTE_DIR}/{PREFIX}{os.getpid()}-{int(time.time())}.mp4"
     size = video_size(*_display(adb, screen))
+    if screen.last_state and (protected := policy.protected_app(screen.last_state.package)):
+        # Premier plan relu par la mesure de l'affichage : une banque passée devant entre-temps, rien n'est lancé.
+        raise PhoneError(f"{protected}: banking, payment or identity app in the foreground, no screen recording "
+                         "(security codes cannot be masked in a video). The user records it themselves if needed.")
     display = screen._display_id()  # Fold : écran intérieur ou extérieur, comme les captures
     base = ["screenrecord", "--time-limit", str(limit), "--bit-rate", str(BIT_RATE)]
     tail = (["--display-id", display] if display else []) + [remote]
@@ -491,6 +582,10 @@ def collect(rec: Recording) -> str:
                 rec.proc.kill()
                 notes.append("screenrecord did not stop cleanly: the video may be incomplete.")
             rec.ended = time.monotonic()
+    if rec.ended is None:
+        # Fini seul avant que la surveillance ne le voie : fin figée dès la première collecte, pour qu'une collecte
+        # retentée plus tard (rapatriement échoué) ne compte pas l'attente comme du temps non surveillé.
+        rec.ended = time.monotonic()
     _vet(rec)
     elapsed = min(rec.elapsed(), float(rec.limit))
     output = _output(rec.proc)

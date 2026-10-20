@@ -134,8 +134,8 @@ def test_guard_on_every_targeted_step(phone):
     phone.uis = [ui(node("Supprimer définitivement", (0, 0, 500, 200)), field())]
     for step in (Step(do="tap", target="Supprimer définitivement"), Step(do="clear", target="Supprimer définitivement"),
                  Step(do="type", target="Supprimer définitivement", text="x"), Step(do="long_press", target="10,10"),
-                 Step(do="swipe", target="10,10", to="400,1000"), Step(do="swipe", target="900,1000", to="100,100"),
-                 Step(do="scroll", target="Supprimer définitivement", direction="down")):
+                 Step(do="swipe", target="10,10", to="400,1000"), Step(do="swipe", target="900,1000", to="100,100")):
+        # (défilement : jugé à son vrai point de départ, voir test_review_round5)
         report = act(step)
         assert report.startswith("✗") and "confirm=true" in report, (step, report)
     assert phone.inputs == []
@@ -161,21 +161,20 @@ def test_keys_closed_list(phone):
                  "KEYCODE_BACK"):
         assert act(Step(do="key", keys=keys)).startswith("~"), keys
     sent = len(phone.inputs)
+    phone.uis = [ui(field("ok"))]  # écran décrit par l'arbre (un écran sans texte ne peut pas être lié à un accord)
     request = act(Step(do="key", keys="enter", confirm=True))  # peut envoyer : accord lié à l'écran exact
     assert request.startswith("✗") and "Nothing was done" in request and len(phone.inputs) == sent
     assert act(Step(do="key", keys="enter", confirm=True, accord=accorded(request))).startswith("~")
     assert ("input", "keyevent", "KEYCODE_ENTER") in phone.inputs
 
 
-def test_newline_in_type_needs_confirmation(phone):
+def test_multiline_text_is_pasted_never_a_hidden_enter(phone, monkeypatch):
+    pasted = []
+    monkeypatch.setattr(server.clip, "paste", lambda adb, text: pasted.append(text) or True)
     phone.uis = [ui(field())]
-    for text in ("ok\nmerci", "ok\r"):
-        assert "Enter key" in act(Step(do="type", text=text))
-    assert phone.inputs == []
-    request = act(Step(do="type", text="ok\nmerci", confirm=True))
-    assert "content" in request and phone.inputs == []
-    act(Step(do="type", text="ok\nmerci", confirm=True, accord=accorded(request)))
-    assert phone.inputs == [("input", "text", "ok"), ("input", "keyevent", "KEYCODE_ENTER"), ("input", "text", "merci")]
+    act(Step(do="type", text="ok\r\nmerci"))
+    assert pasted == ["ok\nmerci"]  # collé : le saut de ligne est du texte
+    assert all("KEYCODE_ENTER" not in c for c in phone.inputs)  # jamais la touche Entrée, qui peut envoyer
 
 
 # ---------------------------------------------------------------- 2. cible jugée sur l'écran actuel

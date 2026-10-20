@@ -50,10 +50,33 @@ def has_keyword(*texts: str) -> bool:
     return any(t and _KEYWORDS.search(plain(t)) for t in texts)
 
 
-# Carte bancaire (13 à 19 chiffres, clé de Luhn) et IBAN (clé modulo 97), espaces ou tirets permis : masqués partout,
-# sans mot-clé (un numéro de carte ou de compte n'a pas besoin d'être annoncé pour être sensible).
-_CARD = re.compile(r"(?<![\w.])\d(?:[ -]?\d){12,18}(?![\w.])")
-_IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,30}\b")
+# Carte bancaire (clé de Luhn) et IBAN (longueur du pays, clé modulo 97) : masqués partout, sans mot-clé (un numéro
+# de carte ou de compte n'a pas besoin d'être annoncé pour être sensible). Balayage de candidats : tous les débuts
+# sont essayés, l'union des fenêtres valides est masquée. Carte : seulement ses groupements réels (4-4-4-4 suivi ou non
+# de 1 à 3 chiffres, 4-6-5, 4-6-4, 4-4-5, 4-3-3-3, ou 15 à 19 chiffres d'un bloc : 13 et 14 chiffres collés sont des
+# EAN-13 et des SIRET) et un
+# premier chiffre de carte (2 à 6), sinon un calendrier, un tirage ou un tableau de nombres passerait pour une carte
+# une fois sur dix. Séparateurs entre groupes : un ou deux parmi espace, espace insécable (U+00A0, U+202F), tiret,
+# point, saut de ligne.
+_SEP = " \u00a0\u202f.\r\n-"  # CRLF compris ; tiret en dernier, lu tel quel dans une classe [...]
+_DIGIT_RUN = re.compile(rf"(?<!\d)\d+(?:[{_SEP}]{{1,2}}\d+)*")
+_DIGITS = re.compile(r"\d+")
+CARD_GROUPS = {(4, 4, 4, 4), (4, 4, 4, 4, 1), (4, 4, 4, 4, 2), (4, 4, 4, 4, 3), (4, 6, 5), (4, 6, 4), (4, 4, 5),
+               (4, 3, 3, 3)}
+# Longueur de l'IBAN de chaque pays (registre IBAN de SWIFT) : un début n'a qu'une seule fin possible.
+IBAN_LENGTHS = {
+    "AD": 24, "AE": 23, "AL": 28, "AT": 20, "AZ": 28, "BA": 20, "BE": 16, "BG": 22, "BH": 22, "BI": 27, "BR": 29,
+    "BY": 28, "CH": 21, "CR": 22, "CY": 28, "CZ": 24, "DE": 22, "DJ": 27, "DK": 18, "DO": 28, "EE": 20, "EG": 29,
+    "ES": 24, "FI": 18, "FK": 18, "FO": 18, "FR": 27, "GB": 22, "GE": 22, "GI": 23, "GL": 18, "GR": 27, "GT": 28,
+    "HN": 28, "HR": 21, "HU": 28, "IE": 22, "IL": 23, "IQ": 23, "IS": 26, "IT": 27, "JO": 30, "KW": 30, "KZ": 20,
+    "LB": 28, "LC": 32, "LI": 21, "LT": 20, "LU": 20, "LV": 21, "LY": 25, "MC": 27, "MD": 24, "ME": 22, "MK": 19,
+    "MN": 20, "MR": 27, "MT": 31, "MU": 30, "NI": 28, "NL": 18, "NO": 15, "OM": 23, "PK": 24, "PL": 28, "PS": 29,
+    "PT": 25, "QA": 29, "RO": 24, "RS": 22, "RU": 33, "SA": 24, "SC": 31, "SD": 18, "SE": 24, "SI": 19, "SK": 24,
+    "SM": 27, "SO": 23, "ST": 25, "SV": 28, "TL": 23, "TN": 24, "TR": 26, "UA": 29, "VA": 22, "VG": 24, "XK": 20,
+    "YE": 30,
+}
+_IBAN_START = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{2}\d{2}")
+_IBAN_CHAR = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
 CARD, IBAN = "[masked card]", "[masked IBAN]"
 
 
@@ -65,16 +88,80 @@ def _luhn(digits: str) -> bool:
     return total % 10 == 0
 
 
-def _card(m: re.Match[str]) -> str:
-    digits = re.sub(r"\D", "", m[0])
-    return CARD if 13 <= len(digits) <= 19 and len(set(digits)) > 1 and _luhn(digits) else m[0]
+def _card_spans(text: str) -> list[tuple[int, int]]:
+    """Tous les débuts de groupe essayés, chacun avec sa plus longue fenêtre valide (groupement de carte, Luhn) ; une
+    lettre collée devant est permise (« n°4111… »), pas une lettre collée derrière."""
+    spans = []
+    for run in _DIGIT_RUN.finditer(text):
+        groups = [(run.start() + g.start(), run.start() + g.end()) for g in _DIGITS.finditer(run.group())]
+        for i in range(len(groups)):
+            best, digits = None, ""
+            for j in range(i, len(groups)):
+                digits += text[groups[j][0]:groups[j][1]]
+                if len(digits) > 19:
+                    break
+                shape = tuple(b - a for a, b in groups[i:j + 1])
+                grouped = shape in CARD_GROUPS or (len(shape) == 1 and 15 <= shape[0] <= 19)
+                end = groups[j][1]
+                glued = end < len(text) and (text[end].isalpha() or text[end] == "_")
+                if grouped and digits[0] in "23456" and len(set(digits)) > 1 and _luhn(digits) and not glued:
+                    best = j
+            if best is not None:
+                spans.append((groups[i][0], groups[best][1]))
+    return spans
 
 
-def _iban(m: re.Match[str]) -> str:
-    raw = m[0].replace(" ", "")
-    moved = raw[4:] + raw[:4]
-    number = "".join(str(int(c, 36)) for c in moved)
-    return IBAN if 15 <= len(raw) <= 34 and int(number) % 97 == 1 else m[0]
+def _iban_ok(text: str) -> bool:
+    raw = re.sub(f"[{_SEP}]", "", text).upper()
+    if len(raw) != IBAN_LENGTHS.get(raw[:2]):
+        return False
+    number = "".join(str(int(c, 36)) for c in raw[4:] + raw[:4])
+    return int(number) % 97 == 1
+
+
+def _iban_spans(text: str) -> list[tuple[int, int]]:
+    """Chaque début possible (code pays du registre et 2 chiffres en début de mot, majuscules ou minuscules) n'a
+    qu'une fin : la longueur de son pays, séparateurs (un ou deux) non comptés, fin collée à un mot permise
+    (« …189EUR ») ; masqué si la clé modulo 97 est juste."""
+    spans = []
+    for found in _IBAN_START.finditer(text):
+        start = k = found.start()
+        length = IBAN_LENGTHS.get(text[start:start + 2].upper())
+        if length is None:
+            continue
+        count = 0
+        while k < len(text) and count < length:
+            if text[k] in _SEP and k > start:
+                gap = k
+                while gap < len(text) and gap - k < 2 and text[gap] in _SEP:
+                    gap += 1
+                if gap < len(text) and text[gap] in _IBAN_CHAR:
+                    k = gap  # un ou deux séparateurs entre deux groupes
+                    continue
+                break
+            if text[k] not in _IBAN_CHAR:
+                break
+            k, count = k + 1, count + 1
+        if count == length and _iban_ok(text[start:k]):
+            spans.append((start, k))
+    return spans
+
+
+def _mask_accounts(text: str) -> str:
+    """IBAN et cartes cherchés sur le texte d'ORIGINE, intervalles unis puis remplacés en une fois : un IBAN suivi
+    d'une carte (ou l'inverse) ne laisse rien ressortir. Un intervalle qui contient un IBAN est dit IBAN."""
+    ibans = _iban_spans(text)
+    spans = sorted(ibans + _card_spans(text))
+    out, last, merged = [], 0, []
+    for a, b in spans:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    for a, b in merged:
+        out += [text[last:a], IBAN if any(a <= i < b for i, _ in ibans) else CARD]
+        last = b
+    return "".join(out) + text[last:]
 
 
 def mask_codes(text: str, context: bool = False) -> str:
@@ -84,7 +171,7 @@ def mask_codes(text: str, context: bool = False) -> str:
     code du texte est masqué."""
     if not text:
         return text
-    text = _CARD.sub(_card, _IBAN.sub(_iban, text))
+    text = _mask_accounts(text)
     keywords = [m.span() for m in _KEYWORDS.finditer(plain(text))]
     if not keywords and not context:
         return text

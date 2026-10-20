@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import io
 import math
 import os
 import re
+import secrets
 import struct
 import time
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -46,6 +48,10 @@ class Element:
     focused: bool = False
     editable: bool = False
     masked: bool = False  # un code y a été masqué : zone noircie sur l'image
+    # Sceau du texte brut d'un élément masqué (HMAC à clé secrète propre au processus, jamais montré tel quel ni
+    # réversible) : l'accord d'un geste sortant est lié au vrai contenu, pas à « [masked IBAN] ».
+    sealed: str = ""
+    raw: tuple[str, str] = ("", "")  # texte et description bruts (espaces de bord compris), jamais affichés
     scrollable: bool = False  # liste ou zone défilable (un glissé dedans n'est pas un appui)
     # Place dans l'arbre : (ordre de dessin, rang) de chaque nœud depuis la racine. Un ancêtre en est un préfixe ; le
     # plus grand chemin est dessiné devant. () : inconnue.
@@ -83,7 +89,7 @@ _BOUNDS = re.compile(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
 
 
 # Surfaces dessinées sans arbre (vidéo, jeu, carte, aperçu de caméra) : leur texte n'est visible que sur l'image.
-_OPAQUE = re.compile(r"(?:Surface|Texture|GLSurface)View$")
+OPAQUE = re.compile(r"(?:Surface|Texture|GLSurface)View$")
 Box = tuple[int, int, int, int]
 
 
@@ -138,8 +144,8 @@ _EDIT_CLASS = re.compile(r"(EditText|AutoCompleteTextView|SearchAutoComplete|Sea
 def elements_of(nodes: Iterable[Mapping[str, Any]], surfaces: list[Box] | None = None) -> list[Element]:
     """Éléments utiles d'après les attributs des nœuds (ceux du XML de uiautomator, ou rendus par le serveur dans les
     mêmes termes), dans l'ordre du document : une seule règle de tri et de numérotation pour les deux lectures.
-    surfaces : reçoit les limites des surfaces dessinées sans texte (SurfaceView, TextureView), jamais des éléments
-    (rien de lisible à viser) mais lues par OCR pour y noircir un code."""
+    surfaces : reçoit les limites des surfaces dessinées (SurfaceView, TextureView), avec ou sans libellé
+    accessible, lues par OCR pour y noircir un code."""
     elements: list[Element] = []
     for a in nodes:
         match = _BOUNDS.match(a.get("bounds", ""))
@@ -148,14 +154,15 @@ def elements_of(nodes: Iterable[Mapping[str, Any]], surfaces: list[Box] | None =
         x1, y1, x2, y2 = map(int, match.groups())
         if x2 <= x1 or y2 <= y1:
             continue
-        text, desc = a.get("text", "").strip(), a.get("content-desc", "").strip()
+        raw = (a.get("text", ""), a.get("content-desc", ""))  # brut : identité et sceau d'un accord
+        text, desc = raw[0].strip(), raw[1].strip()  # pour l'affichage et la recherche
         clickable = a.get("clickable") == "true" or a.get("long-clickable") == "true"
         # Drapeau d'Android (isEditable, envoyé par le lecteur d'écran) ; `uiautomator dump` ne le donne pas : classes de
         # saisie connues, sous-classes comprises (AutoCompleteTextView de la recherche des Paramètres, SearchView).
         editable = a.get("editable") == "true" or bool(_EDIT_CLASS.search(a.get("class", "")))
         scrollable = a.get("scrollable") == "true"
-        if surfaces is not None and not (text or desc) and _OPAQUE.search(a.get("class", "")):
-            surfaces.append((x1, y1, x2, y2))
+        if surfaces is not None and OPAQUE.search(a.get("class", "")):
+            surfaces.append((x1, y1, x2, y2))  # libellée ou non : un libellé ne dit rien du texte dessiné
         if not (text or desc or clickable or editable or scrollable):
             continue
         states = []
@@ -177,7 +184,7 @@ def elements_of(nodes: Iterable[Mapping[str, Any]], surfaces: list[Box] | None =
             role=a.get("class", "").rsplit(".", 1)[-1] or "View",
             text=text, desc=desc, rid=rid.split("/", 1)[-1] if rid else "",
             package=a.get("package", ""), bounds=(x1, y1, x2, y2), clickable=clickable or editable,
-            states=states, password=a.get("password") == "true", focused=a.get("focused") == "true",
+            states=states, password=a.get("password") == "true", focused=a.get("focused") == "true", raw=raw,
             editable=editable, scrollable=scrollable, path=tuple(a.get(PATH, ())),
         ))
     return elements
@@ -200,8 +207,19 @@ def mask_elements(elements: list[Element]) -> list[Element]:
     for e in elements:
         context = e in keyed or any(k is not e and _near(k, e) for k in keyed)
         text, desc = mask_codes(e.text, context), mask_codes(e.desc, context)
-        out.append(replace(e, text=text, desc=desc, masked=(text, desc) != (e.text, e.desc)))
+        masked = (text, desc) != (e.text, e.desc)
+        sealed = seal(*(e.raw if any(e.raw) else (e.text, e.desc))) if masked else ""
+        out.append(replace(e, text=text, desc=desc, masked=masked, sealed=sealed, raw=("", "") if masked else e.raw))
     return out
+
+
+_SEAL_KEY = secrets.token_bytes(32)  # propre au processus, comme les accords qu'il sert à lier
+
+
+def seal(*raw: str) -> str:
+    """Empreinte d'un texte brut masqué : deux codes, cartes ou IBAN différents donnent deux sceaux différents ; sans la
+    clé (jamais exposée), le sceau ne permet pas de retrouver le texte, même court (code à 6 chiffres)."""
+    return hmac.new(_SEAL_KEY, "\0".join(raw).encode("utf-8"), hashlib.sha256).hexdigest()[:20]
 
 
 MOVED = 10  # pixels écran : écart des limites en deçà duquel un élément n'a pas bougé (rapport des changements)
@@ -288,32 +306,42 @@ def blackout(image: PILImage.Image, elements: list[Element], shrink: float = 1.0
     return image
 
 
+# Toute lecture de l'état, par n'importe quel Screen (session, capture...) : (appli au premier plan, début de la
+# lecture). Branché par capture : une appli protégée vue pendant une vidéo la fait jeter aussitôt.
+ON_STATE: Callable[[str, float], None] | None = None
 OPAQUE_SHARE = 0.25  # part de l'écran au-delà de laquelle une surface sans texte fait lire l'image par OCR
 
 
-def needs_ocr(elements: list[Element], size: tuple[int, int] | None, surfaces: Iterable[Box] = ()) -> bool:
+def needs_ocr(elements: list[Element], size: tuple[int, int] | None, surfaces: Iterable[Box] = (),
+              strict: bool = True) -> bool:
     """Texte que l'arbre ne donne pas : arbre sans aucun texte (jeu, Flutter, dessin), ou grande surface dessinée
-    (SurfaceView, TextureView : surfaces, ou élément de ce rôle) sans texte dedans. Seule l'OCR y repère un code."""
+    (SurfaceView, TextureView : surfaces, ou élément de ce rôle), même avec un libellé accessible posé dessus (un
+    « Fermer » ne dit rien du texte dessiné). Seule l'OCR y repère un code."""
     if not any(e.text or e.desc for e in elements):
         return True
     width, height = size or (1080, 2000)
-    boxes = list(surfaces) + [e.bounds for e in elements if _OPAQUE.search(e.role)]
-    for x1, y1, x2, y2 in boxes:
-        if (x2 - x1) * (y2 - y1) >= OPAQUE_SHARE * width * height and not any(
-                (e.text or e.desc) and x1 <= e.center[0] <= x2 and y1 <= e.center[1] <= y2 for e in elements):
-            return True
-    return False
+    boxes = list(surfaces) + [e.bounds for e in elements if OPAQUE.search(e.role)]
+    big = [b for b in boxes if (b[2] - b[0]) * (b[3] - b[1]) >= OPAQUE_SHARE * width * height]
+    if strict:  # capture enregistrée : toute grande surface, libellée ou non
+        return bool(big)
+    # look (latence) : seulement une grande surface sans texte de l'arbre posé dessus (ni libellé, ni texte dedans).
+    return any(not any((e.text or e.desc) and x1 <= e.center[0] <= x2 and y1 <= e.center[1] <= y2 for e in elements)
+               for x1, y1, x2, y2 in big)
 
 
-def ocr_elements(image: PILImage.Image, width: int, package: str) -> list[Element]:
+def ocr_elements(image: PILImage.Image, width: int, package: str) -> list[Element] | None:
     """Texte vu sur l'image (OCR local de Windows) en éléments « OCR » (pixels écran ; width : largeur de l'écran),
-    codes masqués comme ceux de l'arbre : un élément masqué est noirci sur l'image comme un élément de l'arbre."""
+    codes masqués comme ceux de l'arbre : un élément masqué est noirci sur l'image comme un élément de l'arbre.
+    None : OCR indisponible ou en échec (les codes dessinés n'ont pas pu être cherchés), à ne pas confondre avec []."""
     if not ocr.available():
-        return []
+        return None
     factor = width / image.width if image.width else 1.0
-    found = [Element(index=0, role="OCR", text=line.text, desc="", rid="", package=package, bounds=line.box,
-                     clickable=True) for line in ocr.read(image, factor)]
-    return mask_elements(found)
+    try:
+        lines = ocr.read(image, factor)
+    except ocr.OcrError:
+        return None
+    return mask_elements([Element(index=0, role="OCR", text=line.text, desc="", rid="", package=package,
+                                  bounds=line.box, clickable=True) for line in lines])
 
 
 MARK_FEW = 21  # marks="auto" : jusqu'à ce nombre d'éléments, tous numérotés ; au-delà, seulement ceux sans nom
@@ -603,6 +631,7 @@ class Screen:
         self.size: tuple[int, int] | None = None
         self.posture = ""  # pliage au moment de la dernière image (les coordonnées "x,y" en dépendent)
         self.last_state: State | None = None  # état lu avec la dernière lecture d'écran (state ou dump)
+        self.last_seen_at = 0.0  # début (time.monotonic()) de la lecture qui a donné last_state
         self.busy = ""  # message de la dernière lecture d'arbre bloquée par un autre outil (UiAutomation prise)
         self.fingerprint: str | None = None  # empreinte du dernier écran lu (tourner en rond)
         self.loops = LoopWatch()
@@ -611,14 +640,24 @@ class Screen:
     def _server(self) -> query.QueryServer | None:
         return query.server_for(self.adb) if FAST and self.fast else None
 
-    def snapshot(self, image: str = "none") -> Snapshot | None:
+    def _observed(self, state: State, since: float) -> None:
+        """État lu par une lecture commencée à `since` (time.monotonic()) : gardé, et signalé à ON_STATE (garde de la
+        vidéo en cours), quel que soit l'outil ou la session qui l'a lu."""
+        self.last_state, self.last_seen_at = state, since
+        if ON_STATE is not None:
+            ON_STATE(state.package, since)
+
+    def snapshot(self, image: str = "none", settle: bool = True) -> Snapshot | None:
         """Arbre, état, pliage et, au besoin, capture (image : none, scaled, full) en un échange avec le serveur gardé
         en vie ; None s'il est indisponible ou répond autre chose (l'appelant reprend la méthode d'avant). Liaison
-        perdue : LinkError, comme toute lecture."""
+        perdue : LinkError, comme toute lecture. settle=False : arbre de l'instant, sans attendre que l'écran se calme
+        (relecture entre les deux appuis d'un double appui)."""
         server = self._server()
         if server is None:
             return None
-        tables = server.run([["screen", "--image", image, "--max", str(MAX_SIDE), "--quality", str(PHONE_QUALITY)]])
+        since = time.monotonic()
+        tables = server.run([["screen", "--image", image, "--max", str(MAX_SIDE), "--quality", str(PHONE_QUALITY)]
+                             + ([] if settle else ["--quiet", "0"])])
         if not tables or not tables[0].raw:
             return None
         try:
@@ -626,7 +665,7 @@ class Screen:
         except (ValueError, struct.error, OSError):  # OSError : JPEG illisible (PIL)
             return None
         if snap.state is not None:
-            self.last_state = snap.state
+            self._observed(snap.state, since)
         return snap
 
     def release(self) -> None:
@@ -690,8 +729,10 @@ class Screen:
 
     def state(self) -> State:
         """État lu en un seul aller-retour (trois dumpsys filtrés sur le téléphone)."""
+        since = time.monotonic()
         out = self.adb.shell("sh", "-c", STATE_SH, check=False, timeout=STATE_WAIT)
-        self.last_state = parse_state(out, out)
+        self._observed(parse_state(out, out), since)
+        assert self.last_state is not None
         return self.last_state
 
     def lift_keyguard(self, state: State) -> tuple[State, bool]:
@@ -782,12 +823,13 @@ class Screen:
         self.release()
         last = ""
         for _ in range(3):
+            since = time.monotonic()
             out = self.adb.shell("sh", "-c", f"uiautomator dump {UI_DUMP} 2>&1; cat {UI_DUMP} 2>/dev/null; "
                                  f"rm -f {UI_DUMP}; echo; echo {STATE_MARK}; {STATE_SH}", timeout=20, check=False)
             # La dernière marque est la nôtre (un texte de l'écran qui la recopierait est avant, dans l'arbre).
             tree, _, status = out.rpartition(STATE_MARK) if STATE_MARK in out else (out, "", "")
             if status.strip():  # état lu dans le même aller-retour que l'arbre : jugé sur le même instant
-                self.last_state = parse_state(status, status)
+                self._observed(parse_state(status, status), since)
             if "<hierarchy" in tree:
                 self.surfaces = []
                 return mask_elements(parse_ui(tree, self.surfaces))

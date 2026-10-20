@@ -25,7 +25,7 @@
 //     0, nombre de colonnes, noms des colonnes, nombre de lignes, valeurs (ligne par ligne)   lecture réussie
 //     1, message                                                                             erreur
 //     2, taille, octets                                                                      lecture d'écran
-//   Lecture d'écran (screen [--image none|scaled|full] [--max côté] [--quality q]), dans les octets :
+//   Lecture d'écran (screen [--image none|scaled|full] [--max côté] [--quality q] [--quiet ms]), dans les octets :
 //     état (sortie de STATUS_SH), rotation, largeur, hauteur de l'affichage 0,
 //     arbre : 0, nombre de nœuds, puis par nœud (ordre du document de `uiautomator dump`) texte, resource-id, classe,
 //             paquet, content-desc, drapeaux (bits dans l'ordre de walk), limites visibles x1 y1 x2 y2, profondeur
@@ -472,6 +472,7 @@ public final class NexusQuery {
     private static byte[] screen(String[] argv) {
         String image = "none";
         int maxSide = 1280, quality = 90;
+        long quietMs = QUIET_MS;  // --quiet 0 : arbre de l'instant (relecture entre les deux appuis d'un double appui)
         for (int i = 1; i < argv.length; i += 2) {
             if (i + 1 >= argv.length) {
                 return failure("Error: missing value for " + argv[i]);
@@ -481,6 +482,7 @@ public final class NexusQuery {
                     case "--image": image = argv[i + 1]; break;
                     case "--max": maxSide = Integer.parseInt(argv[i + 1]); break;
                     case "--quality": quality = Integer.parseInt(argv[i + 1]); break;
+                    case "--quiet": quietMs = Long.parseLong(argv[i + 1]); break;
                     default: return failure("Error: unsupported option " + argv[i]);
                 }
             } catch (NumberFormatException e) {
@@ -488,13 +490,13 @@ public final class NexusQuery {
             }
         }
         if (!image.equals("none") && !image.equals("scaled") && !image.equals("full")
-                || maxSide < 16 || quality < 1 || quality > 100) {
+                || maxSide < 16 || quality < 1 || quality > 100 || quietMs < 0 || quietMs > QUIET_MS) {
             return failure("Error: bad screen options");
         }
         synchronized (SCREEN_LOCK) {
             lastScreen = System.currentTimeMillis();
             try {
-                return snapshot(image, maxSide, quality);
+                return snapshot(image, maxSide, quality, quietMs);
             } catch (Throwable e) {
                 return failure("Error: screen read failed (" + e + ")");
             } finally {
@@ -503,7 +505,7 @@ public final class NexusQuery {
         }
     }
 
-    private static byte[] snapshot(String image, int maxSide, int quality) throws Exception {
+    private static byte[] snapshot(String image, int maxSide, int quality, long quietMs) throws Exception {
         Process status = null;
         try {
             status = new ProcessBuilder("sh", "-c", STATUS_SH).redirectErrorStream(true).start();
@@ -536,10 +538,12 @@ public final class NexusQuery {
                 throw new IllegalStateException("display 0 size unknown");
             }
             ua = connect();
-            try {
-                ua.waitForIdle(QUIET_MS, SETTLE_MAX_MS);
-            } catch (TimeoutException e) {
-                // écran toujours en mouvement : arbre de l'instant présent
+            if (quietMs > 0) {
+                try {
+                    ua.waitForIdle(quietMs, SETTLE_MAX_MS);
+                } catch (TimeoutException e) {
+                    // écran toujours en mouvement : arbre de l'instant présent
+                }
             }
             AccessibilityNodeInfo root = ua.getRootInActiveWindow();
             if (root == null) {

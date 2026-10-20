@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import secrets
 import unicodedata
 from pathlib import Path
 
@@ -191,11 +193,48 @@ _ATTACHMENT = re.compile(r"[^\s/\\:*?\"<>|][^/\\:*?\"<>|]{0,120}\.(?:jpe?g|png|g
 _MAIL = re.compile(r"[\w.+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
 
 
-def screen_action(gesture: str, label: str, package: str, elements: list[Element], height: int) -> dict:
+# Claviers (suggestions qui changent d'elles-mêmes) : hors de l'identité, comme la barre d'état.
+_KEYBOARD = re.compile(r"inputmethod|honeyboard|keyboard|swiftkey", re.I)
+
+
+def _words(e: Element) -> list[str]:
+    """Ce qu'un élément dit : son texte et sa description, ou le sceau de son texte brut s'il est masqué (sans sceau :
+    valeur tirée au hasard, qu'aucun accord ne retrouvera), et ses cases cochées."""
+    words = ["sealed", e.sealed or secrets.token_hex(10)] if e.masked else list(e.raw if any(e.raw) else
+                                                                                   (e.text, e.desc))
+    return words + [s for s in ("checked", "selected") if s in e.states]
+
+
+def _target(e: Element) -> list:
+    """L'élément CIBLE complet : appli, rôle, ressource, limites, place dans l'arbre (ordre de dessin : deux boutons
+    superposés dont seul l'ordre change ne sont pas la même cible) et ce qu'il dit."""
+    return [e.package, e.role, e.rid, list(e.bounds), [list(p) for p in e.path], *_words(e)]
+
+
+def outward_identity(elements: list[Element] | None, front: str, aimed: list[Element] | None = None) -> str:
+    """Identité canonique de l'action sortante, la même quelle que soit la façon de viser (arbre, coordonnées, OCR) :
+    appli au premier plan ; suite, dans l'ordre du document, de ce que disent les éléments de l'arbre (texte, ou sceau
+    du texte brut d'un élément masqué : deux champs qui échangent deux IBAN changent la suite), sans leurs limites
+    (un décalage de quelques pixels, le clavier qui s'ouvre ne change pas l'action) ; et la CIBLE complète du geste
+    (aimed : éléments qui reçoivent l'appui, ou champ qui a le focus pour une touche, avec ressource, limites et ordre
+    de dessin). Hors identité : éléments lus par OCR, barre d'état, claviers. Arbre illisible : identité unique,
+    qu'aucun accord ne retrouvera."""
+    if elements is None:
+        return "unreadable " + secrets.token_hex(12)
+    said = [[e.package, *_words(e)] for e in elements
+            if e.role != "OCR" and e.package != "com.android.systemui" and not _KEYBOARD.search(e.package)]
+    target = [_target(e) for e in aimed or []]
+    canonical = json.dumps([front, said, target], ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
+
+
+def screen_action(gesture: str, label: str, package: str, elements: list[Element], height: int,
+                  front: str = "", aimed: list[Element] | None = None, where: str = "") -> dict:
     """L'action telle que l'écran la montre, liée tout entière au jeton d'accord : bouton visé ; destinataires (en-tête
     de l'écran, plus tout numéro de téléphone ou adresse e-mail affiché ailleurs : composeur, champ « À ») ; texte des
     champs ; pièces jointes nommées ; et le reste du texte de l'application à l'écran (aperçu, corps, vignettes
-    décrites) en contexte. Un seul de ces textes change entre l'accord et le geste : l'accord ne vaut plus."""
+    décrites) en contexte. Un seul de ces textes change entre l'accord et le geste : l'accord ne vaut plus.
+    aimed, where : cible effective et paramètres du geste (« at 250,575 », « from 60,1000 to 1040,1000 »), liés aussi."""
     same = sorted((e for e in elements if e.package == package and not e.password),
                   key=lambda e: (e.bounds[1], e.bounds[0]))
     top = height * HEADING_SHARE
@@ -205,5 +244,29 @@ def screen_action(gesture: str, label: str, package: str, elements: list[Element
     attachments = [v for v in shown if _ATTACHMENT.fullmatch(v.strip())]
     fields = [e.text for e in same if e.editable and e.text]
     rest = [v for v in shown if v not in attachments]
-    return garde_fous.action("android", gesture, f"{label} ({package})", recipients=heading + numbers,
-                             content=" | ".join(fields), attachments=attachments, context=" | ".join(rest))
+    target = f"{label} ({package})" + (f" {where}" if where else "")
+    shown = garde_fous.action("android", gesture, target, recipients=heading + numbers,
+                              content=" | ".join(fields), attachments=attachments, context=" | ".join(rest))
+    # Résumé lisible ci-dessus (destinataires d'après les positions, à montrer à l'utilisateur) ; le jeton, lui, est
+    # lié à la seule identité canonique stable (appli, textes dans l'ordre, cible complète) : un décalage de 2 px qui
+    # fait passer un texte de l'en-tête au contexte ne change pas l'action.
+    shown["identity"] = outward_identity(elements, front or package, aimed)
+    return shown
+
+
+def _bound(shown: dict) -> dict:
+    """L'action telle que le jeton la lie : geste, cible (libellé, appli, point ou départ et arrivée) et identité."""
+    return garde_fous.action("android", shown["gesture"], shown["target"], context="identity " + shown["identity"])
+
+
+def accord_check(shown: dict, accord: object) -> str:
+    """« » : accord valable (jeton consommé). Sinon le refus, avec un jeton neuf, et l'action telle que l'écran la
+    montre (destinataires, texte, pièces jointes) pour l'utilisateur."""
+    refusal = ACCORDS.check(_bound(shown), True, accord)
+    if not refusal:
+        return ""
+    return "\n".join([refusal, f"As the screen shows it: {garde_fous.describe(shown)}", *ACCORDS.warnings(shown)])
+
+
+def accord_propose(shown: dict) -> str:
+    return ACCORDS.propose(_bound(shown))

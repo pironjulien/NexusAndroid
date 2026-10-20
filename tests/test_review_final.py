@@ -83,25 +83,22 @@ def test_password_field_refuses_typing_keys_even_with_accord(phone):  # noqa: F8
 def test_protected_app_refuses_enter_even_with_confirm_and_never_offers_an_accord(phone):  # noqa: F811
     phone.package = BOURSO
     phone.uis = [ui(field("150", package=BOURSO), node("Valider le virement", (0, 1850, 1080, 1950), package=BOURSO))]
-    for keys in ("enter", "KEYCODE_DPAD_CENTER", "tab enter", "KEYCODE_NUMPAD_ENTER"):
+    for keys in ("enter", "KEYCODE_DPAD_CENTER", "KEYCODE_NUMPAD_ENTER"):
         report = act(Step(do="key", keys=keys, confirm=True))
         assert "never by the agent" in report and 'accord="' not in report, (keys, report)
-    report = act(Step(do="type", text="150\n", confirm=True))  # saut de ligne = Entrée
-    assert "never by the agent" in report
+    assert "alone in its step" in act(Step(do="key", keys="tab enter", confirm=True))
     assert phone.inputs == []
     assert act(Step(do="key", keys="tab", confirm=True)).startswith("~")  # navigation avec confirm : permise
 
 
-def test_accord_binds_the_whole_key_sequence(phone):  # noqa: F811
+def test_submit_key_is_alone_in_its_step(phone):  # noqa: F811
     phone.uis = [ui(field("approved"))]
     token = accorded(act(Step(do="key", keys="enter", confirm=True)))
-    for keys in ("tab enter", "delete enter"):
+    for keys in ("tab enter", "delete enter", "enter enter"):
         report = act(Step(do="key", keys=keys, confirm=True, accord=token))
-        assert report.startswith("✗") and phone.inputs == [], (keys, report)
-        token = accorded(report)  # nouveau jeton, pour cette séquence-là
-    sequence = accorded(act(Step(do="key", keys="tab enter", confirm=True)))
-    assert act(Step(do="key", keys="tab enter", confirm=True, accord=sequence)).startswith("~")
-    assert phone.inputs[-2:] == [("input", "keyevent", "KEYCODE_TAB"), ("input", "keyevent", "KEYCODE_ENTER")]
+        assert "alone in its step" in report and phone.inputs == [], (keys, report)
+    assert act(Step(do="key", keys="enter", confirm=True, accord=token)).startswith("~")
+    assert phone.inputs == [("input", "keyevent", "KEYCODE_ENTER")]
 
 
 def test_keys_other_than_navigation_need_a_readable_tree(phone):  # noqa: F811
@@ -195,7 +192,9 @@ def test_previous_video_is_not_collected_before_the_checks(rec, home):  # noqa: 
     capture.start(rec, 1, None, None, False)  # type: ignore[arg-type]
     previous = capture._CURRENT
     rec.procs[0].code = 0  # finie seule
-    rec.package = BANK
+    assert previous is not None
+    previous.ended = time.monotonic()  # fin constatée par la surveillance (au repos dans les tests)
+    rec.package = BANK  # ouverte APRÈS la fin : ne marque pas la vidéo finie
     with pytest.raises(PhoneError, match="no screen recording"):
         capture.begin(rec, 1, None, None, False)  # type: ignore[arg-type]
     assert rec.pulls == [] and capture._CURRENT is previous  # rien rapatrié, poignée gardée

@@ -109,8 +109,8 @@ def _unavailable(reason: str, use: str = TYPING) -> PhoneError:
     where = (f"The scrcpy server v{VERSION} (Genymobile, clipboard) must be at {LOCAL} with SHA-256 {SHA256}. "
              f"Download it from {URL} (or run install.ps1 again)")
     if use == TYPING:
-        return PhoneError(f"Typing accented characters or emoji is unavailable, nothing was typed: {reason}. {where}, "
-                          "then type again. ASCII text is typed without it; for a message: draft(to, text).")
+        return PhoneError(f"Typing accented characters, emoji or line breaks is unavailable, nothing was typed: {reason}. {where}, "
+                          "then type again. ASCII text on one line is typed without it; for a message: draft(to, text).")
     return PhoneError(f"Clipboard unavailable, nothing was done: {reason}. {where}, then try again.")
 
 

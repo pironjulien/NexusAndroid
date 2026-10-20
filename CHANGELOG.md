@@ -6,6 +6,90 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-20
+
+### Security
+
+- Threat model written down (README, Safeguards): the agent must never be able to make an outward action (send,
+  call, pay, publish, transfer) leave that differs from the one the user approved. The contract sits at the boundary
+  of each physical injection: every tap (each tap of a double tap), every swipe of a scroll and every submit key is
+  sent right after its own fresh reading of the screen, judged on it and compared with the approved identity. A
+  change faster than the gap between that reading and the ADB injection is stated as out of reach.
+- One canonical identity of the approved action, the same however the target is aimed (tree, coordinates, OCR):
+  foreground app, what the tree elements say in document order (texts, or a keyed seal of the raw text when masked:
+  HMAC with a per-process secret, never shown), and the complete target of the gesture (resource id, bounds and
+  drawing order of the element that receives the tap, the tap point, start and end of a swipe or drag, direction and
+  count of a scroll, the field that has the focus for a key). A token for one IBAN or card no longer sends another
+  that masks the same way, two fields that swap their values or another foreground app with the same texts are
+  refused, a token for one of two Send buttons no longer taps the other, a swipe token no longer works with another
+  end point, a token for Enter no longer works once the focus moved, and two stacked buttons whose drawing order
+  changed are not the same action. Texts are bound raw (leading and trailing spaces included), selected states like
+  checked ones. The token is bound to that identity only; the readable summary (recipients,
+  content, attachments) is shown with it but is not compared, so a 2-pixel shift that moves a text from the header
+  to the body does not void it.
+- A submit key (Enter and equivalents) must be alone in its step (`enter enter`, `tab enter` are refused). After a
+  key that can move the focus (tab, arrows), the focused field and the app are read again before the next one:
+  `tab delete` no longer clears the next field when it is a password.
+- `type` only types into an editable field that has the focus, even with `confirm=true` (a focused Send button would
+  be clicked by a typed space), and every control character (line break, tab) is pasted as text, never sent as the
+  Enter or Tab key; the same holds for routines and their parameters.
+- A scroll is judged where the finger really lands (its start, a third of the screen away from the aimed point), on
+  what the finger actuates there (a button or a slider, not a text bubble it crosses); its end is judged too when the
+  start is on a slider. A scroll without `confirm` no longer starts on a "slide up to send" slider; in a banking,
+  payment or identity app, a scroll whose start is on a "slide to pay" slider is refused even with `confirm=true`.
+  With an accord, one scroll per step. Only up, down, left and right are scroll directions (in and out made a
+  motionless swipe, a disguised tap).
+- The second tap of a double tap is judged again after the first, on a quick reading of the screen that does not
+  wait for it to settle (`--quiet 0` in the phone reader, about 120 ms measured on the Fold); if that reading fails,
+  has no tree or takes more than 250 ms, the second tap is not sent and the agent is told that the first one was.
+  Without the phone's quick reader, a double tap is refused before any tap. No double tap on a send, call or pay
+  button.
+- What the UI tree does not describe is never bound to an accord: a target found only by OCR, a drawn surface of any
+  size over the target or the recipient, a drawn surface without tree text in the header, or a tree without text.
+  Such an outward action is refused, the user does it.
+- OCR codes are blacked out on `look` images and in saved screenshots, before encoding. A saved screenshot reads
+  every large drawn surface (labelled or not) seen by either of its two tree readings, judges the OCR need on each
+  reading, and is refused without `unmasked=true` when the OCR is unavailable or fails.
+- A screenshot is refused before anything is written when a banking, payment or identity app is seen by any reading
+  (foreground read again after the image even when the first tree failed; an app whose elements cover at least a
+  quarter of the screen), and `unmasked=true` never allows it.
+- Screen recording: a reading naming a protected app taints the video for good, even when it is partial; any
+  reading of the screen state by any tool (a screenshot that sees a bank included) feeds the video guard right away;
+  a reading started while recording counts even if it ends after screenrecord stopped (the evidence is dated by the
+  start of its reading), while one started before the recording or after its noted end never taints a sound video.
+  A banking app seen while measuring the display, after the first check, stops a recording from starting. A reading counts as watched only when it names the
+  foreground app, or the screen is off (`Asleep`, or Always On Display: Dozing with every display in DOZE or OFF);
+  Dreaming does not.
+- Masking: card numbers and IBANs are found by a candidate scan on the original text; every start is tried, the
+  union of all valid windows is masked (an IBAN next to a card, or two in a row, leave nothing out). An IBAN must
+  have the exact length of its country (SWIFT IBAN registry) and a valid mod-97 key; groups may be separated by one
+  or two spaces, no-break spaces, dashes, dots or a line break (CRLF included), in any case, even glued to a word
+  ("…189EUR"). Cards
+  followed by an expiry date or a CVV, after a decimal number, before a full stop, with a letter glued in front, or
+  grouped with double spaces, dots or a line break are masked.
+
+### Changed
+
+- Multi-line text is pasted through the clipboard: a line break is text, never the Enter key (which can send).
+- A swipe or drag is judged on one reading for both ends (a session timer ticking between two readings no longer
+  refuses it); positions of the elements other than the target are left out of the identity (a 4-pixel shift or the
+  keyboard opening no longer void an accord). A text that changes on screen ("typing…", a timer) still voids it, on
+  purpose: the approved screen is no longer the one shown.
+- A video or photo preview beside a send button and a recipient that the tree describes no longer blocks the accord.
+- `look` without OCR (outside Windows, or engine failure) returns the image with a clear warning that drawn codes are
+  not masked, and only runs the OCR for a large drawn surface without tree text (latency).
+- Card masking only accepts real card groupings (4-4-4-4 followed or not by 1 to 3 digits, 4-6-5, 4-6-4, 4-4-5,
+  4-3-3-3, or one block of 15 to 19 digits) and card first digits (2 to 6): calendars, lottery draws, number tables,
+  SIRET (14 digits) and EAN-13 barcodes are no longer masked; an IBAN-like start in ordinary text ("Vol AF12 …") is
+  no longer masked either.
+- Screenshots no longer refuse the home screen because of the small Samsung Wallet handle.
+- `launch`: the accord shows the resolved package, not the fragment typed by the agent.
+
+### Fixed
+
+- Screen recording: a video that ended by itself before the watch saw it gets its end time at the first collection,
+  so a collection retried after a failed pull no longer erases a sound video.
+
 ## [0.9.1] - 2026-10-20
 
 ### Security

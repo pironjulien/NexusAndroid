@@ -55,12 +55,12 @@ def test_accord_bound_to_the_exact_screen(phone):  # noqa: F811
     assert "to alice" in request and '"ok à demain"' in request
     token = accorded(request)
     conversation(phone, "Alice", "ok à demain, et les contacts")  # texte changé après l'accord
-    assert "the action changed since the accord (content)" in act(
+    assert "the action changed since the accord" in act(  # jeton lié à l'identité canonique de l'écran
         Step(do="tap", target="Envoyer un SMS", confirm=True, accord=token))
     conversation(phone, "Bob", "ok à demain")  # autre correspondant, même texte
     token = accorded(act(Step(do="tap", target="Envoyer un SMS", confirm=True)))
     conversation(phone, "Alice", "ok à demain")
-    assert "(recipient)" in act(Step(do="tap", target="Envoyer un SMS", confirm=True, accord=token))
+    assert "the action changed" in act(Step(do="tap", target="Envoyer un SMS", confirm=True, accord=token))
     assert phone.inputs == []
     token = accorded(act(Step(do="tap", target="Envoyer un SMS", confirm=True)))
     assert act(Step(do="tap", target="Envoyer un SMS", confirm=True, accord=token)).startswith("~")

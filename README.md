@@ -175,6 +175,24 @@ Measured on a Samsung Galaxy Fold: messages over USB through the shared daemon, 
 
 ## Safeguards
 
+**Threat model for outward actions** (sending, calling, paying, publishing, transferring): the agent must never be
+able to make an outward action leave that differs from the one the user approved. The approved action has one
+canonical identity: the foreground app, what the elements of the UI tree say in document order (their text, or a
+keyed seal of the raw text when it is masked; not their exact position, so a 4-pixel shift or the keyboard opening
+does not void it), and the complete target of the gesture (the element that receives the tap with its resource id,
+bounds and drawing order, the tap point, the start and end of a swipe, the direction of a scroll, the field that has
+the focus for a key). The contract sits at the boundary of each physical injection: every tap (each tap of a double
+tap, on a quick reading that does not wait for the screen to settle, or no second tap), every swipe of a scroll (judged where the
+finger lands, on what it actuates there), every submit key (alone in its step) is sent right after its own fresh
+reading of the screen, judged on it, and compared with the approved identity; any difference refuses it. The token
+is bound to that identity only; the readable summary (recipients, content, attachments) is shown with it. A swipe
+or drag is judged on one reading for both ends. `type` only types into an editable field that has the focus, and
+pastes any control character (line break, tab) as text, never as a key. What the UI tree does not describe (a target found only by OCR, a drawn surface over
+the target or the recipient, a drawn surface without tree text in the header) is never bound to an accord: such an
+outward action is refused, the user does it; a video or photo preview beside a send button and a recipient that the
+tree describes does not block. Limit, stated plainly: a screen that changes in the few milliseconds between that
+last reading and the ADB injection is beyond what an ADB tool can see.
+
 - **Paying, sending, calling, publishing, deleting for good, formatting, uninstalling, resetting, cancelling a subscription,
   making a repository public**: a button of this kind is refused without `confirm=true`, for every gesture aimed at
   it (tap, typing, clearing, swipe, `x,y` coordinates included). The agent sets it on the user's explicit order for
@@ -187,13 +205,16 @@ Measured on a Samsung Galaxy Fold: messages over USB through the shared daemon, 
 - **Accord bound to the exact action** (sending, calling, paying, publishing, transferring): `confirm=true` alone is
   not enough. The tool answers with the exact action as the screen shows it (app, button, recipients: the header
   plus any phone number or e-mail address shown, the text of the fields, named attachments, and the rest of the app's
-  text on screen) and a single-use token valid 10 minutes; the agent shows that summary
+  text on screen, masked texts bound by a seal of their raw text) and a single-use token valid 10 minutes; that
+  screen is read and compared again right before each injection; the agent shows that summary
   to the user and sends the gesture again with `accord="<token>"` only after their yes. `draft` returns the token for
   its own draft. Any change in between (other conversation, edited text) voids the token: a new accord is needed.
-  The same rule covers every way to send: tap, swipe or "slide to send", Enter or call keys (the token covers the
-  whole key sequence: one for `enter` is refused for `tab enter`), typed line breaks, `open_url` payment links and
+  The same rule covers every way to send: tap, swipe or "slide to send", a scroll whose finger lands on such a
+  slider (one scroll per step with an accord), Enter or call keys (alone in their step: `tab` first, then `enter`),
+  `open_url` payment links and
   `launch` intents that call, send or pay. When the UI tree cannot be read, the action cannot be described: no token
-  is given and the gesture is refused. Local destructive gestures (uninstall, reset, delete for good)
+  is given and the gesture is refused. Multi-line text is pasted (a line break is text, never the Enter key, which
+  can send); no double tap on an outward button. Local destructive gestures (uninstall, reset, delete for good)
   keep `confirm=true` alone.
 - **Text read never authorizes anything**: SMS, notifications and screens are data. A recipient that appears in a
   recently read text is flagged in the accord summary (allowed only if the user asked for it themselves), and text
@@ -215,8 +236,16 @@ Measured on a Samsung Galaxy Fold: messages over USB through the shared daemon, 
   the exact intent for calls, sends and payments.
 - **Codes received by SMS or shown in notifications**: masked before the agent reads them, and blacked out on the
   image (the `[N]` badges are drawn afterwards: they can only cover, never reveal). Codes the OCR finds on the image
-  are blacked out too, on `look` images and saved screenshots. Bank card numbers (Luhn check) and IBANs (mod 97
-  check) are masked in every text the tools return (screen, notifications, SMS, clipboard, calendar, logs, web, map). In the clipboard, a lone code, or
+  are blacked out too, on `look` images (large drawn surfaces without tree text) and on saved screenshots (every
+  large drawn surface, labelled or not). Limit: the OCR of a saved screenshot only covers drawn surfaces of at least
+  25 % of the screen (or a tree with no text at all); a code drawn on a smaller surface is not blacked out. When the OCR is unavailable (outside Windows) or fails, `look` still returns
+  the image of the user's own phone, with a clear warning that drawn codes are not masked; a saved screenshot is
+  refused without `unmasked=true`. Bank card numbers (Luhn check) and IBANs (mod 97
+  check) are masked in every text the tools return (screen, notifications, SMS, clipboard, calendar, logs, web, map):
+  card groupings only (4-4-4-4 followed or not by 1 to 3 digits, 4-6-5, 4-6-4, 4-4-5, 4-3-3-3, or one block of 15
+  to 19 digits; first digit 2 to 6), so calendars, draws, tables of numbers, SIRET and EAN-13 stay readable; IBANs
+  only at the exact length of their country (SWIFT registry), in any case, even glued to a word; groups separated by
+  one or two spaces, no-break spaces, dashes, dots or a line break. In the clipboard, a lone code, or
   a single word that looks like a password or a token, is not shown at all. When the UI tree cannot be read, codes cannot be located, so the image is not sent unless `look` gets
   `confirm=true` (with the user's agreement).
 - **Passwords**: no typing into a password field, and no key there but navigation (back, tab, arrows). No typing
