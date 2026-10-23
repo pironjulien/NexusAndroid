@@ -7,6 +7,7 @@ compte rendu dit que les codes affichés pendant l'enregistrement y restent visi
 from __future__ import annotations
 
 import io
+import itertools
 import os
 import re
 import shlex
@@ -243,6 +244,7 @@ class Discarded(PhoneError):
 
 _CURRENT: Recording | None = None  # un enregistrement à la fois par serveur, et un seul screenrecord sur le téléphone
 _GUARD = threading.Lock()
+_TRIES = itertools.count(1)  # numéro de chaque lancement de screenrecord : un fichier distinct par essai
 _DROPPED = ""  # raison du rejet de l'enregistrement en cours, jeté par la surveillance (dite au prochain stop)
 
 
@@ -546,7 +548,8 @@ def begin(adb: Adb, seconds: int | None, name: str | None, dest: str | None,
     def launch(sized: bool) -> tuple[Recording, str]:
         """Un essai : son propre fichier (un essai abandonné ne peut pas effacer celui du suivant) et son propre temps
         non surveillé, compté depuis son lancement (tout ce qui le suit peut être filmé, rien de ce qui le précède)."""
-        remote = f"{REMOTE_DIR}/{PREFIX}{os.getpid()}-{time.time_ns()}.mp4"
+        # Compteur, pas l'horloge : time_ns() ne bouge que toutes les ~16 ms sous Windows (deux essais, même nom).
+        remote = f"{REMOTE_DIR}/{PREFIX}{os.getpid()}-{int(time.time())}-{next(_TRIES)}.mp4"
 
         def make(proc: subprocess.Popen[bytes], started: float) -> Recording:
             return Recording(adb, proc, "", remote, folder, file, confirm, limit, size if sized else "", started,
