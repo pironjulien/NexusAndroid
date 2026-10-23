@@ -6,9 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-10-23
+
+### Fixed
+
+- `test.ps1` now forces uv offline and forbids automatic Python downloads. Missing interpreters or cached locked
+  dependencies fail with preparation instructions. Pyright uses its bundled JavaScript and an already installed
+  Node.js, avoiding its Python wrapper's update checks and automatic Node installation. CI prepares the cache
+  separately before the offline check; the Python matrix and real-phone option are preserved.
+
+- Screen recording: the end of `screenrecord` is now watched every 50 ms (a free local check) instead of only at the
+  next foreground reading (every second). A banking app read by a tool just after a recording ended on its own no
+  longer discards the sound video; the remaining uncertainty, under 50 ms, still discards it to be safe (Codex
+  review, round 4). The end is watched in its own thread, so a slow foreground reading (up to 5 s of ADB) no longer
+  delays it, and a reading that started during the recording but returns after its end no longer counts the wait
+  after the end as unwatched time (a sound video was discarded) (Codex review of 0.9.4).
+
 ### Changed
 
 - Development dependencies: pyright 1.1.407 to 1.1.414; build backend accepts uv_build up to 0.13.x.
+- Pillow 12.3 to 13.0 (minimum raised to 13.0.0); ruff 0.17.0 to 0.17.2. Checked under Python 3.12 and 3.14 and on
+  the real phone (screenshot, reading, prepared reply with accents, no sending).
 
 ## [0.9.3] - 2026-10-20
 
@@ -806,7 +824,13 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.4
+[0.9.3]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.3
+[0.9.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.2
+[0.9.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.1
+[0.9.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.0
+[0.8.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.8.0
 [0.7.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.7.2
 [0.7.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.7.1
 [0.7.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.7.0

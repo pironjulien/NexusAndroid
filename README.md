@@ -410,9 +410,27 @@ for private reports.
 
 ## Development
 
+Install Node.js first. With Python and the locked packages already available locally, run:
+
 ```powershell
 pwsh -NoProfile -File test.ps1   # ruff, pyright and the unit tests, offline, no phone needed
 ```
+
+The check never downloads Python, packages or Pyright: `uv` is forced offline, automatic Python downloads are
+disabled, and Pyright runs from its bundled JavaScript using the installed Node.js. Missing Python or an incomplete
+dependency cache causes a clear failure. Each checkout keeps its test environment outside the source tree.
+
+On a new machine or after a lockfile change, prepare the cache separately while online (the CI does this before its
+offline check):
+
+```powershell
+$env:UV_PROJECT_ENVIRONMENT = Join-Path $env:TEMP 'nexus-android-prepare'
+uv sync --frozen --python 3.14  # explicitly online preparation, including development and build dependencies
+pwsh -NoProfile -File test.ps1 -Python 3.14
+```
+
+`-Python 3.12`, `3.13` or `3.14` selects an already installed interpreter and a separate test environment.
+`-Full` additionally runs the existing real-phone scenarios; the phone must be reachable and unlocked.
 
 ## License
 

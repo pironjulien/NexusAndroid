@@ -7,6 +7,8 @@ import asyncio
 import io
 import struct
 import subprocess
+import threading
+import time
 
 import pytest
 from PIL import Image as PILImage
@@ -185,6 +187,87 @@ def test_finished_recording_collected_before_the_next_one(rec, home):  # noqa: F
     assert ("kill", "-INT", "4242") not in rec.calls
     capture.stop(rec)  # type: ignore[arg-type]
     assert [p.name for p in inbox(home)] == ["first.mp4", "second.mp4"]
+
+
+def test_bank_read_just_after_a_natural_end_keeps_the_video(rec, home, monkeypatch):  # noqa: F811
+    """Relecture Codex (tour 4, A11) : screenrecord fini seul, puis un outil lit une banque au premier plan avant la
+    prochaine lecture du premier plan (WATCH_EVERY) ; la fin, guettée toutes les END_POLL s, est déjà datée et la
+    vidéo saine est gardée."""
+    monkeypatch.setattr(capture, "END_POLL", 0.005)
+    capture.start(rec, 5, "fin", None, False)  # type: ignore[arg-type]
+    current = capture._CURRENT
+    assert current is not None and current.ender is not None
+    rec.procs[0].code = 0  # limite atteinte : screenrecord s'est arrêté seul
+    current.ender.join(timeout=2)
+    assert current.ended is not None and not current.ender.is_alive()
+    capture._seen(BANK, screen.stamp())  # lecture d'un outil commencée après la fin
+    assert current.tainted == ""
+    capture.stop(rec)  # type: ignore[arg-type]
+    assert [p.name for p in inbox(home)] == ["fin.mp4"]
+
+
+def test_natural_end_dated_while_a_foreground_reading_is_stuck(rec, home, monkeypatch):  # noqa: F811
+    """Relecture Codex (0.9.4) : la fin naturelle survient pendant une lecture ADB lente du premier plan (_observe,
+    jusqu'à STATE_WAIT s) ; elle est datée quand même, et une banque lue par un outil juste après ne jette pas la vidéo
+    saine."""
+    monkeypatch.setattr(capture, "END_POLL", 0.005)
+    monkeypatch.setattr(capture, "WATCH_EVERY", 0.01)
+    entered, release = threading.Event(), threading.Event()
+    shell = rec.shell
+
+    def slow(*argv, **kwargs):
+        if (capture.STATE_SH in argv and not release.is_set()
+                and threading.current_thread().name == "nexus-android-video-watch"):
+            entered.set()
+            release.wait(5)
+        return shell(*argv, **kwargs)
+
+    monkeypatch.setattr(rec, "shell", slow)
+    capture.start(rec, 5, "lente", None, False)  # type: ignore[arg-type]
+    current = capture._CURRENT
+    assert current is not None and entered.wait(2)  # la surveillance est bloquée dans sa lecture ADB
+    rec.procs[0].code = 0  # limite atteinte pendant cette lecture
+    deadline = time.monotonic() + 2
+    while current.ended is None and time.monotonic() < deadline:
+        threading.Event().wait(0.005)
+    assert current.ended is not None
+    capture._seen(BANK, screen.stamp())  # lecture d'un outil commencée après la fin
+    release.set()
+    assert current.tainted == ""
+    capture.stop(rec)  # type: ignore[arg-type]
+    assert [p.name for p in inbox(home)] == ["lente.mp4"]
+
+
+def test_slow_reading_returning_after_the_end_is_not_unwatched_time(rec, home, monkeypatch):  # noqa: F811
+    """Relecture Codex (0.9.4, second tour) : une lecture du premier plan commencée pendant la vidéo revient longtemps
+    après sa fin ; l'attente d'après la fin ne compte pas comme un trou de surveillance (vidéo saine gardée)."""
+    monkeypatch.setattr(capture, "END_POLL", 0.005)
+    monkeypatch.setattr(capture, "WATCH_EVERY", 0.01)
+    monkeypatch.setattr(capture, "WATCH_GAP", 0.3)
+    entered, release = threading.Event(), threading.Event()
+    shell = rec.shell
+
+    def slow(*argv, **kwargs):
+        if (capture.STATE_SH in argv and not release.is_set()
+                and threading.current_thread().name == "nexus-android-video-watch"):
+            entered.set()
+            release.wait(5)
+        return shell(*argv, **kwargs)
+
+    monkeypatch.setattr(rec, "shell", slow)
+    capture.start(rec, 5, "tardive", None, False)  # type: ignore[arg-type]
+    current = capture._CURRENT
+    assert current is not None and current.watcher is not None and entered.wait(2)
+    rec.procs[0].code = 0  # fin pendant la lecture
+    deadline = time.monotonic() + 2
+    while current.ended is None and time.monotonic() < deadline:
+        threading.Event().wait(0.005)
+    assert current.ended is not None
+    threading.Event().wait(0.6)  # la lecture revient bien après la fin (plus que WATCH_GAP)
+    release.set()
+    current.watcher.join(timeout=2)
+    assert current.unseen() < capture.WATCH_GAP
+    assert "Screen recording saved on the PC" in capture.stop(rec)  # type: ignore[arg-type]
 
 
 def test_no_recording_in_a_protected_app(rec):

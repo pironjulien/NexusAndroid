@@ -199,6 +199,7 @@ def screenshot(adb: Adb, name: str | None, dest: str | None, confirm: bool, unma
 
 
 WATCH_EVERY = 1.0  # s entre deux lectures du premier plan pendant un enregistrement
+END_POLL = 0.05  # s entre deux regards sur la fin de screenrecord (processus adb local)
 WATCH_GAP = 5.0  # s sans lecture réussie du premier plan : surveillance tenue pour interrompue, vidéo jetée
 
 
@@ -222,6 +223,7 @@ class Recording:
     ended: float | None = None  # fin de screenrecord constatée par la surveillance
     stop_watch: threading.Event = field(default_factory=threading.Event)
     watcher: threading.Thread | None = None
+    ender: threading.Thread | None = None  # fil de la fin (_watch_end)
 
     def running(self) -> bool:
         return self.proc.poll() is None
@@ -294,6 +296,8 @@ def _observe(rec: Recording) -> None:
         # Display : Dozing ET tous les affichages en DOZE ou OFF) ; Dreaming (écran de veille) affiche encore une appli.
         return
     now = screen_mod.stamp()
+    if rec.ended is not None:  # lecture revenue après la fin : l'attente d'après la fin n'est pas du temps filmé
+        now = min(now, rec.ended)
     rec.blind = max(rec.blind, now - rec.last_seen)
     rec.last_seen = now
 
@@ -314,11 +318,22 @@ def _dozing_off(rec: Recording, out: str) -> bool:
     return bool(states) and all(s in ("DOZE", "DOZE_SUSPEND", "OFF") for s in states)
 
 
-def _watch(rec: Recording) -> None:
-    """Fil de surveillance : le premier plan relu toutes les WATCH_EVERY s tant que screenrecord tourne."""
-    while not rec.stop_watch.wait(WATCH_EVERY):
+def _watch_end(rec: Recording) -> None:
+    """Fil de la fin : screenrecord guetté toutes les END_POLL s (lecture locale, gratuite), dans son propre fil pour
+    qu'une lecture ADB lente du premier plan (_observe, jusqu'à STATE_WAIT s) ne retarde pas la date de fin ; une
+    lecture faite après une fin naturelle ne jette donc pas une vidéo saine (l'incertitude restante, sous END_POLL,
+    marque la vidéo par prudence)."""
+    while not rec.stop_watch.wait(END_POLL):
         if not rec.running():  # fin constatée : plus rien n'est filmé, aucune lecture ne peut marquer la vidéo
             rec.ended = screen_mod.stamp()
+            return
+
+
+def _watch(rec: Recording) -> None:
+    """Fil de surveillance : le premier plan relu toutes les WATCH_EVERY s tant que screenrecord tourne (fin guettée
+    à part, _watch_end)."""
+    while not rec.stop_watch.wait(WATCH_EVERY):
+        if rec.ended is not None or not rec.running():
             return
         _observe(rec)
         if rec.tainted:
@@ -504,8 +519,10 @@ def begin(adb: Adb, seconds: int | None, name: str | None, dest: str | None,
     now = screen_mod.stamp()
     rec = Recording(adb, proc, pid, remote, folder, file, confirm, limit, size, now, last_seen=now)
     rec.watcher = threading.Thread(target=_watch, args=(rec,), name="nexus-android-video-watch", daemon=True)
+    rec.ender = threading.Thread(target=_watch_end, args=(rec,), name="nexus-android-video-end", daemon=True)
     with _GUARD:
         _CURRENT = rec
+    rec.ender.start()
     rec.watcher.start()
     if not state.awake:
         notes.append("Screen off: the video stays black until it is turned on.")
@@ -554,6 +571,8 @@ def _vet(rec: Recording) -> None:
     rec.stop_watch.set()
     if rec.watcher is not None and rec.watcher is not threading.current_thread():
         rec.watcher.join(timeout=STATE_WAIT + WATCH_EVERY)
+    if rec.ender is not None and rec.ender is not threading.current_thread():
+        rec.ender.join(timeout=WATCH_EVERY)
     if rec.tainted:
         raise Discarded(_discarded(f"{rec.tainted} (banking, payment or identity app) came to the foreground while "
                                    "recording"))

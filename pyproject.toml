@@ -1,6 +1,6 @@
 [project]
 name = "nexus-android"
-version = "0.9.3"
+version = "0.9.4"
 description = "Android computer use for AI agents over ADB: one MCP server shared by Claude Code, Codex and Antigravity"
 authors = [{ name = "Julien Piron" }]
 license = "MIT"
@@ -21,7 +21,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=2.3.0",
-    "pillow>=12.3.0",
+    "pillow>=13.0.0",
 ]
 
 [project.urls]
@@ -41,7 +41,7 @@ build-backend = "uv_build"
 dev = [
     "pyright==1.1.414",
     "pytest>=9.1.1",
-    "ruff>=0.17.0",
+    "ruff>=0.17.2",
 ]
 
 [tool.ruff]

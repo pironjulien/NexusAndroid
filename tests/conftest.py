@@ -55,5 +55,6 @@ def no_ocr(monkeypatch):
 @pytest.fixture(autouse=True)
 def quiet_video_watch(monkeypatch):
     """Surveillance du premier plan pendant une vidéo : au repos dans les tests (déterministes) ; un test de la
-    surveillance raccourcit WATCH_EVERY."""
+    surveillance raccourcit WATCH_EVERY (et END_POLL pour la fin de screenrecord)."""
     monkeypatch.setattr(capture, "WATCH_EVERY", 3600.0)
+    monkeypatch.setattr(capture, "END_POLL", 3600.0)

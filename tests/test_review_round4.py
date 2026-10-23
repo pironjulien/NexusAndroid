@@ -173,6 +173,7 @@ def test_partial_reading_naming_a_bank_still_taints_the_video(rec, home):  # noq
 
 def test_observation_after_the_end_does_not_taint_a_sound_video(rec, home, monkeypatch):  # noqa: F811
     monkeypatch.setattr(capture, "WATCH_EVERY", 0.01)
+    monkeypatch.setattr(capture, "END_POLL", 0.005)  # fin guettée par son propre fil
     capture.start(rec, 1, "bug", None, False)  # type: ignore[arg-type]
     recording = capture._CURRENT
     assert recording is not None

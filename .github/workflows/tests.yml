@@ -21,6 +21,12 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+      - name: Prepare Python and the locked dependency cache (network allowed)
+        shell: pwsh
+        run: |
+          $env:UV_PROJECT_ENVIRONMENT = Join-Path $env:RUNNER_TEMP 'nexus-android-prepare'
+          uv sync --frozen --python ${{ matrix.python }}
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: test.ps1 (ruff, pyright, unit tests; no phone needed)
         shell: pwsh
         run: ./test.ps1 -Python ${{ matrix.python }}
