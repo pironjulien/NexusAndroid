@@ -253,7 +253,14 @@ def _discarded(why: str) -> str:
 def _erase(rec: Recording) -> None:
     """screenrecord tué (aucune image de plus) et fichier effacé du téléphone ; rien n'est rapatrié."""
     rec.stop_watch.set()
-    rec.adb.shell("kill", "-KILL", rec.pid, check=False)
+    if rec.pid.isdigit():
+        rec.adb.shell("kill", "-KILL", rec.pid, check=False)
+    else:  # pid pas encore lu (démarrage) : screenrecord retrouvé par son fichier, unique (pas pkill -f, qui tuerait
+        # aussi le shell dont la commande contient ce chemin)
+        for line in rec.adb.shell("ps", "-A", "-o", "PID,ARGS", check=False).splitlines():
+            pid, _, args = line.strip().partition(" ")
+            if pid.isdigit() and args.lstrip().startswith("screenrecord ") and rec.remote in args.split():
+                rec.adb.shell("kill", "-KILL", pid, check=False)
     if rec.running():
         rec.proc.kill()
     rec.adb.shell("rm", "-f", rec.remote, check=False)
@@ -426,19 +433,46 @@ def _output(proc: subprocess.Popen[bytes]) -> str:
     return (out or b"").decode("utf-8", "replace").strip()
 
 
-def _spawn(adb: Adb, argv: list[str]) -> tuple[subprocess.Popen[bytes], str, str]:
-    """screenrecord lancé sur le téléphone, la commande adb gardée ouverte ; (processus, pid sur le téléphone, erreur :
-    "" s'il tourne encore après START_CHECK s)."""
+def _spawn(adb: Adb, argv: list[str], make: Callable[[subprocess.Popen[bytes], float], Recording]) -> tuple[
+        Recording, str]:
+    """screenrecord lancé sur le téléphone, la commande adb gardée ouverte ; (enregistrement, erreur : "" s'il tourne
+    encore après START_CHECK s). Tout ce qui suit le lancement peut être filmé : la surveillance (_CURRENT, fils de
+    surveillance et de fin) part dès la commande envoyée, avant le pid et START_CHECK, et le temps non surveillé se
+    compte depuis le dernier premier plan lu avant le lancement (une banque passée pendant le démarrage est vue)."""
+    global _CURRENT
+    started = screen_mod.stamp()
     proc = adb.background("echo $$; exec " + " ".join(shlex.quote(a) for a in argv) + " 2>&1")
-    pid = _first_line(proc)
+    rec = make(proc, started)
+    rec.watcher = threading.Thread(target=_watch, args=(rec,), name="nexus-android-video-watch", daemon=True)
+    rec.ender = threading.Thread(target=_watch_end, args=(rec,), name="nexus-android-video-end", daemon=True)
+    with _GUARD:
+        _CURRENT = rec
+    rec.ender.start()
+    rec.watcher.start()
+    rec.pid = _first_line(proc)
     deadline = time.monotonic() + START_CHECK
     while time.monotonic() < deadline and proc.poll() is None:
         time.sleep(0.1)
-    if proc.poll() is not None or not pid.isdigit():
-        if proc.poll() is None:
-            proc.kill()
-        return proc, pid, _output(proc)[:300] or "screenrecord stopped at once"
-    return proc, pid, ""
+    if proc.poll() is not None or not rec.pid.isdigit():
+        _abandon(rec)
+        return rec, _output(proc)[:300] or "screenrecord stopped at once"
+    return rec, ""
+
+
+def _abandon(rec: Recording) -> None:
+    """Lancement raté : surveillance arrêtée, screenrecord tué (le pid peut manquer) et fichier effacé du téléphone ; la
+    lecture en cours du fil de surveillance est soldée (sa marque éventuelle comptée par l'appelant)."""
+    global _CURRENT
+    with _GUARD:
+        if _CURRENT is rec:
+            _CURRENT = None
+    try:
+        _erase(rec)
+    except PhoneError:
+        pass
+    for thread in (rec.watcher, rec.ender):
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=STATE_WAIT + WATCH_EVERY)
 
 
 def start(adb: Adb, seconds: int | None, name: str | None, dest: str | None, confirm: bool) -> str:
@@ -500,7 +534,6 @@ def begin(adb: Adb, seconds: int | None, name: str | None, dest: str | None,
                          "app): nothing was started")
     # Restes d'un serveur arrêté net (plus d'une heure : jamais le fichier fini d'un autre agent, pas encore rapatrié).
     adb.shell("find", REMOTE_DIR, "-maxdepth", "1", "-name", f"{PREFIX}*.mp4", "-mmin", "+60", "-delete", check=False)
-    remote = f"{REMOTE_DIR}/{PREFIX}{os.getpid()}-{int(time.time())}.mp4"
     size = video_size(*_display(adb, screen))
     if screen.last_state and (protected := policy.protected_app(screen.last_state.package)):
         # Premier plan relu par la mesure de l'affichage : une banque passée devant entre-temps, rien n'est lancé.
@@ -508,22 +541,34 @@ def begin(adb: Adb, seconds: int | None, name: str | None, dest: str | None,
                          "(security codes cannot be masked in a video). The user records it themselves if needed.")
     display = screen._display_id()  # Fold : écran intérieur ou extérieur, comme les captures
     base = ["screenrecord", "--time-limit", str(limit), "--bit-rate", str(BIT_RATE)]
-    tail = (["--display-id", display] if display else []) + [remote]
-    proc, pid, error = _spawn(adb, base + (["--size", size] if size else []) + tail)
-    if error and size:  # taille refusée par l'encodeur de ce téléphone : résolution de l'écran
-        proc, pid, error = _spawn(adb, base + tail)
-        size = ""
+    tail = ["--display-id", display] if display else []
+
+    def launch(sized: bool) -> tuple[Recording, str]:
+        """Un essai : son propre fichier (un essai abandonné ne peut pas effacer celui du suivant) et son propre temps
+        non surveillé, compté depuis son lancement (tout ce qui le suit peut être filmé, rien de ce qui le précède)."""
+        remote = f"{REMOTE_DIR}/{PREFIX}{os.getpid()}-{time.time_ns()}.mp4"
+
+        def make(proc: subprocess.Popen[bytes], started: float) -> Recording:
+            return Recording(adb, proc, "", remote, folder, file, confirm, limit, size if sized else "", started,
+                             last_seen=started)
+
+        return _spawn(adb, base + (["--size", size] if sized else []) + tail + [remote], make)
+
+    tries = [launch(bool(size))]
+    if tries[0][1] and size and not tries[0][0].tainted:  # taille refusée par l'encodeur : résolution de l'écran
+        tries.append(launch(False))
+    rec, error = tries[-1]
+    if tainted := next((r.tainted for r, _ in tries if r.tainted), ""):
+        # Banque passée devant pendant un démarrage (même celui d'un essai abandonné, vue par sa dernière lecture) :
+        # rien n'est gardé, dit ici et pas au prochain stop.
+        if not error:
+            _abandon(rec)
+        with _GUARD:
+            _DROPPED = ""
+        raise PhoneError(_discarded(f"{tainted} (banking, payment or identity app) came to the foreground while the "
+                                    "recording was starting"))
     if error:
-        adb.shell("rm", "-f", remote, check=False)
         raise PhoneError(f"screen recording not started: {error}")
-    now = screen_mod.stamp()
-    rec = Recording(adb, proc, pid, remote, folder, file, confirm, limit, size, now, last_seen=now)
-    rec.watcher = threading.Thread(target=_watch, args=(rec,), name="nexus-android-video-watch", daemon=True)
-    rec.ender = threading.Thread(target=_watch_end, args=(rec,), name="nexus-android-video-end", daemon=True)
-    with _GUARD:
-        _CURRENT = rec
-    rec.ender.start()
-    rec.watcher.start()
     if not state.awake:
         notes.append("Screen off: the video stays black until it is turned on.")
     return rec, notes

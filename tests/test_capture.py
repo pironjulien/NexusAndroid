@@ -86,6 +86,14 @@ class RecPhone(FakePhone):
         if argv[:2] == ("wm", "size"):
             self.calls.append(argv)
             return 0, "Physical size: 1248x1972\n", ""
+        if argv[0] == "ps":  # screenrecord lancé (commande exec) et le shell d'un autre outil qui cite son fichier
+            self.calls.append(argv)
+            rows = [f"  {4242 + i} {c.split('exec ', 1)[1].removesuffix(' 2>&1')}" for i, c in enumerate(self.spawned)
+                    if self.procs[i].code is None]
+            return 0, "  PID ARGS\n  77 sh -c ls " + " ".join(rows) + "\n" + "\n".join(rows) + "\n", ""
+        if argv[:2] == ("kill", "-KILL"):
+            self.calls.append(argv)
+            return 0, "", ""
         if argv[:2] == ("kill", "-INT"):
             self.calls.append(argv)
             for proc in self.procs:
@@ -268,6 +276,101 @@ def test_slow_reading_returning_after_the_end_is_not_unwatched_time(rec, home, m
     current.watcher.join(timeout=2)
     assert current.unseen() < capture.WATCH_GAP
     assert "Screen recording saved on the PC" in capture.stop(rec)  # type: ignore[arg-type]
+
+
+def test_bank_shown_briefly_while_the_recording_starts_discards_it(rec, home, monkeypatch):  # noqa: F811
+    """Relecture Codex (0.9.4, hors diff) : une banque passée devant pendant le démarrage de screenrecord (avant le pid
+    et START_CHECK) était filmée sans être vue ; la surveillance part maintenant dès le lancement."""
+    monkeypatch.setattr(capture, "END_POLL", 0.005)
+    monkeypatch.setattr(capture, "WATCH_EVERY", 0.01)
+    background, home_app = rec.background, rec.package
+
+    class SlowStart(FakeProc):
+        def __init__(self, proc: FakeProc) -> None:
+            self.__dict__.update(proc.__dict__)
+            self.pid_line = proc.stdout
+
+        @property
+        def stdout(self):  # pid écrit seulement une fois la banque partie
+            deadline = time.monotonic() + 2
+            while rec.package == BANK and not rec.removed and time.monotonic() < deadline:
+                threading.Event().wait(0.005)  # jusqu'à ce que la surveillance voie la banque et efface la vidéo
+            rec.package = home_app
+            return self.pid_line
+
+        @stdout.setter
+        def stdout(self, value) -> None:
+            pass
+
+    def launch(command: str) -> FakeProc:
+        proc = SlowStart(background(command))
+        rec.procs[-1] = proc
+        rec.package = BANK  # banque ouverte juste après le lancement
+        return proc
+
+    monkeypatch.setattr(rec, "background", launch)
+    with pytest.raises(PhoneError, match="while the recording was starting"):
+        capture.start(rec, 10, "debut", None, False)  # type: ignore[arg-type]
+    assert capture._CURRENT is None and inbox(home) == []
+    assert rec.removed  # fichier effacé du téléphone
+    killed = [c for c in rec.calls if c[:2] == ("kill", "-KILL")]
+    assert set(killed) == {("kill", "-KILL", "4242")}  # pid pas encore lu : screenrecord retrouvé par son fichier, seul
+    with pytest.raises(PhoneError, match="no recording started"):
+        capture.stop(rec)  # type: ignore[arg-type]
+
+
+def test_late_bank_reading_of_a_failed_try_is_settled_before_the_fallback(rec, home, monkeypatch):  # noqa: F811
+    """Relecture Codex (0.9.5) : la lecture du premier essai (taille refusée) revient avec une banque après l'échec ;
+    elle est soldée avant le repli, et le démarrage est refusé au lieu d'effacer plus tard le fichier du second essai."""
+    monkeypatch.setattr(capture, "END_POLL", 0.005)
+    monkeypatch.setattr(capture, "WATCH_EVERY", 0.01)
+    entered = threading.Event()
+    shell, background = rec.shell, rec.background
+
+    def slow(*argv, **kwargs):
+        if capture.STATE_SH in argv and threading.current_thread().name == "nexus-android-video-watch":
+            if not entered.is_set():
+                entered.set()
+                threading.Event().wait(0.3)  # lecture lente : la banque arrive pendant ce temps
+                rec.package = BANK
+        return shell(*argv, **kwargs)
+
+    class FailsOnceRead(FakeProc):
+        @property
+        def stdout(self):
+            entered.wait(2)  # le premier essai meurt pendant la lecture de sa surveillance
+            self.code = 1
+            return io.BytesIO(b"4242\nEncoder failed")
+
+        @stdout.setter
+        def stdout(self, value) -> None:
+            pass
+
+    def launch(command: str) -> FakeProc:
+        if rec.procs:
+            return background(command)
+        rec.spawned.append(command)
+        proc = FailsOnceRead()
+        rec.procs.append(proc)
+        return proc
+
+    monkeypatch.setattr(rec, "shell", slow)
+    monkeypatch.setattr(rec, "background", launch)
+    with pytest.raises(PhoneError, match="while the recording was starting"):
+        capture.start(rec, 10, "repli", None, False)  # type: ignore[arg-type]
+    assert len(rec.spawned) == 1 and capture._CURRENT is None and inbox(home) == []
+
+
+def test_fallback_try_has_its_own_file_and_unwatched_time(rec):
+    """Relecture Codex (0.9.5) : chaque essai a son fichier, et son temps non surveillé part de son propre lancement."""
+    rec.reject_size = True
+    capture.start(rec, 10, None, None, False)  # type: ignore[arg-type]
+    first, second = (c.split()[-2] for c in rec.spawned)  # « … <fichier> 2>&1 »
+    assert first != second
+    current = capture._CURRENT
+    assert current is not None and current.remote == second
+    assert current.last_seen == current.started and current.blind == 0.0
+    assert ("rm", "-f", first) in rec.removed and ("rm", "-f", second) not in rec.removed
 
 
 def test_no_recording_in_a_protected_app(rec):

@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-10-24
+
+### Security
+
+- Screen recording: the foreground watch now starts the moment `screenrecord` is launched, before its pid is read
+  and its start check (up to about 11 s). A banking, payment or identity app shown briefly while the recording was
+  starting was filmed without being seen, and that time was counted as watched; it now discards the video (start
+  refused, file erased from the phone), and unwatched time is counted from the launch. A recording whose pid is not
+  read yet is stopped by finding its own `screenrecord` process (never `pkill -f`, which also matches the shell
+  citing the file). When the encoder refuses the 720p size, the retry gets its own file and its own unwatched time,
+  and the failed try's pending reading is settled first: a late bank reading refuses the start instead of erasing
+  the retry's file. Codex reviews of 0.9.4 and 0.9.5.
+
 ## [0.9.4] - 2026-10-23
 
 ### Fixed
@@ -824,7 +837,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.5...HEAD
+[0.9.5]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.5
 [0.9.4]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.4
 [0.9.3]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.3
 [0.9.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.2
