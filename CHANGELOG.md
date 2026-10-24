@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.11] - 2026-10-24
+
+### Fixed
+
+- Changelog of 0.9.9: the text-first benchmark is 12 out of 12 in each mode (24 trials in total), and the token
+  saving is measured in uncached tokens for Codex (13,050 instead of 32,314), as in the shared benchmark record.
+
 ## [0.9.10] - 2026-10-24
 
 ### Changed
@@ -906,7 +913,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.10...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.11...HEAD
+[0.9.11]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.11
 [0.9.10]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.10
 [0.9.9]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.9
 [0.9.8]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.8
