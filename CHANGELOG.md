@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.9] - 2026-10-24
+
+### Changed
+
+- Text first by default (shared Nexus image rule, section 2): `look`, `act` and `launch` return the element list
+  alone; the image is joined when a step is not read back (`~`, `✗`, `?`), when the screen has no readable element
+  (canvas, game, video), for a `region` zoom, or on request (`show`/`then` = `both` or `image`). Measured on a real
+  Galaxy Z Fold before switching: 4 read-only tasks, each with and without the image, by Claude, Codex and
+  Antigravity: 24 out of 24 in both modes, with fewer tool calls (Claude: 13 instead of 18) and fewer tokens (Codex:
+  13,050 uncached tokens instead of 32,314).
+
 ## [0.9.8] - 2026-10-24
 
 ### Added
@@ -882,7 +893,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.8...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.9...HEAD
+[0.9.9]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.9
 [0.9.8]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.8
 [0.9.7]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.7
 [0.9.6]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.6

@@ -74,7 +74,7 @@ def test_launch_can_skip_the_image(phone: FakePhone, monkeypatch):  # noqa: F811
     out = server._launch(action="android.settings.WIFI_SETTINGS", then="none")
     assert shown == ["elements"] and "Opened" in out[0]  # none : la note seule, aucune lecture d'écran
     server._launch(action="android.settings.WIFI_SETTINGS")
-    assert shown[-1] == "both"  # par défaut : image et éléments, comme avant
+    assert shown[-1] == "auto"  # par défaut : texte d'abord (image jointe seulement si rien n'est lisible)
 
 
 def _el(text: str, bounds: tuple[int, int, int, int], path: tuple[tuple[int, int], ...], clickable: bool = True) -> Element:
