@@ -27,8 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   alone; the image is joined when a step is not read back (`~`, `✗`, `?`), when the screen has no readable element
   (canvas, game, video), for a `region` zoom, or on request (`show`/`then` = `both` or `image`). Measured on a real
   Galaxy Z Fold before switching: 4 read-only tasks, each with and without the image, by Claude, Codex and
-  Antigravity: 24 out of 24 in both modes, with fewer tool calls (Claude: 13 instead of 18) and fewer tokens (Codex:
-  13,050 uncached tokens instead of 32,314).
+  Antigravity: 12 out of 12 in each mode (24 trials), with fewer tool calls (Claude: 13 instead of 18) and fewer
+  uncached tokens for Codex (13,050 instead of 32,314).
 
 ## [0.9.8] - 2026-10-24
 
