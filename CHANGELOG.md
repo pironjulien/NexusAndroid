@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-10-24
+
+### Changed
+
+- Faster on the phone without dropping any safeguard: the screen is read once it has been still for 500 ms
+  (UiAutomator's own idle wait) instead of 1 s; the wait while the user touches the phone ends as soon as they let go
+  (checked every 0.25 s instead of every second); no pause after the last step of a batch (the pause before
+  re-reading the screen stays); accented text is pasted through the scrcpy server already open for gestures instead
+  of starting one for each paste (about 2 s saved, the user's clipboard is still given back). Measured on the Fold
+  (8 rounds): opening Settings 5.7 s to 1.8 s, reading the screen 1.2 s to 0.7 s, a full Settings walk-through
+  19.6 s to 13.8 s. Typing keeps its checks: the field is read before and after.
+- `launch` takes `then` like `act` (`both` by default: image and elements; `elements` or `none` when the agent does
+  not need the image).
+
+### Fixed
+
+- A named target half hidden behind another clickable drawn in front of it (Settings' floating search bar over the
+  last row) is touched where it shows, not at its center, which hit the bar; with no free part, it is refused ("scroll it
+  into view first"). A label drawn on its own button is still touched there.
+
 ## [0.9.5] - 2026-10-24
 
 ### Security
@@ -837,7 +857,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.6...HEAD
+[0.9.6]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.6
 [0.9.5]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.5
 [0.9.4]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.4
 [0.9.3]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.3

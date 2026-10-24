@@ -31,6 +31,9 @@ UI_DUMP = f"/data/local/tmp/nexus-android-ui-{os.getpid()}.xml"
 # False : toujours uiautomator dump et screencap (tests sur un téléphone simulé).
 FAST = True
 PHONE_QUALITY = 90  # JPEG fait par le téléphone, réencodé à 80 par render après le noircissement et les numéros
+# ms sans événement d'accessibilité avant de lire l'arbre : le calme qu'UiAutomator attend avant chacune de ses actions
+# (QueryController, 500 ms) ; l'attente s'allonge tant que l'écran bouge (jusqu'à 3 s, puis arbre de l'instant).
+SETTLE_QUIET_MS = 500
 
 
 @dataclass
@@ -664,8 +667,8 @@ class Screen:
         if server is None:
             return None
         since = stamp()
-        tables = server.run([["screen", "--image", image, "--max", str(MAX_SIDE), "--quality", str(PHONE_QUALITY)]
-                             + ([] if settle else ["--quiet", "0"])])
+        tables = server.run([["screen", "--image", image, "--max", str(MAX_SIDE), "--quality", str(PHONE_QUALITY),
+                              "--quiet", str(SETTLE_QUIET_MS if settle else 0)]])
         if not tables or not tables[0].raw:
             return None
         try:

@@ -157,7 +157,7 @@ def test_screenshot_still_refused_without_ocr(rec, home, monkeypatch):  # noqa: 
 
 def test_multiline_note_is_pasted(phone, monkeypatch):  # noqa: F811
     pasted = []
-    monkeypatch.setattr(server.clip, "paste", lambda adb, text: pasted.append(text) or True)
+    monkeypatch.setattr(server.clip, "paste", lambda adb, text, kept=None: pasted.append(text) or True)
     keep = "com.google.android.keep"
     phone.package = keep
     phone.uis = [ui(field("", package=keep))]

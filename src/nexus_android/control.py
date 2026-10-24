@@ -167,9 +167,9 @@ class Control:
         with self._lock:
             self._close()
 
-    def fingers(self, size: tuple[int, int]) -> Fingers | None:
-        """Doigts reliés au serveur scrcpy (démarré si besoin, minuteur d'inactivité relancé) ; None : indisponible,
-        l'appelant passe par input."""
+    def channel(self) -> clip.Channel | None:
+        """Canal du serveur scrcpy gardé ouvert (démarré si besoin, minuteur d'inactivité relancé), pour les gestes et
+        le collage ; None : indisponible (gestes par input, collage par un serveur à lui)."""
         with self._lock:
             if self._timer:
                 self._timer.cancel()
@@ -186,6 +186,17 @@ class Control:
             self._timer = threading.Timer(IDLE, self._idle)
             self._timer.daemon = True
             self._timer.start()
+            return channel
+
+    def broken(self) -> None:
+        """Canal en panne (collage interrompu) : fermé, rouvert au prochain usage."""
+        with self._lock:
+            self._close()
+
+    def fingers(self, size: tuple[int, int]) -> Fingers | None:
+        """Doigts reliés au serveur scrcpy ; None : indisponible, l'appelant passe par input."""
+        if (channel := self.channel()) is None:
+            return None
 
         def send(data: bytes) -> None:
             try:

@@ -38,7 +38,7 @@ def _chat(*extra: str) -> str:
 
 def test_tab_and_space_are_pasted_never_keys(phone, monkeypatch, tmp_path):  # noqa: F811
     pasted: list[str] = []
-    monkeypatch.setattr(server.clip, "paste", lambda adb, text: pasted.append(text) or True)
+    monkeypatch.setattr(server.clip, "paste", lambda adb, text, kept=None: pasted.append(text) or True)
     phone.package = WA
     phone.uis = [_chat()]
     act(Step(do="type", text="ok\t "))
@@ -139,7 +139,7 @@ def test_quick_snapshot_asks_the_phone_not_to_wait(monkeypatch):
     monkeypatch.setattr(s, "_server", lambda: fake)
     s.snapshot(settle=False)
     s.snapshot()
-    assert queries[0][-2:] == ["--quiet", "0"] and "--quiet" not in queries[1]
+    assert queries[0][-2:] == ["--quiet", "0"] and queries[1][-2:] == ["--quiet", str(screen_mod.SETTLE_QUIET_MS)]
     source = JAVA.read_text(encoding="utf-8")
     assert 'case "--quiet"' in source and "if (quietMs > 0)" in source  # le lecteur du téléphone le comprend
 

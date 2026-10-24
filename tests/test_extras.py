@@ -119,7 +119,7 @@ def test_own_recent_gesture_is_not_owner(phone, monkeypatch):
 
 def test_accented_text_is_pasted(phone, monkeypatch):
     pasted = []
-    monkeypatch.setattr(clip, "paste", lambda adb, text: pasted.append(text) or True)
+    monkeypatch.setattr(clip, "paste", lambda adb, text, kept=None: pasted.append(text) or True)
     phone.uis = [ui(field()), ui(field("Réponse été 🧪"))]
     out = act(Step(do="type", text="Réponse été 🧪"))
     assert pasted == ["Réponse été 🧪"] and out.startswith("✓ 1.") and "non remis" not in out
@@ -127,7 +127,7 @@ def test_accented_text_is_pasted(phone, monkeypatch):
 
 
 def test_pasted_but_clipboard_not_restored_is_not_a_failure(phone, monkeypatch):
-    monkeypatch.setattr(clip, "paste", lambda adb, text: False)
+    monkeypatch.setattr(clip, "paste", lambda adb, text, kept=None: False)
     phone.uis = [ui(field()), ui(field("été"))]
     out = act(Step(do="type", text="été"))
     assert out.startswith("✓ 1.") and "the user's clipboard was not restored" in out
@@ -205,7 +205,7 @@ def test_accents_without_scrcpy_server_fail_clearly_and_type_nothing(phone):
 
 
 def test_password_field_still_refused_for_accents(phone, monkeypatch):
-    monkeypatch.setattr(clip, "paste", lambda adb, text: pytest.fail("collé dans un mot de passe"))
+    monkeypatch.setattr(clip, "paste", lambda adb, text, kept=None: pytest.fail("collé dans un mot de passe"))
     phone.uis = [ui(field(password=True))]
     assert "password field" in act(Step(do="type", text="été"))
 

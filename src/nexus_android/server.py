@@ -599,7 +599,7 @@ def _resolve(screen: Screen, target: str | int | None, tree: Any = ...) -> Aim:
         now = _same(old, fresh) if fresh is not None else None
         if not now:
             raise PhoneError(f"the screen has changed since the last look ([{index}] is no longer there), run look again")
-        return Aim(*now.center, now, fresh)
+        return Aim(*_visible(now, fresh or []), now, fresh)
     assert isinstance(target, str)
     if point := _point(screen, target):
         _same_posture(screen)
@@ -611,15 +611,14 @@ def _resolve(screen: Screen, target: str | int | None, tree: Any = ...) -> Aim:
         found = routines_mod.find(target.strip(), fresh)
         if found is None:
             raise PhoneError(f"\"{target}\" not found on screen")
-        x, y = found.center
-        return Aim(x, y, found, fresh)
+        return Aim(*_visible(found, fresh), found, fresh)
     wanted = plain(target.strip()).casefold()
     exact = [e for e in fresh if wanted in (plain(e.text).casefold(), plain(e.desc).casefold())]
     partial = [e for e in fresh if wanted in plain(e.text).casefold() or wanted in plain(e.desc).casefold()]
     for group in (exact, partial):
         if group:
             element = sorted(group, key=lambda e: not e.clickable)[0]
-            return Aim(*element.center, element, fresh)
+            return Aim(*_visible(element, fresh), element, fresh)
     # Absent de l'arbre (jeu, application Flutter ou dessinée à la main) : cherché sur l'image, par OCR local.
     seen = _ocr_elements(screen) or []
     exact = [e for e in seen if plain(e.text).casefold() == wanted]
@@ -633,6 +632,35 @@ def _resolve(screen: Screen, target: str | int | None, tree: Any = ...) -> Aim:
     if element is not None:
         return Aim(*element.center, element, fresh + seen)
     raise PhoneError(f"\"{target}\" not found on screen" + (" (nor on the image, by OCR)" if ocr_mod.available() else ""))
+
+
+def _front_clickable(x: int, y: int, fresh: list[Element]) -> Element | None:
+    """Cliquable dessiné devant à ce point, qui reçoit le toucher (chemins de dessin connus), sinon None."""
+    inside = [e for e in fresh if e.clickable and e.bounds[0] <= x <= e.bounds[2] and e.bounds[1] <= y <= e.bounds[3]]
+    return max(inside, key=lambda e: e.path) if inside and all(e.path for e in inside) else None
+
+
+def _visible(element: Element, fresh: list[Element]) -> tuple[int, int]:
+    """Point de l'élément qui reçoit vraiment le toucher : son centre, sinon le point de sa partie visible le plus
+    proche du centre quand un autre cliquable est dessiné par-dessus (barre de recherche flottante, bouton posé sur une
+    liste). Entièrement caché : refus, l'appui irait à l'autre."""
+    x1, y1, x2, y2 = element.bounds
+    cx, cy = element.center
+    # Bords des cliquables posés dessus : la zone exposée commence juste à côté (marge de 2 px dans l'élément).
+    over = [e for e in fresh if e.clickable and e.path > element.path and not element.holds(e)
+            and e.bounds[0] < x2 and x1 < e.bounds[2] and e.bounds[1] < y2 and y1 < e.bounds[3]]
+    xs = {cx, x1 + 2, x2 - 2} | {v + d for e in over for v in (e.bounds[0], e.bounds[2]) for d in (-3, 3)}
+    ys = {cy, y1 + 2, y2 - 2} | {v + d for e in over for v in (e.bounds[1], e.bounds[3]) for d in (-3, 3)}
+    grid = [(x, y) for x in xs if x1 < x < x2 for y in ys if y1 < y < y2]
+    for x, y in [(cx, cy), *sorted(grid, key=lambda p: (p[0] - cx) ** 2 + (p[1] - cy) ** 2)]:
+        front = _front_clickable(x, y, fresh)
+        # Caché seulement par un cliquable dessiné devant lui ; un cliquable derrière (le bouton sous son libellé)
+        # reçoit l'appui comme prévu, et les garde-fous le jugent (Aim.under).
+        if front is None or front.holds(element) or element.holds(front) or front.path < element.path:
+            return x, y
+    cover = _front_clickable(cx, cy, fresh)
+    raise PhoneError(f"\"{element.label[:40]}\": no part of it free of \"{(cover.label if cover else '')[:40] or 'another element'}"
+                     "\" drawn on top, nothing was touched; scroll it into view first")
 
 
 def _contains(bounds: tuple[int, int, int, int], aim: Aim) -> bool:
@@ -768,8 +796,8 @@ def _input(adb: Adb, *argv: str) -> str:
 _CONTROL: control_mod.Control | None = None
 
 
-def _fingers(adb: Adb, screen: Screen) -> control_mod.Fingers | None:
-    """Doigts par le canal de scrcpy (quelques ms par geste, plusieurs doigts) ; None : repli sur input."""
+def _control(adb: Adb) -> control_mod.Control | None:
+    """Serveur scrcpy gardé ouvert pour ce téléphone (gestes, collage) ; None : désactivé."""
     global _CONTROL
     if not control_mod.ENABLED:
         return None
@@ -777,7 +805,28 @@ def _fingers(adb: Adb, screen: Screen) -> control_mod.Fingers | None:
         if _CONTROL is not None:
             _CONTROL.close()
         _CONTROL = control_mod.Control(adb)
-    return _CONTROL.fingers(screen.size or (1080, 2000))
+    return _CONTROL
+
+
+def _fingers(adb: Adb, screen: Screen) -> control_mod.Fingers | None:
+    """Doigts par le canal de scrcpy (quelques ms par geste, plusieurs doigts) ; None : repli sur input."""
+    control = _control(adb)
+    return control.fingers(screen.size or (1080, 2000)) if control else None
+
+
+def _paste(adb: Adb, text: str) -> bool:
+    """Collage par le serveur des gestes s'il est disponible (pas de serveur à lancer), sinon par un serveur à lui."""
+    control = _control(adb)
+    kept = control.channel() if control else None
+    restored = False
+    try:
+        restored = clip.paste(adb, text, kept)
+        return restored
+    finally:
+        if control and kept is not None and not restored:
+            # Échec, ou presse-papiers non rendu (réponse perdue en route) : flux du canal partagé douteux, fermé et
+            # rouvert neuf au prochain usage ; le collage fait n'est jamais rejoué.
+            control.broken()
 
 
 def _touch(adb: Adb, gesture: Callable[[control_mod.Fingers], None], *fallback: str) -> str:
@@ -810,7 +859,7 @@ def _type_text(adb: Adb, text: str) -> tuple[int, str]:
     # déplacent le focus ou envoient) passe par le collage, où il n'est que du texte.
     if not text.isascii() or any(ord(c) < 0x20 or c == "\x7f" for c in text):
         try:
-            restored = clip.paste(adb, text)
+            restored = _paste(adb, text)
         except LinkError:
             _sent()  # collage peut-être fait : effet inconnu, compté comme un geste
             raise
@@ -1280,7 +1329,7 @@ def _wait_for_owner(adb: Adb, state: State) -> str:
         if time.monotonic() >= deadline:
             raise PhoneError("The user is using the phone right now: nothing was done. Try again once they have "
                              "let go, or ask them.")
-        time.sleep(1.0)
+        time.sleep(min(0.25, BUSY_QUIET - idle))  # repart dès que les BUSY_QUIET s sans toucher sont atteintes
 
 
 OWNER_SLACK = 0.2  # s : activité plus récente que notre dernier geste de plus que ça = l'utilisateur
@@ -1367,7 +1416,8 @@ def _act(steps: list[Step], then: Then, remember: str | None = None, template: l
             if _SENT != before:
                 acted = True
                 _gestures_done()
-        time.sleep(0.35)
+        if i < len(steps):  # le geste se pose avant l'étape suivante ; après le dernier, la relecture attend le calme
+            time.sleep(0.35)
     if blind and acted:
         report.append(blind)
     gestures = "|".join(f"{s.do}:{s.target}:{s.to}:{s.text}:{s.direction}:{s.keys}" for s in steps if s.do != "wait")
@@ -1377,6 +1427,8 @@ def _act(steps: list[Step], then: Then, remember: str | None = None, template: l
         if acted:
             screen.fingerprint = None  # écran d'après non relu : rien à comparer au lot suivant
         return ["\n".join(report)]
+    # Laisser commencer ce que le dernier geste déclenche (écran ouvert, résultats d'une recherche tapée) : l'attente du
+    # calme part du dernier événement déjà reçu, elle n'attend pas un changement qui n'a pas encore commencé.
     time.sleep(0.4)
     out = _view(then, notes=report + [""])
     if acted and (warning := screen.loops.record(gestures, start, screen.fingerprint)):
@@ -1636,7 +1688,7 @@ _LOCAL_RISK = re.compile(r"uninstalls|resets|shuts|restarts", re.I)
 
 def _launch(app: str | None = None, action: str | None = None, data: str | None = None,
             extras: dict[str, str | int | bool] | None = None, confirm: bool = False,
-            accord: str | None = None) -> list[Any]:
+            accord: str | None = None, then: Then = "both") -> list[Any]:
     extras = extras or {}
     app = (app or "").strip()
     if not (app or action or data):
@@ -1655,7 +1707,7 @@ def _launch(app: str | None = None, action: str | None = None, data: str | None 
         if refusal := policy.ACCORDS.check(intent, True, accord):
             raise PhoneError(refusal)
     if action or data:
-        return _open_intent(adb, screen, package, intent_args(action, data, extras))
+        return _open_intent(adb, screen, package, intent_args(action, data, extras), then)
     state = screen.state()
     _wait_for_owner(adb, state)
     _keep_awake(adb, state)
@@ -1674,10 +1726,10 @@ def _launch(app: str | None = None, action: str | None = None, data: str | None 
     front = _foreground(screen, package, LAUNCH_WAIT)
     note = (f"Launched: {package} (in the foreground, read back)" if front == package else
             f"Launch sent: {package}, but the foreground is {front or '?'} (not verified)")
-    return _view("both", notes=[note])
+    return [note] if then == "none" else _view(then, notes=[note])
 
 
-def _open_intent(adb: Adb, screen: Screen, package: str, intent: list[str]) -> list[Any]:
+def _open_intent(adb: Adb, screen: Screen, package: str, intent: list[str], then: Then = "both") -> list[Any]:
     """Écran précis : cible résolue d'abord (jamais une application protégée, même parmi les candidates d'un choix),
     ouverte par son nom exact, puis premier plan relu."""
     if package:
@@ -1714,21 +1766,22 @@ def _open_intent(adb: Adb, screen: Screen, package: str, intent: list[str]) -> l
     else:
         what = target or f"the Android chooser ({', '.join(packages[:6])})"
         note = f"Intent sent to {what}; foreground now: {front or '?'} (not verified)"
-    return _view("both", notes=[note])
+    return [note] if then == "none" else _view(then, notes=[note])
 
 
 @mcp.tool(meta=ALWAYS, annotations=_hints("Launch an app or open a screen"), structured_output=False)
 async def launch(app: str | None = None, action: str | None = None, data: str | None = None,
                  extras: dict[str, str | int | bool] | None = None, confirm: bool = False,
-                 accord: str | None = None) -> list[Any]:
+                 accord: str | None = None, then: Then = "both") -> list[Any]:
     """Open an app by package name (com.whatsapp) or a fragment of it ("whatsapp", "maps"), then show it.
     Precise screen: action (android.settings.WIFI_SETTINGS, android.intent.action.VIEW…) and/or data (URI or deep
     link), extras {name: string, integer or boolean}; app then limits the target to that app. The target is
     resolved first, then reported with the new foreground. Calling, sending or paying directly (CALL, auto-send
     extras, payment actions and links): confirm=true, set only on the user's explicit order for this intent, plus
     accord=<token> returned for THIS exact intent once the user said yes to its summary.
-    Banking, payment and identity apps: never opened by an intent (launch(app) opens them for reading)."""
-    return await _run(_launch, app, action, data, extras, confirm, accord)
+    Banking, payment and identity apps: never opened by an intent (launch(app) opens them for reading).
+    then: what to show once opened, as in act (both by default: image and elements; elements: text only, faster)."""
+    return await _run(_launch, app, action, data, extras, confirm, accord, then)
 
 
 # ---------------------------------------------------------------- messages
@@ -1853,7 +1906,10 @@ def _draft_accord(screen: Screen) -> list[str]:
     label = policy.outward(button) if button else None
     if button is None or label is None:
         return []
-    aim = Aim(*button.center, button, fresh, package)  # le même appui que act(tap [N]) : même cible, même point
+    try:  # le même appui que act(tap [N]) : même cible, même point (sa partie visible, comme _resolve)
+        aim = Aim(*_visible(button, fresh), button, fresh, package)
+    except PhoneError:
+        return []  # bouton entièrement caché : aucun accord sur un appui qui ne peut pas l'atteindre
     if _drawn(screen, fresh, aim.judged):
         return []  # texte dessiné hors de l'arbre : rien qu'un accord puisse lier
     act = policy.screen_action("tap", label, package, fresh, _height(screen), package, aim.judged,

@@ -5,6 +5,7 @@ Le serveur de scrcpy (Genymobile, Apache 2.0) tourne le temps de la saisie sous 
 avec son seul canal de contrôle : il lit le presse-papiers de l'utilisateur, y met le texte et le colle dans le champ actif,
 puis remet l'ancien contenu (vide s'il était vide). Méthode vérifiée sur un Galaxy Fold.
 Le serveur s'arrête à la fin de chaque saisie, lecture ou écriture : aucun programme d'aide ne reste sur le téléphone.
+Une saisie passe de préférence par le serveur déjà ouvert pour les gestes (control.py, arrêté après 60 s sans usage).
 
 Le fichier du serveur (version et empreinte figées) est posé par install.ps1, ou téléchargé à la première saisie depuis
 la release officielle de Genymobile/scrcpy sur GitHub ; il n'est gardé que si son SHA-256 est celui écrit ici."""
@@ -21,7 +22,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 from .adb import Adb, LinkError, PhoneError
@@ -206,11 +207,12 @@ def _fits(text: str, what: str) -> None:
         raise PhoneError(f"text too long to {what} (256 KB at most)")
 
 
-def paste(adb: Adb, text: str) -> bool:
+def paste(adb: Adb, text: str, kept: Channel | None = None) -> bool:
     """Colle `text` dans le champ qui a le focus, puis rend à l'utilisateur son presse-papiers d'avant. Renvoie False si le
-    collage est fait mais l'ancien contenu n'a pas pu être remis (liaison coupée juste après)."""
+    collage est fait mais l'ancien contenu n'a pas pu être remis (liaison coupée juste après). kept : canal du serveur
+    gardé ouvert pour les gestes (control.py), qui évite de lancer un serveur le temps de la saisie (~2 s)."""
     _fits(text, "type")
-    with _session(adb) as channel:
+    with nullcontext(kept) if kept is not None else _session(adb) as channel:
         before = channel.get()
         sequence = _sequence()
         try:

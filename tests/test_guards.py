@@ -170,7 +170,7 @@ def test_keys_closed_list(phone):
 
 def test_multiline_text_is_pasted_never_a_hidden_enter(phone, monkeypatch):
     pasted = []
-    monkeypatch.setattr(server.clip, "paste", lambda adb, text: pasted.append(text) or True)
+    monkeypatch.setattr(server.clip, "paste", lambda adb, text, kept=None: pasted.append(text) or True)
     phone.uis = [ui(field())]
     act(Step(do="type", text="ok\r\nmerci"))
     assert pasted == ["ok\nmerci"]  # collé : le saut de ligne est du texte

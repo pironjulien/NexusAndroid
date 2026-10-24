@@ -35,7 +35,7 @@ def _wait(condition, seconds: float = 3.0) -> bool:
 
 
 def test_no_enter_hidden_in_typed_text(phone, monkeypatch):  # noqa: F811
-    monkeypatch.setattr(server.clip, "paste", lambda adb, text: True)
+    monkeypatch.setattr(server.clip, "paste", lambda adb, text, kept=None: True)
     phone.package = SMS
     phone.uis = [ui(node("Alice", (0, 50, 1080, 150), clickable=False, package=SMS), field("", package=SMS))]
     act(Step(do="type", text="Salut\n"))
