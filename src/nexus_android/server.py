@@ -1641,8 +1641,8 @@ async def act(steps: list[Step] | None = None, then: Then = "auto", remember: st
     gone=true), open_url (text = address or app link). Target: "[N]" (brackets; a bare number is text), visible text
     or "x,y" image pixels; judged on the screen read again just before the gesture. Report: ✓ effect read back,
     ~ sent not verified, ✗ failed/refused, ? link lost (unknown effect).
-    then: auto (default, text first: elements, plus the image when a step is ~, ✗ or ?, or the screen has no readable
-    element), both (image and elements), image, elements, changes (text only: elements added "+", changed "~"
+    then: auto (default: elements, plus the image if a step is ~ ✗ ? or nothing is readable), both, image,
+    elements, changes (text only: elements added "+", changed "~"
     and removed "-" since the last list, unchanged ones counted; [N] numbers stay valid for the next act; full list
     when there is no previous list, the foreground app changed or most of the screen did), none.
     Example: steps=[{"do":"tap","target":"Search"},{"do":"type","text":"wifi"}].
