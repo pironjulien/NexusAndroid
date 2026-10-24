@@ -47,6 +47,13 @@ def gestures_by_input(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def journal_aside(tmp_path_factory, monkeypatch):
+    """Journal commun hors du vrai %LOCALAPPDATA% pendant les tests ; aucune IA reconnue par défaut."""
+    monkeypatch.setenv("NEXUS_JOURNAL_HOME", str(tmp_path_factory.mktemp("journal")))
+    monkeypatch.delenv("NEXUS_AGENT", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def every_image_sent(monkeypatch):
     """Écrans simulés relus à l'identique : chaque image est envoyée ; un test de « image inchangée » le réactive."""
     monkeypatch.setattr(screen, "UNCHANGED", False)

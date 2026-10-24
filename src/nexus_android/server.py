@@ -6,6 +6,7 @@ import asyncio
 import io
 import os
 import re
+import sys
 import threading
 import time
 from collections import OrderedDict
@@ -29,6 +30,7 @@ from . import apps as apps_mod
 from . import capture as capture_mod
 from . import control as control_mod
 from . import functions as functions_mod
+from . import journal as journal_mod
 from . import logs as logs_mod
 from . import ocr as ocr_mod
 from . import routines as routines_mod
@@ -138,11 +140,44 @@ def _session_key(ctx: Any) -> str | None:
     return headers.get("mcp-session-id") if headers is not None else None
 
 
+_AGENT: ContextVar[str | None] = ContextVar("nexus_android_agent", default=None)
+_AGENTS_BY_SESSION: dict[str, str] = {}  # IA reconnue à l'ouverture d'une session (nom du client MCP)
+
+
+def _agent_key(ctx: Any) -> str | None:
+    """IA appelante (journal commun) : nom du client MCP annoncé à l'ouverture, sinon User-Agent de la requête, sinon
+    NEXUS_AGENT (serveur stdio lancé par une seule IA)."""
+    request = getattr(ctx, "request", None)
+    headers = getattr(request, "headers", None)
+    params = getattr(getattr(ctx, "session", None), "client_params", None)
+    client = getattr(getattr(params, "clientInfo", None) or getattr(params, "client_info", None), "name", None)
+    session = _session_key(ctx)
+    # Ordre : le nom du client MCP fait foi ; puis l'IA déjà établie pour la session (jamais remplacée par un
+    # User-Agent) ; puis le User-Agent seul ; jamais NEXUS_AGENT sur le démon partagé (un client inconnu n'est à
+    # personne).
+    if found := journal_mod.agent_of(client):
+        if session:
+            _AGENTS_BY_SESSION[session] = found
+        return found
+    if session and session in _AGENTS_BY_SESSION:
+        return _AGENTS_BY_SESSION[session]
+    if found := journal_mod.agent_of(headers.get("user-agent") if headers is not None else None):
+        if session:
+            _AGENTS_BY_SESSION[session] = found
+        return found
+    return None if _SHARED else journal_mod.agent_of(os.environ.get("NEXUS_AGENT"))
+
+
 async def _bind_session(ctx: Any, call_next: Any) -> Any:
     token = _SESSION.set(_session_key(ctx))
     try:
+        who = _AGENT.set(_agent_key(ctx))
+    except Exception:  # noqa: BLE001 - journal : l'identification ne bloque jamais un appel
+        who = _AGENT.set(None)
+    try:
         return await call_next(ctx)
     finally:
+        _AGENT.reset(who)
         _SESSION.reset(token)
 
 
@@ -207,16 +242,68 @@ def _video_guard() -> None:
             pass
 
 
+_APPEL: ContextVar[str | None] = ContextVar("nexus_android_appel", default=None)
+
+
+_STEPS_LOGGED: ContextVar[list[bool] | None] = ContextVar("nexus_android_steps_logged", default=None)
+
+
+def _who() -> str | None:
+    """IA de l'appel en cours ; NEXUS_AGENT seulement pour un serveur stdio (une seule IA)."""
+    return _AGENT.get() or (None if _SHARED else journal_mod.agent_of(os.environ.get("NEXUS_AGENT")))
+
+
+def _journal_call(name: str, ms: float, error: BaseException | None) -> None:
+    """Journal commun : un appel d'outil ; act écrit une ligne par étape, et une seule ligne « act » s'il a été refusé
+    ou arrêté avant sa première étape (utilisateur au téléphone, verrou, routine refusée). Jamais bloquant."""
+    try:
+        logged = _STEPS_LOGGED.get()
+        if name == "act" and logged and logged[0]:
+            return
+        screen = _init()[1] if ADB is not None else None  # vue de cette session, sans rien demander au téléphone
+        package = screen.last_state.package if screen and screen.last_state else None
+        issue = "✓" if error is None else journal_mod.issue_d_erreur(str(error))
+        journal_mod.ecrire(_who(), _APPEL.get(), package, name, issue, ms, error)
+    except Exception:  # noqa: BLE001 - journal : jamais bloquant
+        pass
+
+
+_TOOLS = {"look", "act", "launch", "messages", "draft", "notifications", "files", "capture", "logs", "clipboard", "info",
+          "settings", "functions", "web", "apps", "phone_map", "phone", "checkup"}
+
+
+def _tool_name(fn: Any) -> str:
+    """Nom de l'outil MCP qui appelle _run (journal commun : look, launch… ; phone_map s'appelle map)."""
+    try:
+        caller = sys._getframe(2).f_code.co_name  # outil → _run → ici
+    except ValueError:
+        caller = ""
+    own: str = str(getattr(fn, "__name__", "")).lstrip("_")
+    aliases: dict[str, str] = {"view": "look", "status": "phone", "setting": "settings"}
+    name = caller if caller in _TOOLS else aliases.get(own) or own
+    return "map" if name == "phone_map" else name
+
+
 async def _run(fn, *args, **kwargs):
     cancel = threading.Event()
+    name = _tool_name(fn)
 
     def locked():
         _CANCEL.set(cancel)  # contexte propre au fil : vu par fn entre deux étapes
-        with _phone_locked():
-            try:
-                return fn(*args, **kwargs)
-            finally:
-                _video_guard()
+        _APPEL.set(f"{time.strftime('%H%M%S')}-{os.urandom(2).hex()}")
+        _STEPS_LOGGED.set([False])
+        tick, error = time.monotonic(), None
+        try:
+            with _phone_locked():
+                try:
+                    return fn(*args, **kwargs)
+                finally:
+                    _video_guard()
+        except BaseException as e:
+            error = e
+            raise
+        finally:
+            _journal_call(name, (time.monotonic() - tick) * 1000, error)
     try:
         return await asyncio.to_thread(locked)
     except asyncio.CancelledError:
@@ -1394,6 +1481,34 @@ def _stable(step: Step, aims: list[Aim]) -> dict[str, Any] | None:
     return saved
 
 
+_STEP_LINE = re.compile(r"^(✓|=|~|✗|\?) (\d+)\. (.*)", re.S)
+_STEP_ISSUE = {"✓": "✓", "=": "=", "~": "~", "?": "~"}  # ? : liaison perdue pendant le geste, effet inconnu
+
+
+def _journal_steps(steps: list[Step], report: list[str], began: dict[int, tuple[float, str]]) -> None:
+    """Journal commun : une ligne par étape du lot, d'après le compte rendu (lu ici, jamais recopié : seule la cause
+    courte d'un échec est gardée, coupée avant tout texte venu de l'écran) ; jamais bloquant."""
+    try:
+        ends = sorted(began.values())
+        stop = time.monotonic()
+        for line in report:
+            if not (m := _STEP_LINE.match(line)):
+                continue
+            mark, i, text = m.group(1), int(m.group(2)), m.group(3)
+            if not 1 <= i <= len(steps) or i not in began:
+                continue
+            start, package = began[i]
+            later = [t for t, _ in ends if t > start]
+            ms = ((later[0] if later else stop) - start) * 1000
+            issue = _STEP_ISSUE.get(mark) or journal_mod.issue_d_erreur(text)
+            journal_mod.ecrire(_who(), _APPEL.get(), package, steps[i - 1].do, issue, ms,
+                               text if mark in ("✗", "?") else None)
+            if (logged := _STEPS_LOGGED.get()) is not None:
+                logged[0] = True
+    except Exception:  # noqa: BLE001 - journal : jamais bloquant
+        pass
+
+
 def _act(steps: list[Step], then: Then, remember: str | None = None, template: list[Step] | None = None) -> list[Any]:
     global _AIMED, _MORE_STEPS
     adb, screen, _ = _init()
@@ -1411,7 +1526,9 @@ def _act(steps: list[Step], then: Then, remember: str | None = None, template: l
     start = screen.fingerprint  # dernier écran lu (look, act précédent) : celui sur lequel ce lot commence
     package = state.package
     recorded: list[dict[str, Any] | None] = []
+    began: dict[int, tuple[float, str]] = {}  # étape → (début, appli au premier plan) pour le journal commun
     for i, step in enumerate(steps, 1):
+        began[i] = (time.monotonic(), screen.last_state.package if screen.last_state else package)
         if _cancelled():
             report.append(f"✗ {i}. Call cancelled by the client: stopped before this step, {i - 1} step(s) done "
                           "above, nothing else.")
@@ -1447,6 +1564,7 @@ def _act(steps: list[Step], then: Then, remember: str | None = None, template: l
                 _gestures_done()
         if i < len(steps):  # le geste se pose avant l'étape suivante ; après le dernier, la relecture attend le calme
             time.sleep(0.35)
+    _journal_steps(steps, report, began)
     if blind and acted:
         report.append(blind)
     gestures = "|".join(f"{s.do}:{s.target}:{s.to}:{s.text}:{s.direction}:{s.keys}" for s in steps if s.do != "wait")
@@ -2692,6 +2810,7 @@ def main() -> None:
         else:
             mcp.run("stdio")
     finally:
+        journal_mod.flush()  # lignes du journal commun encore en file : écrites avant de partir
         capture_mod.shutdown()  # enregistrement encore en cours : arrêté et rangé sur le PC
         if _CONTROL is not None:
             _CONTROL.close()  # serveur scrcpy des gestes : arrêté, rien ne reste sur le téléphone

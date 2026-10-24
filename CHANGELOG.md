@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-10-24
+
+### Added
+
+- Shared Nexus tool journal (same format as Nexus Windows, Browser and Relay): one line per gesture of a batch and per
+  tool call in `%LOCALAPPDATA%\NexusJournal\android\<agent>\<YYYY-MM>.jsonl`, read by the monthly review. The calling
+  AI is recognised from its MCP client name (then the session it opened, then its User-Agent); an unknown client of
+  the shared daemon is logged for nobody. `app` is the package name only; the error is a fixed cause from a closed
+  list, never a piece of the message (even its start can carry a contact name, a number or a path); no screen text,
+  SMS, typed text or code. Lines go through a bounded queue written by a separate thread: a slow disk never holds a
+  gesture or the phone lock; a full queue drops the line. A batch refused before its first step gets one `act` line.
+
 ## [0.9.7] - 2026-10-24
 
 ### Changed
@@ -870,7 +882,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.7...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.8...HEAD
+[0.9.8]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.8
 [0.9.7]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.7
 [0.9.6]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.6
 [0.9.5]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.5
