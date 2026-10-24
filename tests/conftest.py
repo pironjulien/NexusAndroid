@@ -47,6 +47,12 @@ def gestures_by_input(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def every_image_sent(monkeypatch):
+    """Écrans simulés relus à l'identique : chaque image est envoyée ; un test de « image inchangée » le réactive."""
+    monkeypatch.setattr(screen, "UNCHANGED", False)
+
+
+@pytest.fixture(autouse=True)
 def no_ocr(monkeypatch):
     """Pas d'OCR de Windows pendant les tests (lent, dépend du poste) ; un test de l'OCR le simule."""
     monkeypatch.setattr(ocr, "available", lambda: False)

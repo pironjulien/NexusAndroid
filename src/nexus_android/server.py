@@ -21,6 +21,7 @@ from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from PIL import Image as PILImage
+from PIL import ImageOps
 from pydantic import BaseModel, Field
 
 from . import __version__, awake, clip, extras, phonemap, policy
@@ -119,6 +120,15 @@ _SESSION: ContextVar[object | None] = ContextVar("nexus_android_session", defaul
 _VIEWS: OrderedDict[object, tuple[Screen, Messages]] = OrderedDict()
 _VIEWS_LOCK = threading.Lock()
 MAX_VIEWS = 32  # sessions gardées (les plus récentes) : les agents ne sont que trois, une session fermée finit oubliée
+
+
+_SHARED = False  # démon HTTP partagé par plusieurs agents (sinon stdio : un seul client)
+
+
+def _own_view() -> bool:
+    """Vue propre à un seul client (session HTTP, ou stdio) : ce qu'elle a déjà envoyé, ce client l'a reçu. Un client
+    HTTP sans session partage la vue commune : « image inchangée » n'y vaut rien (un autre agent a pu la recevoir)."""
+    return _SESSION.get() is not None or not _SHARED
 
 
 def _session_key(ctx: Any) -> str | None:
@@ -390,14 +400,33 @@ def _view(show: Then, query: str | None = None, region: list[float] | None = Non
     if image is not None:
         # Numéros [N] seulement à côté de la liste (show=both), sur l'image dont les codes sont déjà noircis.
         drawn = screen_mod.marked(shown, marks) if show == "both" else []
-        data = screen.render(blackout(image, elements + seen, screen.shrink), region, drawn)
+        prepared = screen.prepare(blackout(image, elements + seen, screen.shrink), region, drawn)
+        # Même zone, mêmes numéros, même géométrie (pliage, rotation) et même contenu complet de l'écran (un
+        # interrupteur, une tuile de la barre système) : seulement alors l'image peut être dite inchangée.
+        # Texte lu par OCR compris (jeu, carte : un chiffre qui change sans que l'arbre le voie).
+        content = screen_mod.content_print(reading.elements + seen, state.package) if reading.error is None else None
+        key = (tuple(region) if region else None, tuple(e.index for e in drawn), content, screen.size, prepared.size)
+        look = screen.rendered  # empreinte de l'image préparée, avant toute réduction de l'encodage
+        sent = screen.sent
+        if screen_mod.UNCHANGED and _own_view() and content is not None and look is not None and sent \
+                and sent[0] == key and screen_mod.same_thumb(sent[1], look):
+            unchanged = True
+            # L'agent garde l'image envoyée la dernière fois : ses coordonnées gardent l'échelle de celle-ci.
+            if not region:
+                screen.scale = sent[2]
+            size = sent[3]
+        else:
+            unchanged = False
+            out.append(Image(data=screen.send(prepared, region), format="webp"))
+            size = screen.last_size
+            if look is not None:
+                screen.sent = (key, look, screen.scale, size)
         if not region:
-            width, height = screen.size or image.size  # pixels écran (image éventuellement réduite par le téléphone)
-            header += f" · image {round(width * screen.scale)}×{round(height * screen.scale)}"
-            header += "; coordinates = image pixels"
-        if drawn:
+            header += f" · image {size[0]}×{size[1]}; coordinates = image pixels"
+        if unchanged:
+            header += " · image unchanged since the last one sent (not sent again)"
+        elif drawn:
             header += f"; {len(drawn)} [N] marks drawn"
-        out.append(Image(data=data, format="jpeg"))
     diffed = False
     if show == "changes" and reading.error is None:
         # Arbre lu (codes déjà masqués) : comparé à la dernière liste, numéros gardés pour les éléments retrouvés.
@@ -1854,13 +1883,12 @@ def _messages(conversation: int | None, contact: str | None, limit: int, images:
             if ct.startswith("image/") and shown < images:
                 try:
                     data = fetched.get(str(int(part_id))) or messages.part(part_id)
-                    picture = PILImage.open(io.BytesIO(data))
-                    picture.thumbnail((1024, 1024))
-                    buffer = io.BytesIO()
-                    picture.convert("RGB").save(buffer, "JPEG", quality=80)
+                    # Photo de l'appareil : orientation EXIF appliquée, sinon elle arrive couchée à l'agent.
+                    picture = ImageOps.exif_transpose(PILImage.open(io.BytesIO(data)))
+                    picture = picture.resize(screen_mod.sized(*picture.size), PILImage.Resampling.LANCZOS)
                     shown += 1
                     m.labels.append(f"[image {shown}]")
-                    out.append(Image(data=buffer.getvalue(), format="jpeg"))
+                    out.append(Image(data=screen_mod.encode(picture, photo=True)[0], format="webp"))
                 except Exception:  # image illisible : signalée sans bloquer la lecture
                     m.labels.append("[unreadable image]")
             else:
@@ -2622,6 +2650,8 @@ def _serve_http(port: int) -> None:
     """Démon unique sur 127.0.0.1 (MCP Streamable HTTP) que Claude, Codex et Antigravity joignent par URL.
 
     Jeton exigé (Authorization: Bearer) : NEXUS_MCP_TOKEN, ou le fichier NEXUS_MCP_TOKEN_FILE."""
+    global _SHARED
+    _SHARED = True
     import hmac
 
     import uvicorn

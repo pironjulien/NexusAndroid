@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-10-24
+
+### Changed
+
+- Images sent to the agent follow the shared Nexus image rule: longest side at most 1568 px and at most 1.15
+  megapixels (never upscaled), WebP lossless when it fits in 200 KB, otherwise quality 85 then 70, never above 500 KB
+  (Antigravity rejects larger requests). On the Fold: Settings 45 KB, home screen 67 KB (JPEG before: about 72 and
+  105 KB), 853×1348 instead of 810×1280. MMS photos too, turned upright from their EXIF orientation.
+- A look whose image is the same as the last one this client received (same area, same [N] marks, same screen size,
+  same content including the system bar and text read by OCR, and a 64×64 colour fingerprint within noise) does not
+  send it again and says "image unchanged"; coordinates keep the scale of the image the agent has. A client of the shared
+  daemon without its own session always gets the image (another agent may have received the last one).
+
 ## [0.9.6] - 2026-10-24
 
 ### Changed
@@ -857,7 +870,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.6...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.7...HEAD
+[0.9.7]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.7
 [0.9.6]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.6
 [0.9.5]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.5
 [0.9.4]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.4

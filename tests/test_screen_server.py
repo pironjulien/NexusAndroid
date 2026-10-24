@@ -191,11 +191,11 @@ def test_look_in_one_exchange(fast):
     fake.raw = payload(STATUS, (1248, 1972), NODES, jpeg((810, 1280)), (1248, 1972))
     out = server._view("both")
     assert adb.calls == []  # ni dumpsys, ni screencap, ni uiautomator
-    assert fake.queries == [["screen", "--image", "scaled", "--max", "1280", "--quality", str(screen.PHONE_QUALITY),
+    assert fake.queries == [["screen", "--image", "scaled", "--max", str(screen.MAX_SIDE), "--quality", str(screen.PHONE_QUALITY),
                              "--quiet", str(screen.SETTLE_QUIET_MS)]]
     header = out[0].splitlines()[0]
     assert header.startswith("Foreground: com.app") and "image 810×1280" in header
-    assert scr.size == (1248, 1972) and scr.posture == "OPENED" and scr.scale == pytest.approx(1280 / 1972)
+    assert scr.size == (1248, 1972) and scr.posture == "OPENED" and scr.scale == pytest.approx(810 / 1248)
     image = PILImage.open(io.BytesIO(out[1].data))
     assert image.size == (810, 1280)
     # Code masqué : zone noircie sur l'image réduite (limites écran × réduction du téléphone).
@@ -231,7 +231,7 @@ def test_elements_only_sets_the_scale_without_an_image(fast):
     fake.raw = payload(STATUS, (1248, 1972), NODES)
     server._view("elements")
     assert fake.queries[-1][2] == "none" and adb.calls == []
-    assert scr.size == (1248, 1972) and scr.scale == pytest.approx(1280 / 1972)
+    assert scr.size == (1248, 1972) and scr.scale == pytest.approx(screen.fit(1248, 1972))
 
 
 def test_tree_error_releases_then_uiautomator(fast):
@@ -251,7 +251,7 @@ def test_server_unavailable_falls_back_to_the_old_reads(fast):
     assert any(c[0] == "screencap" for c in adb.calls)
     assert any(c[0] == "sh" and "uiautomator dump" in c[2] for c in adb.calls)
     assert len(out) == 2 and scr.shrink == 1.0
-    assert "image 810×1280" in out[0].splitlines()[0]
+    assert "image 853×1348" in out[0].splitlines()[0]  # 1,15 Mpx au plus (règle commune des images)
 
 
 def test_dump_before_a_gesture_uses_the_reader(fast):

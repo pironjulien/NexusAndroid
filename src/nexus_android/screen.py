@@ -17,13 +17,78 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from PIL import Image as PILImage
-from PIL import ImageDraw, ImageFont
+from PIL import ImageChops, ImageDraw, ImageFont
 
 from . import ocr, query
 from .adb import STATE_WAIT, Adb, PhoneError
 from .messages import has_keyword, mask_codes
 
-MAX_SIDE = 1280  # côté le plus long de l'image rendue à l'agent
+# Image rendue à l'agent (règle commune des Nexus, NexusHarness/shared/images.md) : côté long ≤ 1568 px et ≤ 1,15 Mpx
+# (limite standard de Claude, sans réduction ; GPT-5.x et Gemini 3 aussi), WebP sans perte, qualité 85 puis 70 au-delà
+# de 200 Ko, jamais plus de 500 Ko (au-delà, Antigravity rejette la requête).
+MAX_SIDE = 1568
+MAX_PIXELS = 1_150_000
+LOSSLESS_MAX = 200 * 1024
+IMAGE_MAX = 500 * 1024
+
+
+def fit(width: float, height: float) -> float:
+    """Facteur de réduction d'une image de cette taille pour l'agent (1.0 : gardée telle quelle)."""
+    if width <= 0 or height <= 0:
+        return 1.0
+    return min(1.0, MAX_SIDE / max(width, height), (MAX_PIXELS / (width * height)) ** 0.5)
+
+
+def sized(width: float, height: float) -> tuple[int, int]:
+    """Taille d'une image de cette taille pour l'agent : réduite par fit, arrondie vers le bas (jamais au-dessus des
+    plafonds : 1234×932 dépasserait 1,15 Mpx de 88 pixels)."""
+    factor = fit(width, height)
+    if factor >= 1.0:
+        return int(width), int(height)
+    return max(1, int(width * factor)), max(1, int(height * factor))
+
+
+def within(size: tuple[int, int]) -> bool:
+    return max(size) <= MAX_SIDE and size[0] * size[1] <= MAX_PIXELS
+
+
+def encode(image: PILImage.Image, photo: bool = False) -> tuple[bytes, tuple[int, int]]:
+    """WebP pour l'agent et sa taille finale : sans perte (méthode 0, la plus rapide) s'il tient en 200 Ko, sinon
+    qualité 85 puis 70 ; réduit encore si même 70 dépasse 500 Ko (photo très chargée) — l'appelant recale alors son
+    échelle sur la taille rendue. photo : une photo dépasse toujours 200 Ko sans perte, l'essai est sauté."""
+    image = image.convert("RGB")
+    if not photo:
+        out = io.BytesIO()
+        image.save(out, "WEBP", lossless=True, method=0)
+        if out.tell() <= LOSSLESS_MAX:
+            return out.getvalue(), image.size
+    while True:
+        tries = []
+        for quality in (85, 70):
+            out = io.BytesIO()
+            image.save(out, "WEBP", quality=quality, method=2)
+            if out.tell() <= LOSSLESS_MAX:
+                return out.getvalue(), image.size
+            tries.append(out.getvalue())
+        # Même 70 dépasse 200 Ko : la meilleure qualité qui tient sous le plafond (85 si possible).
+        if fitting := [data for data in tries if len(data) <= IMAGE_MAX]:
+            return fitting[0], image.size
+        image = image.resize((max(1, image.width * 3 // 4), max(1, image.height * 3 // 4)), PILImage.Resampling.LANCZOS)
+
+
+UNCHANGED = True  # même image que la dernière envoyée : pas renvoyée (False : tests qui relisent le même écran simulé)
+THUMB = 64  # côté de l'empreinte d'une image envoyée (en couleur : rouge et vert ont souvent le même gris)
+THUMB_SLACK = 2  # écart toléré par canal et par pixel (bruit d'encodage), au-delà l'écran a changé
+
+
+def thumb(image: PILImage.Image) -> PILImage.Image:
+    return image.convert("RGB").resize((THUMB, THUMB), PILImage.Resampling.BILINEAR)
+
+
+def same_thumb(a: PILImage.Image | None, b: PILImage.Image) -> bool:
+    if a is None or a.size != b.size:
+        return False
+    return all(high <= THUMB_SLACK for _, high in ImageChops.difference(a, b).getextrema())  # type: ignore[misc]
 # Zone de l'utilisateur shell, invisible pour les applications ; un fichier par serveur (pid) : les trois agents ont
 # chacun le leur, et il est effacé aussitôt lu.
 UI_DUMP = f"/data/local/tmp/nexus-android-ui-{os.getpid()}.xml"
@@ -526,6 +591,14 @@ def fingerprint(elements: Iterable[Element], package: str) -> str:
     return hashlib.sha1("\n".join(parts).encode()).hexdigest()[:16]
 
 
+def content_print(elements: Iterable[Element], package: str) -> str:
+    """Empreinte complète d'un écran pour « image inchangée » : tous les éléments, barre système comprise (une tuile ou
+    une notification qui change d'état), limites et états exacts."""
+    parts = [package] + sorted(f"{e.package}|{e.text}|{e.desc}|{e.rid}|{e.bounds}|{','.join(e.states)}|{e.masked}"
+                               for e in elements)
+    return hashlib.sha1("\n".join(parts).encode()).hexdigest()[:16]
+
+
 LOOP_REPEATS = 3  # même lot de gestes sur le même écran, sans effet : l'agent tourne en rond
 LOOP_STILL = 3  # lots de gestes d'affilée sans aucun changement de l'écran
 
@@ -645,6 +718,10 @@ class Screen:
         self.last_seen_at = 0.0  # début (stamp()) de la lecture qui a donné last_state
         self.busy = ""  # message de la dernière lecture d'arbre bloquée par un autre outil (UiAutomation prise)
         self.fingerprint: str | None = None  # empreinte du dernier écran lu (tourner en rond)
+        self.rendered: PILImage.Image | None = None  # empreinte (thumb) de la dernière image rendue
+        # Dernière image vraiment envoyée : (clé, empreinte, échelle, taille envoyée) ; la même ne repart pas.
+        self.sent: tuple[Any, ...] | None = None
+        self.last_size: tuple[int, int] = (0, 0)  # taille de la dernière image vraiment encodée pour l'agent
         self.loops = LoopWatch()
         self.surfaces: list[Box] = []  # surfaces dessinées sans texte de la dernière lecture de l'arbre (OCR)
 
@@ -693,8 +770,9 @@ class Screen:
         if not image and snap and snap.size[0] > 0 and snap.size[1] > 0:
             # Échelle des coordonnées @x,y même sans image jointe, relue à chaque lecture : rotation ou pliage depuis la
             # dernière image (défilement, zoom et coordonnées de la liste suivent l'écran actuel).
+            if self.size != snap.size:  # même géométrie : l'échelle reste celle de la dernière image envoyée
+                self.scale = fit(*snap.size)
             self.size = snap.size
-            self.scale = min(1.0, MAX_SIDE / max(snap.size))
             self.posture = snap.posture or self.posture
         if image:
             if snap and snap.image is not None and snap.shot[0] > 0:
@@ -791,10 +869,10 @@ class Screen:
         self.posture = self.current_posture()
         return image
 
-    def render(self, image: PILImage.Image, region: list[float] | None = None,
-               marks: list[Element] | None = None) -> bytes:
-        """JPEG pour l'agent, côté max MAX_SIDE ; region [x1,y1,x2,y2] en pixels de l'image complète ; marks : éléments
-        dont le numéro [N] est dessiné (draw_marks)."""
+    def prepare(self, image: PILImage.Image, region: list[float] | None = None,
+                marks: list[Element] | None = None) -> PILImage.Image:
+        """Image pour l'agent, pas encore encodée (taille par sized, jamais agrandie) ; region [x1,y1,x2,y2] en pixels
+        de l'image complète ; marks : éléments dont le numéro [N] est dessiné (draw_marks). Empreinte dans self.rendered."""
         origin = (0.0, 0.0)
         # Capture réduite par le téléphone (look sans region) : pixels image = pixels écran × shrink.
         shrink = self.shrink if self.size and self.shrink != 1.0 and round(self.size[0] * self.shrink) == image.width \
@@ -806,20 +884,35 @@ class Screen:
                                 round(box[3] * shrink)) if shrink != 1.0 else box)
             origin = (float(box[0]), float(box[1]))
             width, height = box[2] - box[0], box[3] - box[1]
-            factor = min(1.0, MAX_SIDE / max(width, height))
+            target = sized(width, height)
         else:
             width, height = self.size if shrink != 1.0 and self.size else image.size
-            factor = min(1.0, MAX_SIDE / max(width, height))
-            self.scale = factor
-        # Taille visée : pixels écran × factor ; une capture que le téléphone a déjà réduite à cette taille est gardée.
-        target = (round(width * factor), round(height * factor)) if factor < 1.0 else (width, height)
+            target = sized(width, height)
+            if image.width < target[0]:  # jamais agrandie : capture réduite par le téléphone plus que nécessaire
+                target = (image.width, min(image.height, int(height * image.width / width)))
+            if abs(image.width - target[0]) <= 1 and abs(image.height - target[1]) <= 1 and within(image.size):
+                target = image.size  # déjà à la taille (réduite par le téléphone) : pas de rééchantillonnage
+            self.scale = target[0] / width
+        factor = target[0] / width
         if image.size != target:
             image = image.resize(target, PILImage.Resampling.LANCZOS)
         if marks:
             image = draw_marks(image, marks, factor, origin)
-        out = io.BytesIO()
-        image.convert("RGB").save(out, "JPEG", quality=80)
-        return out.getvalue()
+        self.rendered = thumb(image)
+        return image
+
+    def send(self, image: PILImage.Image, region: list[float] | None = None) -> bytes:
+        """Encode l'image préparée ; si elle a dû être réduite encore (plus de 500 Ko), l'échelle des coordonnées
+        suit la taille vraiment envoyée."""
+        data, size = encode(image)
+        if size != image.size and not region:
+            self.scale *= size[0] / image.width
+        self.last_size = size
+        return data
+
+    def render(self, image: PILImage.Image, region: list[float] | None = None,
+               marks: list[Element] | None = None) -> bytes:
+        return self.send(self.prepare(image, region, marks), region)
 
     def dump(self, fast: bool = True, ps: str | None = None) -> list[Element]:
         """Arbre UI de l'écran actuel, codes masqués ; ne change pas la liste du dernier look. Par le serveur gardé en
