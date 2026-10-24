@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.10] - 2026-10-24
+
+### Changed
+
+- `key home` and `key back` are read back from Android's own state (`dumpsys`), never from screen text or the UI
+  tree: home is `✓` when the launcher is in the foreground; back is `✓` when another app or another activity of the
+  app comes to the front, both known before and after (a ticking counter, a clock or a tree that becomes readable is
+  no proof). Otherwise `~` says what was seen: same app and activity (nothing to go back to, ignored, or a page
+  inside the activity, not compared). Nothing is read through accessibility, so protected apps stay untouched.
+- Text first after a gesture that cannot be read back (`~`, such as a tap): the image is joined when the final screen
+  is the one read during that step, before its gesture (nothing changed), or when that step read nothing; a changed
+  screen shows the effect in the list. A failed step (`✗`) or a lost link (`?`) still joins the image.
+
 ## [0.9.9] - 2026-10-24
 
 ### Changed
@@ -893,7 +906,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.9...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.10...HEAD
+[0.9.10]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.10
 [0.9.9]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.9
 [0.9.8]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.8
 [0.9.7]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.7

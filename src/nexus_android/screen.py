@@ -482,6 +482,9 @@ class State:
     locked: bool
     package: str
     lock_known: bool = True  # False : dumpsys ne dit pas si l'écran de verrouillage est affiché
+    # Activité au premier plan, jeton compris (« 57396375 com.android.settings/.SubSettings ») ; "" si illisible. Une
+    # autre page de l'appli (activité) change le jeton ; un compteur ou une horloge qui tourne, jamais.
+    activity: str = ""
 
 
 # État (allumé, verrouillé, premier plan) en une commande : sorties de dumpsys filtrées sur le téléphone.
@@ -496,7 +499,9 @@ def parse_state(power: str, window: str) -> State:
     flags = _KEYGUARD.findall(window)
     focus = re.search(r"mCurrentFocus=Window\{\S+ \S+ ([\w.]+)/", window) or re.search(
         r"mFocusedApp=.*? ([\w.]+)/", window)
-    return State(awake, "true" in flags, focus.group(1) if focus else "", lock_known=bool(flags))
+    record = re.search(r"mFocusedApp=ActivityRecord\{(\w+) \S+ ([\w.]+/[\w.$]+)", window)
+    return State(awake, "true" in flags, focus.group(1) if focus else "", lock_known=bool(flags),
+                 activity=f"{record.group(1)} {record.group(2)}" if record else "")
 
 
 # Android tient-il le téléphone déverrouillé malgré l'écran de verrouillage (Extend Unlock : lieu ou appareil de

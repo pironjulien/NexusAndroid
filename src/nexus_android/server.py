@@ -418,11 +418,14 @@ def _changes(screen: Screen, elements: list[Element], package: str) -> tuple[lis
 
 def _view(show: Then, query: str | None = None, region: list[float] | None = None,
           notes: list[str] | None = None, confirm: bool = False, marks: Marks = "auto",
-          unverified: bool = False) -> list[Any]:
+          unverified: bool = False, unseen: tuple[str | None, ...] | None = None) -> list[Any]:
+    """unverified : une étape a échoué ou perdu le lien (image jointe en auto). unseen : pour chaque étape non relue
+    (~), l'empreinte de l'écran relu pendant elle, avant son geste : en auto, image jointe si l'écran final est l'un
+    d'eux (l'effet n'a rien changé) ou si l'une n'a rien relu (None) ; un écran changé montre l'effet dans la liste."""
     adb, screen, _ = _init()
     auto = show == "auto"
     if auto:  # texte d'abord : l'image seulement si un effet n'a pas été relu (unverified) ou pour un zoom (region)
-        show = "both" if unverified or region else "elements"
+        show = "both" if unverified or region or (unseen is not None and None in unseen) else "elements"
     wants_image = show in ("both", "image") or bool(region)
     wants_tree = wants_image or show in ("elements", "changes")
     # État, image et arbre en un échange avec le lecteur d'écran du téléphone (sinon dumpsys, screencap, uiautomator).
@@ -432,8 +435,11 @@ def _view(show: Then, query: str | None = None, region: list[float] | None = Non
         lines.append(screen_mod.LIFTED)
         reading = screen.read(image=wants_image, tree=wants_tree, full=bool(region))
     front = reading.state.package
-    if auto and show == "elements" and (reading.error is not None or not any(
+    still = unseen is not None and reading.error is None and \
+        screen_mod.fingerprint(reading.elements, front or "") in unseen
+    if auto and show == "elements" and (still or reading.error is not None or not any(
             e.label for e in reading.elements if not front or e.package == front)):
+        # Geste non relu et écran identique à celui d'avant le lot : l'effet n'est visible nulle part dans la liste.
         # Arbre illisible, vide ou sans aucun libellé de l'appli au premier plan (canevas, jeu, vidéo, appli à icônes ;
         # la barre d'état n'en tient pas lieu) : la liste seule ne montrerait rien d'exploitable, l'image est jointe ;
         # les garde-fous d'après décident (arbre en erreur : image seulement avec confirm=true), comme pour show=both.
@@ -1221,6 +1227,48 @@ def _keys_guard(screen: Screen, step: Step, codes: list[str]) -> list[Element] |
     return fresh
 
 
+_HOME: list[str] = []  # paquet de l'écran d'accueil (lanceur), lu une fois
+
+
+def _home_package(adb: Adb) -> str:
+    if not _HOME:
+        out = adb.shell("cmd", "package", "resolve-activity", "--brief", "-a", "android.intent.action.MAIN",
+                        "-c", "android.intent.category.HOME", check=False).strip().splitlines()
+        package = out[-1].split("/")[0].strip() if out and "/" in out[-1] else ""
+        if not package:
+            return ""
+        _HOME.append(package)
+    return _HOME[0]
+
+
+def _key_read_back(adb: Adb, screen: Screen, step: Step, code: str, back_from: tuple[str, str] | None) -> Report:
+    """Relu par l'état d'Android (dumpsys), jamais par le texte de l'écran ni l'arbre (une appli protégée repère
+    l'accessibilité ; un compteur, une horloge ou un arbre qui redevient lisible ne prouvent rien). Accueil : lanceur
+    au premier plan. Retour : autre appli, ou autre activité de l'appli (jeton de mFocusedApp), toutes deux connues
+    avant et après. Sinon ~ avec ce qui a été vu : une page interne à la même activité n'est pas comparée."""
+    same = False
+    for wait in (0.4, 0.6):  # l'animation de sortie dure ~300 ms
+        time.sleep(wait)
+        state = screen.state()
+        if code == "KEYCODE_HOME":
+            home = _home_package(adb)
+            if home and state.package == home:
+                return "✓", f"key {step.keys}: home screen in the foreground (read back)"
+            continue
+        if back_from is None:
+            break
+        package, activity = back_from
+        if package and state.package and state.package != package:
+            return "✓", f"key {step.keys}: app changed (read back)"
+        if activity and state.activity and state.activity != activity:
+            return "✓", f"key {step.keys}: page changed (another activity, read back)"
+        same = bool(package and state.package and activity and state.activity)
+    if same:
+        return "~", (f"key {step.keys}: sent, same app and activity as before: nothing to go back to, ignored, or a page "
+                     "inside the activity (not compared)")
+    return "~", f"key {step.keys}: sent, not verified"
+
+
 def _step(adb: Adb, screen: Screen, step: Step) -> Report:
     """Exécute une étape ; ✓ seulement si l'effet a été relu, sinon ~ (envoyé, non vérifié)."""
     do = step.do
@@ -1283,6 +1331,10 @@ def _step(adb: Adb, screen: Screen, step: Step) -> Report:
             raise PhoneError(f"key {', '.join(risky)} can send, submit or call: it must be alone in its step "
                              "(tab, arrows... first, then this key as its own step with confirm=true and the accord)")
         fresh = _keys_guard(screen, step, codes)
+        back_from: tuple[str, str] | None = None
+        if codes == ["KEYCODE_BACK"]:  # appli et activité juste avant : « retour » est jugé à ce qui a changé
+            before = screen.state()
+            back_from = (before.package, before.activity)
         if risky:
             _accord_keys(screen, step, f"key {' '.join(codes)}", fresh)
         for i, code in enumerate(codes):
@@ -1295,6 +1347,8 @@ def _step(adb: Adb, screen: Screen, step: Step) -> Report:
                     raise PhoneError(f"{e} (after {i} key(s) sent: {' '.join(codes[:i])})") from None
             parts = code.split()
             _input(adb, *(["keycombination"] if len(parts) > 1 else ["keyevent"]), *parts)
+        if codes in (["KEYCODE_HOME"], ["KEYCODE_BACK"]):
+            return _key_read_back(adb, screen, step, codes[0], back_from)
         return "~", f"key {step.keys}: sent, not verified"
     if do == "scroll":
         amount = max(1, min(step.amount or 1, 10))
@@ -1542,6 +1596,7 @@ def _act(steps: list[Step], then: Then, remember: str | None = None, template: l
     package = state.package
     recorded: list[dict[str, Any] | None] = []
     began: dict[int, tuple[float, str]] = {}  # étape → (début, appli au premier plan) pour le journal commun
+    unseen: list[str | None] = []  # étapes ~ : empreinte de l'écran relu pendant l'étape (None : aucun)
     for i, step in enumerate(steps, 1):
         began[i] = (time.monotonic(), screen.last_state.package if screen.last_state else package)
         if _cancelled():
@@ -1559,8 +1614,11 @@ def _act(steps: list[Step], then: Then, remember: str | None = None, template: l
                 raise PhoneError(reason)
             _AIMED = [] if remember else None
             _MORE_STEPS = any(s.do != "wait" for s in steps[i:])
+            screen.fingerprint = None  # posée seulement par une lecture faite pendant cette étape
             mark, text = _step(adb, screen, step)
             report.append(f"{mark} {i}. {text}")
+            if mark == "~":
+                unseen.append(screen.fingerprint)
             if remember:
                 recorded.append(_stable(step, _AIMED or []))
         except LinkError as e:
@@ -1579,6 +1637,8 @@ def _act(steps: list[Step], then: Then, remember: str | None = None, template: l
                 _gestures_done()
         if i < len(steps):  # le geste se pose avant l'étape suivante ; après le dernier, la relecture attend le calme
             time.sleep(0.35)
+    if not acted and screen.fingerprint is None:
+        screen.fingerprint = start  # aucun geste parti : l'écran de départ reste la référence (tourner en rond)
     _journal_steps(steps, report, began)
     if blind and acted:
         report.append(blind)
@@ -1592,9 +1652,10 @@ def _act(steps: list[Step], then: Then, remember: str | None = None, template: l
     # Laisser commencer ce que le dernier geste déclenche (écran ouvert, résultats d'une recherche tapée) : l'attente du
     # calme part du dernier événement déjà reçu, elle n'attend pas un changement qui n'a pas encore commencé.
     time.sleep(0.4)
-    # Texte d'abord : l'image rejoint la liste dès qu'une étape n'a pas été relue (~), a échoué (✗) ou a perdu le lien.
-    unverified = any(line[:1] in ("~", "✗", "?") for line in report)
-    out = _view(then, notes=report + [""], unverified=unverified)
+    # Texte d'abord : l'image rejoint la liste dès qu'une étape a échoué (✗) ou perdu le lien (?) ; pour une étape non
+    # relue (~), si l'écran final est celui relu pendant cette étape, ou si elle n'a rien relu (comparé par _view).
+    unverified = any(line[:1] in ("✗", "?") for line in report)
+    out = _view(then, notes=report + [""], unverified=unverified, unseen=tuple(unseen) if unseen else None)
     if acted and (warning := screen.loops.record(gestures, start, screen.fingerprint)):
         head, _, rest = str(out[0]).partition("\n")
         out[0] = f"{head}\n{warning}\n{rest}"
