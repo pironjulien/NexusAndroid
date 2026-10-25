@@ -124,9 +124,13 @@ def claude_code() -> str | None:
 def claude_desktop() -> list[str]:
     roaming = Path(os.environ.get("APPDATA") or home() / "AppData" / "Roaming")
     local = Path(os.environ.get("LOCALAPPDATA") or home() / "AppData" / "Local")
-    # Installation classique, puis celle du Store (MSIX : AppData redirigé dans son paquet, AnthropicPBC.Claude_…).
-    folders = [roaming / "Claude", *sorted((local / "Packages").glob("*Claude_*/LocalCache/Roaming/Claude"))]
-    return [set_json_server(f / "claude_desktop_config.json", entry()) for f in folders if f.is_dir()]
+    # Installation classique ; Store (MSIX, AnthropicPBC.Claude_…) : ancien AppData redirigé dans le paquet, puis
+    # %LOCALAPPDATA%\Claude-Data\<paquet> des versions actuelles. Un dossier quitté garde seulement un marqueur
+    # `.user-data-left.<paquet>` : écarté (Claude ne le lit plus).
+    folders = [roaming / "Claude", *sorted((local / "Packages").glob("*Claude_*/LocalCache/Roaming/Claude")),
+               *sorted(p for p in (local / "Claude-Data").glob("*") if p.is_dir())]
+    live = [f for f in folders if f.is_dir() and not any(f.glob(".user-data-left.*"))]
+    return [set_json_server(f / "claude_desktop_config.json", entry()) for f in live]
 
 
 TOML_TABLE = re.compile(r"^\[(?P<name>[^\]]+)\]\s*$", re.M)

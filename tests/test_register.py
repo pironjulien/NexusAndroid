@@ -53,6 +53,19 @@ def test_every_client_declared(home):
     assert list((home / ".nexus" / "nexus-android" / "backups").iterdir())
 
 
+def test_claude_desktop_store_data_folder(home):
+    left = home / "AppData" / "Local" / "Packages" / "AnthropicPBC.Claude_x" / "LocalCache" / "Roaming" / "Claude"
+    left.mkdir(parents=True)
+    (left / ".user-data-left.anthropicpbc.claude_x").write_text("", encoding="utf-8")
+    data = home / "AppData" / "Local" / "Claude-Data" / "anthropicpbc.claude_x"
+    data.mkdir(parents=True)
+    (data / "claude_desktop_config.json").write_text('{"preferences": {"theme": "dark"}}', encoding="utf-8")
+    assert register.declare_all() == {"Claude Desktop": "declared"}
+    config = json.loads((data / "claude_desktop_config.json").read_text(encoding="utf-8"))
+    assert config["preferences"] == {"theme": "dark"} and config["mcpServers"]["nexus-android"]["args"][-1] == SPEC
+    assert not (left / "claude_desktop_config.json").exists()
+
+
 def test_user_entries_and_plugins_kept(home):
     (home / ".claude").mkdir()
     (home / ".claude" / "settings.json").write_text('{"enabledPlugins": {"nexus-android@nexus-plugins": true}}',

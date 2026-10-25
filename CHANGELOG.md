@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-25
+
+### Fixed
+
+- `setup` now declares the server to the current Store version of Claude Desktop, which reads
+  `%LOCALAPPDATA%\Claude-Data\<package>\claude_desktop_config.json`; a folder Claude has left (marker
+  `.user-data-left.*`) is skipped, and the Store package is found whatever its prefix (`AnthropicPBC.Claude_…`).
+
 ## [0.12.0] - 2026-10-25
 
 ### Added
@@ -992,7 +1000,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.12.1
 [0.12.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.12.0
 [0.11.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.11.0
 [0.10.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.10.0
