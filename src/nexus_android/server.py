@@ -2886,6 +2886,13 @@ def _serve_http(port: int) -> None:
 def main() -> None:
     import sys
 
+    if "--version" in sys.argv[1:]:
+        print(f"nexus-android {__version__}")
+        return
+    if sys.argv[1:2] == ["setup"]:  # premier branchement guidé (adb, débogage USB), dans un terminal
+        from . import firstrun
+
+        sys.exit(firstrun.run())
     http = "--http" in sys.argv
     if awake.ENABLED:
         _schedule(0)  # session laissée par un serveur arrêté ou planté : rendue dès qu'elle a expiré

@@ -32,44 +32,70 @@ Project page: [julienpiron.fr/nexusandroid](https://julienpiron.fr/nexusandroid/
 
 ## Quick start
 
-1. Phone: Settings → About phone → tap *Build number* 7 times, then Developer options → **USB debugging** on.
-   Plug it in and accept the PC's key on the phone.
-2. PC: install [`uv`](https://docs.astral.sh/uv/) and the Android Platform Tools (`winget install Google.PlatformTools`).
-   The server runs on Python 3.12 or newer; `uv` fetches one if needed.
-3. Add the server to your agent (installed from [PyPI](https://pypi.org/project/nexus-android/) by `uvx`, no clone needed):
+Windows, about 10 minutes, nothing to know beforehand. The server finds `adb` on the PC or downloads Google's
+official [Platform Tools](https://developer.android.com/tools/releases/platform-tools) by itself.
 
-```bash
-claude mcp add nexus-android --scope user -- uvx nexus-android
-```
+1. **Install uv** (it runs the server and fetches Python): open PowerShell and run
 
-Then ask your agent: *"Look at my phone and tell me what is on the screen."*
+   ```powershell
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+
+   ([uv installation guide](https://docs.astral.sh/uv/getting-started/installation/); `winget install astral-sh.uv`
+   also works). Close PowerShell and open a new one.
+2. **Connect the phone**, once per PC: run
+
+   ```powershell
+   uvx --python 3.14 nexus-android setup
+   ```
+
+   It downloads what is missing, then walks you through it and waits until the phone answers:
+   - on the phone, Settings > About phone (Samsung: > Software information) > tap **Build number** 7 times;
+   - Settings > **Developer options** > turn on **USB debugging**
+     ([Android guide](https://developer.android.com/studio/debug/dev-options));
+   - plug the phone in with a USB data cable and accept **Allow USB debugging?** (tick *Always allow*).
+
+   It ends with `Phone ready: <model>`. Phone plugged in but never seen: install the maker's
+   [USB driver](https://developer.android.com/studio/run/oem-usb)
+   ([Samsung](https://developer.samsung.com/android-usb-driver)).
+3. **Add it to your AI**, then restart the app:
+   - **Claude Code**: `claude mcp add nexus-android --scope user -- uvx --python 3.14 nexus-android`
+     (or, for the whole Nexus pack: `/plugin marketplace add pironjulien/nexus-plugins`, then
+     `/plugin install nexus-android@nexus-plugins`);
+   - **Codex**: `codex mcp add nexus-android -- uvx --python 3.14 nexus-android`;
+   - **Antigravity**: agent panel **⋯** > **MCP Servers** > **Manage MCP Servers** > **View raw config**, add the
+     `nexus-android` entry below inside `"mcpServers"`, save.
+
+Then ask your AI: *"Look at my phone and tell me what is on the screen."*
 
 <details>
-<summary>Codex (<code>~/.codex/config.toml</code>)</summary>
+<summary>Manual configuration (Codex <code>~/.codex/config.toml</code>, JSON clients: Antigravity, Claude Desktop, Cursor)</summary>
 
 ```toml
 [mcp_servers.nexus-android]
 command = "uvx"
-args = ["nexus-android"]
+args = ["--python", "3.14", "nexus-android"]
 ```
-</details>
-
-<details>
-<summary>Antigravity, Claude Desktop, Cursor and other JSON clients</summary>
 
 ```json
 {
   "mcpServers": {
     "nexus-android": {
       "command": "uvx",
-      "args": ["nexus-android"]
+      "args": ["--python", "3.14", "nexus-android"]
     }
   }
 }
 ```
 </details>
 
-If `adb` is not on the `PATH`, set `NEXUS_ANDROID_ADB` to its full path in the server's environment. Typing accents
+`adb` is looked for in this order: `NEXUS_ANDROID_ADB` (full path), the `PATH`, winget's Platform Tools, the Android
+SDK (`ANDROID_HOME`, Android Studio's default folder), then `~/.nexus/nexus-android/tools/platform-tools`. When none
+is found, the server downloads the current stable Platform Tools for this system from Google's SDK repository
+(`dl.google.com`, the manifest `sdkmanager` reads), checks the size and SHA-1 Google publishes for the archive and
+unpacks it there; by using it you accept the
+[Android SDK terms](https://developer.android.com/studio/terms). `NEXUS_ANDROID_ADB_DOWNLOAD=0` turns this off.
+Typing accents
 and emoji needs the scrcpy server (Genymobile, Apache 2.0, version 5.0.1 pinned): the first time an agent types such
 text, the server downloads it from the
 [official scrcpy release](https://github.com/Genymobile/scrcpy/releases/tag/v5.0.1) on GitHub, checks its SHA-256
@@ -311,8 +337,9 @@ the next server to start restores it. The server never unlocks a phone that Andr
 An alternative to `uvx`: one local environment, registered in the clients found on the PC, with the scrcpy server
 fetched ahead of time.
 
-Prerequisites: Windows, PowerShell 7, [`uv`](https://docs.astral.sh/uv/) and the Android Platform Tools
-(`winget install Google.PlatformTools`). On the phone: Developer options → USB debugging.
+Prerequisites: Windows, PowerShell 7 and [`uv`](https://docs.astral.sh/uv/); the Android Platform Tools are optional
+(`winget install Google.PlatformTools`, otherwise downloaded on first use). On the phone: Developer options → USB
+debugging (`nexus-android setup` walks you through it).
 
 ```powershell
 git clone https://github.com/pironjulien/NexusAndroid
@@ -382,9 +409,10 @@ against malicious software running on the same PC, which can reach the phone dir
 ## Privacy
 
 NexusAndroid runs entirely on your PC and talks to your phone over ADB (USB cable or local Wi-Fi). It has no
-account, no telemetry, no analytics and no cloud relay. Its only internet request is the one-time download of the
-pinned scrcpy server from GitHub, the first time accented text is typed (skipped when `install.ps1` already fetched
-it).
+account, no telemetry, no analytics and no cloud relay. Its only internet requests are two one-time downloads: Google's
+Platform Tools from `dl.google.com` when no `adb` is found on the PC (off with `NEXUS_ANDROID_ADB_DOWNLOAD=0`), and
+the pinned scrcpy server from GitHub, the first time accented text is typed (skipped when `install.ps1` already
+fetched it).
 
 - **What it reads**: the screen and UI tree, SMS/RCS messages, notifications, files in shared storage, location,
   recent calls, contacts and calendar, only when the agent calls the matching tool. Security codes are masked before
@@ -394,7 +422,8 @@ it).
 - **What it stores on the PC**, under `~/.nexus/`: the phone map (`map/`: the Settings tree, the screens noted with
   `map note`, and up to 30 snapshots of settings values, apps, permissions and Bluetooth device names, with
   identifiers, tokens, addresses and numbers masked), the phone's serial number, Wi-Fi address and wireless debugging
-  port, the saved screen timeout, a lock file, the pinned scrcpy server, and, with `install.ps1`, its environment and
+  port, the saved screen timeout, a lock file, the pinned scrcpy server, the downloaded Platform Tools (when no `adb`
+  was found), and, with `install.ps1`, its environment and
   backups of the client configs it edits. Files you `pull` go to `~/Downloads/Telephone`. The server writes no
   messages or screenshots to disk.
 - **Journal**, under `%LOCALAPPDATA%\NexusJournal\android\<agent>\<YYYY-MM>.jsonl` (or `NEXUS_JOURNAL_HOME`),

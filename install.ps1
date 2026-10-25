@@ -34,7 +34,7 @@ if (-not $adb) {
     $adb = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Filter adb.exe -Recurse -ErrorAction SilentlyContinue |
         Select-Object -First 1 -ExpandProperty FullName
 }
-if (-not $adb) { Write-Warning 'adb not found: winget install Google.PlatformTools, then run this script again.' }
+if (-not $adb) { Write-Host 'adb not found: the server downloads Google''s Platform Tools on first use (nexus-android setup guides the phone connection).' }
 
 # scrcpy server (Genymobile, Apache 2.0): typing accents and emoji through the clipboard. Same pinned version and
 # SHA-256 as src\nexus_android\clip.py (which downloads it itself at the first accented text if it is missing).

@@ -8,7 +8,6 @@ import json
 import os
 import re
 import shlex
-import shutil
 import socket
 import struct
 import subprocess
@@ -32,16 +31,26 @@ _LINK_LOST = re.compile(r"^(?:adb(?:\.exe)?: )?(?:error: )?(?:device .*not found
                         r"protocol fault)", re.I | re.M)
 
 def _find_adb() -> str:
-    explicit = os.environ.get("NEXUS_ANDROID_ADB")
-    if explicit and Path(explicit).is_file():
-        return explicit
-    found = shutil.which("adb")
-    if found:
-        return found
-    winget = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
-    for candidate in winget.glob("Google.PlatformTools_*/platform-tools/adb.exe"):
-        return str(candidate)
-    raise PhoneError("adb not found: install the Platform Tools (winget install Google.PlatformTools).")
+    from . import platformtools  # importé ici : platformtools dépend de PhoneError
+
+    return platformtools.find()
+
+
+DEV_OPTIONS = "https://developer.android.com/studio/debug/dev-options"
+OEM_DRIVERS = "https://developer.android.com/studio/run/oem-usb"
+# Pas-à-pas du premier branchement, dit à l'agent qui le relaie à l'utilisateur (et par `nexus-android setup`).
+FIRST_PLUG = (
+    "1. On the phone: Settings > About phone (Samsung: About phone > Software information) > tap \"Build number\" "
+    "7 times, until \"Developer mode has been turned on\". "
+    "2. Settings > Developer options (Samsung: at the bottom of Settings) > turn on \"USB debugging\". "
+    "3. Plug the phone into this PC with a USB data cable (some cables only charge); if the phone asks what the USB "
+    "connection is for, choose \"File transfer\". "
+    "4. On the phone, accept \"Allow USB debugging?\" (tick \"Always allow from this computer\"). "
+    f"Official guide: {DEV_OPTIONS}. Phone plugged in and still not seen on Windows: install the phone maker's USB "
+    f"driver ({OEM_DRIVERS}; Samsung: https://developer.samsung.com/android-usb-driver).")
+UNAUTHORIZED = ("Phone plugged in but not authorized: accept \"Allow USB debugging?\" on its screen (tick \"Always "
+                "allow from this computer\"). No prompt? Unlock the phone, unplug and plug the cable again; if it "
+                "still does not show, Developer options > \"Revoke USB debugging authorizations\", then plug in again.")
 
 
 @dataclass(frozen=True)
@@ -64,6 +73,8 @@ def parse_devices(output: str) -> list[Device]:
         if len(parts) < 2:
             continue
         serial, state = parts[0], parts[1]
+        if state == "no" and len(parts) > 2 and parts[2].startswith("permissions"):  # Linux : « no permissions (…) »
+            state = "no permissions"
         model = next((p.split(":", 1)[1] for p in parts[2:] if p.startswith("model:")), "")
         devices.append(Device(serial, state, model.replace("_", "-"), transport_of(serial)))
     return devices
@@ -349,12 +360,16 @@ class Adb:
     def _missing(self, known: str) -> str:
         visible = self.devices()
         if any(d.state == "unauthorized" for d in visible):
-            return "Phone plugged in but not authorized: accept \"Allow USB debugging\" on its screen."
+            return UNAUTHORIZED
+        if any(d.state == "no permissions" for d in visible):  # Linux sans règle udev pour ce téléphone
+            return ("Phone plugged in but this computer's USB permissions block adb (\"no permissions\"): add the "
+                    "Android udev rules (https://developer.android.com/studio/run/device#setting-up), then plug in "
+                    "again.")
         others = [d.model or d.serial for d in visible if d.state == "device"]
         ignored = f" Visible devices ignored (not the user's phone): {', '.join(others)}." if others else ""
         if not known:
-            return ("User's phone not registered on this PC yet: plug it in once over USB (USB debugging "
-                    "allowed); it will then also be found over Wi-Fi." + ignored)
+            return ("No phone set up on this PC yet. Guide the user through these steps (once per PC): " + FIRST_PLUG
+                    + " It will then also be found over Wi-Fi once paired." + ignored)
         return (f"User's phone (serial number {known}) not found: plug in the USB cable, or enable wireless "
                 "debugging (phone paired with this PC and on the same Wi-Fi). After a phone restart or a "
                 "network change, Android turns wireless debugging off: turn it back on (Developer options) "

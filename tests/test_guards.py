@@ -365,7 +365,7 @@ def test_connect_wifi_only_if_same_phone(monkeypatch, tmp_path):
 
 def test_connect_first_pairing_needs_usb(monkeypatch, tmp_path):
     fake_adb(monkeypatch, tmp_path, "192.0.2.30:5555 device model:TV\n", {"192.0.2.30:5555": "TVBOX"}, None)
-    with pytest.raises(PhoneError, match="not registered on this PC yet"):
+    with pytest.raises(PhoneError, match="No phone set up on this PC yet"):
         adb_mod.Adb().connect()
 
 

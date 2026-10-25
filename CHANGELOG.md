@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-25
+
+### Added
+
+- `adb` is downloaded when the PC has none: the server takes the current stable Platform Tools for this system from
+  Google's SDK repository (the manifest `sdkmanager` reads), checks the size and SHA-1 Google publishes and unpacks
+  them in `~/.nexus/nexus-android/tools/platform-tools`. An installed `adb` comes first (`NEXUS_ANDROID_ADB`, `PATH`,
+  winget, Android SDK); `NEXUS_ANDROID_ADB_DOWNLOAD=0` turns the download off.
+- `nexus-android setup`: first connection guided in a terminal. It gets `adb`, shows the USB debugging steps, waits
+  for the phone (authorization prompt included) and registers it for this PC.
+- `nexus-android --version`.
+
+### Changed
+
+- No phone set up yet: the error now lists the steps for the agent to relay (Build number, USB debugging, data
+  cable and File transfer, the authorization prompt) with Android's official guide and the makers' USB drivers.
+  Unauthorized phone: what to do when the prompt does not show. Linux "no permissions": the udev rules to add.
+- README: Quick start rewritten for beginners (uv, `setup`, one command per client, Antigravity's raw config);
+  every `uvx` command runs the tested Python 3.14.
+
 ## [0.9.12] - 2026-10-25
 
 ### Added
@@ -947,7 +967,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.12...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.10.0
 [0.9.12]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.12
 [0.9.11]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.11
 [0.9.10]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.10
