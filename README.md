@@ -42,11 +42,12 @@ official [Platform Tools](https://developer.android.com/tools/releases/platform-
 1. **Install uv** (it runs the server and fetches Python): open PowerShell and run
 
    ```powershell
-   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   winget install --id astral-sh.uv -e
    ```
 
-   ([uv installation guide](https://docs.astral.sh/uv/getting-started/installation/); `winget install astral-sh.uv`
-   also works). Close PowerShell and open a new one.
+   (Windows' own package manager; other ways in the
+   [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/)). Close PowerShell and open a
+   new one.
 2. **Run setup**, once per PC:
 
    ```powershell
