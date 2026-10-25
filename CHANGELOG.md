@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-26
+
+### Added
+
+- `NEXUS_ANDROID_MANAGED`: set by a plugin that pins the server version (the nexus-plugins catalog); the server then
+  prepares nothing and its state says the update comes with that plugin.
+
 ## [0.13.0] - 2026-10-26
 
 ### Added
@@ -1019,7 +1026,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.13.1
 [0.13.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.13.0
 [0.12.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.12.1
 [0.12.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.12.0

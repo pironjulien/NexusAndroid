@@ -26,6 +26,8 @@ PYPI = "https://pypi.org/pypi/nexus-android/json"
 DAY = 24 * 3600.0
 TIMEOUT = 15.0
 DISABLED = os.environ.get("NEXUS_ANDROID_UPDATE", "1").strip().lower() in {"0", "off", "false", "no"}
+# Version tenue par un autre (plugin d'un catalogue, épinglé) : l'état dit qui la met à jour, rien n'est préparé.
+MANAGED = os.environ.get("NEXUS_ANDROID_MANAGED", "").strip()
 
 
 def status_file() -> Path:
@@ -120,6 +122,9 @@ def check(now: float | None = None) -> None:
     extra = f"; {notes}" if notes else ""
     if _version(latest) <= _version(__version__):  # version en cours plus récente que PyPI (pas encore servie) : elle
         write_status("idle", __version__, f"nexus-android {__version__} is up to date{extra}")
+        return
+    if MANAGED:
+        write_status("idle", latest, f"nexus-android {latest} available; updated with the {MANAGED}{extra}")
         return
     if not via_uvx():
         write_status("idle", latest, f"nexus-android {latest} available; run its installer again to update{extra}")

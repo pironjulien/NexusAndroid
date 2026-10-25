@@ -109,7 +109,8 @@ newer and the server was started by `uvx`, it prepares it in uv's cache (`uvx ne
 next start of the AI app. Its own copy of the Platform Tools is updated the same way (an `adb` you installed is never
 touched). The state goes to `~/.nexus/status/android.json` (`product`, `version`, `latest`, `state`, `checked_at`,
 `message`) for the Nexus app. The Claude Desktop extension and `install.ps1` stay on their version until installed
-again. `NEXUS_ANDROID_UPDATE=0` turns the checks off.
+again, and so does a plugin that pins a version and sets `NEXUS_ANDROID_MANAGED` (its state says who updates
+it). `NEXUS_ANDROID_UPDATE=0` turns the checks off.
 
 `adb` is looked for in this order: `NEXUS_ANDROID_ADB` (full path), the `PATH`, winget's Platform Tools, the Android
 SDK (`ANDROID_HOME`, Android Studio's default folder), then `~/.nexus/nexus-android/tools/platform-tools`. When none

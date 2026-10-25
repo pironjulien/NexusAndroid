@@ -16,6 +16,7 @@ def state(tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setattr(updates, "memo_file", lambda: tmp_path / "update.json")
     monkeypatch.setattr(updates, "DISABLED", False)
+    monkeypatch.setattr(updates, "MANAGED", "")
     monkeypatch.setattr(updates.platformtools, "refresh", lambda: None)
     return tmp_path / ".nexus" / "status" / "android.json"
 
@@ -112,3 +113,12 @@ def test_user_adb_never_refreshed(tmp_path, monkeypatch):
     monkeypatch.setattr(platformtools, "installed", lambda: str(tmp_path / "winget" / "adb.exe"))
     monkeypatch.setattr(platformtools, "_get", lambda url, limit: pytest.fail("no request for a user adb"))
     assert platformtools.refresh() is None
+
+
+def test_managed_by_a_plugin(state, monkeypatch):
+    monkeypatch.setattr(updates, "MANAGED", "nexus-plugins catalog")
+    monkeypatch.setattr(updates, "latest_on_pypi", lambda: NEWER)
+    monkeypatch.setattr(updates, "via_uvx", lambda: True)
+    monkeypatch.setattr(updates, "prepare", lambda version: pytest.fail("a pinned plugin is updated by its catalog"))
+    updates.check()
+    assert _status(state)["message"].endswith("updated with the nexus-plugins catalog")
