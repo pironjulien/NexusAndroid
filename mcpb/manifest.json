@@ -1,0 +1,38 @@
+{
+  "manifest_version": "0.4",
+  "name": "nexus-android",
+  "display_name": "NexusAndroid",
+  "version": "0.12.0",
+  "description": "Android computer use over plain ADB: screen, gestures, SMS, notifications, files. No root, no app on the phone.",
+  "long_description": "Lets Claude see and drive your real Android phone over a USB cable or the local Wi-Fi: screen and numbered elements, taps, typing with accents, SMS/RCS reading and reply drafts, notifications, files, quick settings. Nothing is installed on the phone. `adb` is found on the PC or downloaded once from Google. Sending, calling, paying and other irreversible gestures need your explicit yes. First time: turn on USB debugging on the phone and plug it in; the tools explain each step.",
+  "author": {
+    "name": "Julien Piron",
+    "url": "https://julienpiron.fr/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pironjulien/NexusAndroid"
+  },
+  "homepage": "https://julienpiron.fr/nexusandroid/",
+  "documentation": "https://github.com/pironjulien/NexusAndroid#readme",
+  "support": "https://github.com/pironjulien/NexusAndroid/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "uv",
+    "entry_point": "src/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "--python", "3.14", "src/server.py"]
+    }
+  },
+  "tools_generated": true,
+  "keywords": ["android", "adb", "phone", "computer-use", "sms", "automation"],
+  "license": "MIT",
+  "privacy_policies": ["https://github.com/pironjulien/NexusAndroid#privacy"],
+  "compatibility": {
+    "platforms": ["win32"],
+    "runtimes": {
+      "python": ">=3.14,<3.15"
+    }
+  }
+}

@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-25
+
+### Added
+
+- Claude Desktop extension: `nexus-android.mcpb` (MCPB, server type `uv`) attached to every release, the host
+  installing the same version from PyPI. Download link and *Install* buttons for VS Code and Cursor at the top of
+  the README.
+- Compatibility list: what has been tested (Galaxy Fold `SM-F971B`, Windows 11) and what is only expected, with a
+  device report form for issues.
+
 ## [0.11.0] - 2026-10-25
 
 ### Added
@@ -982,7 +992,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.12.0
 [0.11.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.11.0
 [0.10.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.10.0
 [0.9.12]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.12

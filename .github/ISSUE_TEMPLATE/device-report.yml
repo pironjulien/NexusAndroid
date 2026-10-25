@@ -1,0 +1,32 @@
+name: Device report
+description: Tell which phone NexusAndroid works (or does not work) with, for the compatibility list.
+title: "Device: "
+labels: ["device report"]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Phone model and Android version
+      description: Settings > About phone. Never paste a serial number or IMEI.
+      placeholder: "Pixel 9, Android 17"
+    validations:
+      required: true
+  - type: dropdown
+    id: link
+    attributes:
+      label: Link
+      options: ["USB", "Wireless debugging", "Both"]
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options: ["Everything I tried works", "Works with issues", "Does not work"]
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: What you tried and what happened
+      description: NexusAndroid version (uvx nexus-android --version), PC system, tools used, error messages.

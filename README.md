@@ -10,6 +10,10 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue?logo=python&logoColor=white)](https://github.com/pironjulien/NexusAndroid/blob/main/pyproject.toml)
 [![MCP](https://img.shields.io/badge/MCP-server-7ee2a8)](https://modelcontextprotocol.io)
 
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_nexus--android-0098FF?logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%7B%22name%22%3A%22nexus-android%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--python%22%2C%223.14%22%2C%22nexus-android%22%5D%7D)
+[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=nexus-android&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLXB5dGhvbiIsIjMuMTQiLCJuZXh1cy1hbmRyb2lkIl19)
+[![Claude Desktop extension](https://img.shields.io/badge/Claude_Desktop-Download_extension-D97757?logo=claude&logoColor=white)](https://github.com/pironjulien/NexusAndroid/releases/latest/download/nexus-android.mcpb)
+
 [![NexusAndroid: Android computer use for AI agents, over plain ADB. Works with Claude, Codex and Antigravity.](https://raw.githubusercontent.com/pironjulien/NexusAndroid/main/docs/assets/banner.webp)](https://julienpiron.fr/nexusandroid/)
 
 ![NexusAndroid: an AI agent launches the Calculator on a real Android phone over ADB, types 1618 × 20 and reads back 32 360](https://raw.githubusercontent.com/pironjulien/NexusAndroid/main/docs/assets/demo.webp)
@@ -20,7 +24,7 @@ SMS/RCS reading, prepared replies, notifications, files, settings. No root, no a
 cloud relay: a USB cable or the local Wi-Fi.
 
 Built and tested on a Samsung Galaxy Fold (`SM-F971B`, One UI) with a Windows PC. Other Android phones with USB
-debugging should work but have not been tested. Everything sent to the client is in English: server instructions,
+debugging should work but have not been tested (see [Compatibility](https://github.com/pironjulien/NexusAndroid#compatibility)). Everything sent to the client is in English: server instructions,
 tool descriptions and tool reports (results, refusals, errors).
 Part of the Nexus family: [NexusWindows](https://julienpiron.fr/nexuswindows/)
 ([Claude](https://github.com/pironjulien/NexusWindows-Claude) ·
@@ -61,6 +65,8 @@ official [Platform Tools](https://developer.android.com/tools/releases/platform-
    [USB driver](https://developer.android.com/studio/run/oem-usb)
    ([Samsung](https://developer.samsung.com/android-usb-driver)).
 3. **Restart your AI app.** To declare it by hand instead:
+   - **VS Code** or **Cursor**: the *Install* buttons at the top of this page;
+   - **Claude Desktop**: download [`nexus-android.mcpb`](https://github.com/pironjulien/NexusAndroid/releases/latest/download/nexus-android.mcpb) and open it (Settings > Extensions);
    - **Claude Code**: `claude mcp add nexus-android --scope user -- uvx --python 3.14 nexus-android`
      (or, for the whole Nexus pack: `/plugin marketplace add pironjulien/nexus-plugins`, then
      `/plugin install nexus-android@nexus-plugins`);
@@ -314,6 +320,26 @@ screen is left alone. The original value is saved once (`~\.nexus\nexus-android\
 servers under the common lock: one save, one restore, never the raised value taken for the original. After a crash,
 the next server to start restores it. The server never unlocks a phone that Android keeps locked.
 `NEXUS_ANDROID_AWAKE_IDLE` (seconds, default 120) changes the delay; `NEXUS_ANDROID_KEEP_AWAKE=0` turns it off.
+
+## Compatibility
+
+The server needs nothing on the phone but USB debugging; anything Android with ADB should work, and only what is
+listed as tested has been run here. Report your device in an
+[issue](https://github.com/pironjulien/NexusAndroid/issues/new?template=device-report.yml) to move it up.
+
+| Device or system | Status |
+| --- | --- |
+| Samsung Galaxy Fold `SM-F971B`, One UI, Android 17, USB and wireless debugging | **Tested** (real-phone scenarios, `tests/scenarios.py`) |
+| Windows 11 PC | **Tested** |
+| Other Samsung phones (One UI) | Expected: same system and apps as the tested phone |
+| Pixel, Motorola, Nothing, OnePlus, Sony, Fairphone and other near-stock Android | Expected, not tested |
+| Xiaomi, Redmi, POCO (MIUI, HyperOS) | Expected once "USB debugging (Security settings)" is on in Developer options (gestures refused before; the error says so) |
+| Android 10 and older | Expected over USB only (wireless debugging arrived with Android 11); app functions need Android 16 |
+| Tablets and other foldables | Expected; the folded/unfolded posture is tracked as on the Fold |
+| Phones managed by an employer (USB debugging blocked by policy) | Not possible |
+| iPhone, iPad | Not supported (no ADB) |
+| Android emulators | Ignored unless named with `NEXUS_ANDROID_SERIAL` (for tests) |
+| macOS, Linux PC | Expected: the server starts on Linux in CI; no phone tested; OCR is Windows only |
 
 ## Known limitations
 
