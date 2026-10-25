@@ -43,13 +43,15 @@ official [Platform Tools](https://developer.android.com/tools/releases/platform-
 
    ([uv installation guide](https://docs.astral.sh/uv/getting-started/installation/); `winget install astral-sh.uv`
    also works). Close PowerShell and open a new one.
-2. **Connect the phone**, once per PC: run
+2. **Run setup**, once per PC:
 
    ```powershell
    uvx --python 3.14 nexus-android setup
    ```
 
-   It downloads what is missing, then walks you through it and waits until the phone answers:
+   It downloads what is missing, declares the server to the AI apps it finds (Claude Code, Claude Desktop, Codex,
+   Antigravity; your own entries are kept, each edited file is backed up first), then walks you through connecting
+   the phone and waits until it answers:
    - on the phone, Settings > About phone (Samsung: > Software information) > tap **Build number** 7 times;
    - Settings > **Developer options** > turn on **USB debugging**
      ([Android guide](https://developer.android.com/studio/debug/dev-options));
@@ -58,7 +60,7 @@ official [Platform Tools](https://developer.android.com/tools/releases/platform-
    It ends with `Phone ready: <model>`. Phone plugged in but never seen: install the maker's
    [USB driver](https://developer.android.com/studio/run/oem-usb)
    ([Samsung](https://developer.samsung.com/android-usb-driver)).
-3. **Add it to your AI**, then restart the app:
+3. **Restart your AI app.** To declare it by hand instead:
    - **Claude Code**: `claude mcp add nexus-android --scope user -- uvx --python 3.14 nexus-android`
      (or, for the whole Nexus pack: `/plugin marketplace add pironjulien/nexus-plugins`, then
      `/plugin install nexus-android@nexus-plugins`);
@@ -88,6 +90,11 @@ args = ["--python", "3.14", "nexus-android"]
 }
 ```
 </details>
+
+`setup` options: `--no-wait` (declare and get `adb`, without waiting for the phone), `--no-register` (leave the AI
+apps alone). The Nexus pack runs it with `NEXUS_PACK=1`: no question, no wait, exit code 0 on success and a last line
+`NEXUS_PACK_RESULT Claude Desktop=declared; Codex=declared; Antigravity=plugin`. In Antigravity the server comes as a
+plugin (`~/.gemini/config/plugins/nexus-android`: server and agent guide), never as a global entry.
 
 `adb` is looked for in this order: `NEXUS_ANDROID_ADB` (full path), the `PATH`, winget's Platform Tools, the Android
 SDK (`ANDROID_HOME`, Android Studio's default folder), then `~/.nexus/nexus-android/tools/platform-tools`. When none
@@ -423,8 +430,8 @@ fetched it).
   `map note`, and up to 30 snapshots of settings values, apps, permissions and Bluetooth device names, with
   identifiers, tokens, addresses and numbers masked), the phone's serial number, Wi-Fi address and wireless debugging
   port, the saved screen timeout, a lock file, the pinned scrcpy server, the downloaded Platform Tools (when no `adb`
-  was found), and, with `install.ps1`, its environment and
-  backups of the client configs it edits. Files you `pull` go to `~/Downloads/Telephone`. The server writes no
+  was found), backups of the AI client configs that `setup` or
+  `install.ps1` edits (`backups/`), and, with `install.ps1`, its environment. Files you `pull` go to `~/Downloads/Telephone`. The server writes no
   messages or screenshots to disk.
 - **Journal**, under `%LOCALAPPDATA%\NexusJournal\android\<agent>\<YYYY-MM>.jsonl` (or `NEXUS_JOURNAL_HOME`),
   shared format of the Nexus tools: one line per gesture or tool call with the calling AI (Claude, Codex,

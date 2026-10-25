@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-25
+
+### Added
+
+- `setup` declares the server to the AI apps found on the PC: Claude Code (`claude mcp add --scope user`, nothing
+  when a nexus-android plugin is enabled), Claude Desktop (classic and Store installs), Codex
+  (`[mcp_servers.nexus-android]`, nothing when a nexus-android plugin is enabled) and Antigravity (a
+  `nexus-android` plugin with the server and the agent guide, never a global entry; an older global entry of ours is
+  removed). Each runs `uvx --python 3.14 nexus-android==<version>`; entries written otherwise by the user are kept,
+  every edited file is backed up in `~/.nexus/nexus-android/backups` first.
+- Nexus pack mode: `NEXUS_PACK=1` (or `setup --no-wait`) gets `adb` and declares the server without any question or
+  waiting for the phone; exit code 0 on success, last line `NEXUS_PACK_RESULT Client=state; ...`.
+  `--no-register` leaves the AI apps alone.
+- The Antigravity plugin and the agent guide ship inside the package (`nexus_android/plugin`).
+
 ## [0.10.0] - 2026-10-25
 
 ### Added
@@ -967,7 +982,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.11.0
 [0.10.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.10.0
 [0.9.12]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.12
 [0.9.11]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.11

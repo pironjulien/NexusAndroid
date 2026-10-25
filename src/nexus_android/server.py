@@ -2892,7 +2892,7 @@ def main() -> None:
     if sys.argv[1:2] == ["setup"]:  # premier branchement guidé (adb, débogage USB), dans un terminal
         from . import firstrun
 
-        sys.exit(firstrun.run())
+        sys.exit(firstrun.run(sys.argv[2:]))
     http = "--http" in sys.argv
     if awake.ENABLED:
         _schedule(0)  # session laissée par un serveur arrêté ou planté : rendue dès qu'elle a expiré
