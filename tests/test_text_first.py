@@ -1,4 +1,4 @@
-"""Texte d'abord (NexusHarness/shared/images.md § 2) : par défaut la liste seule ; l'image rejoint la liste quand un
+"""Texte d'abord (NexusHarness/NexusShared/images.md § 2) : par défaut la liste seule ; l'image rejoint la liste quand un
 effet n'a pas été relu, quand l'écran n'a aucun élément lisible, ou sur demande. adb simulé (test_guards)."""
 
 from __future__ import annotations

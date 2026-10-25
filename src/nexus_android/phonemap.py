@@ -787,7 +787,7 @@ def note_screen(screens: dict[str, Any], path: str, items: list[dict[str, str]],
     ajoutées à celles déjà notées (écran long relevé en plusieurs fois après défilement)."""
     path = " > ".join(p.strip() for p in path.split(">") if p.strip())
     if not path:
-        raise PhoneError("note: path required, e.g. \"Paramètres > Galaxy Buds4 Pro > Notifications\"")
+        raise PhoneError("note: path required, e.g. \"Settings > Galaxy Buds4 Pro > Notifications\"")
     old = screens.get(path, {})
     if append and old:
         known = {i["text"] for i in old.get("items", ())}

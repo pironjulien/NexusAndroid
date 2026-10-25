@@ -1,4 +1,4 @@
-"""Journal commun des outils Nexus (NexusHarness/shared/journal/FORMAT.md, produit « android ») : une ligne par geste ou
+"""Journal commun des outils Nexus (NexusHarness/NexusShared/journal/FORMAT.md, produit « android ») : une ligne par geste ou
 par appel d'outil, en plus du journal détaillé, dans %LOCALAPPDATA%\\NexusJournal\\android\\<agent>\\<AAAA-MM>.jsonl.
 Jamais de texte d'écran, de SMS, de contact, de texte tapé ni de code : app = nom du paquet, erreur = une cause prise
 dans une liste fermée (jamais un morceau du message, dont même le début peut porter un nom ou un numéro). Jamais
@@ -87,6 +87,11 @@ def app_propre(package: str | None) -> str | None:
     return package if package and _PACKAGE.match(package) else None
 
 
+def actif() -> bool:
+    """Faux si NEXUS_JOURNAL=0 (ou off, false, no) : aucune ligne écrite, aucun dossier créé."""
+    return os.environ.get("NEXUS_JOURNAL", "").strip().lower() not in ("0", "off", "false", "no")
+
+
 def _racine() -> Path:
     base = os.environ.get("NEXUS_JOURNAL_HOME") or os.path.join(
         os.environ.get("LOCALAPPDATA", str(Path.home())), "NexusJournal")
@@ -124,7 +129,7 @@ def ecrire(agent: str | None, appel: str | None, app: str | None, action: str, i
     """Une ligne déposée dans la file (jamais d'attente) ; agent inconnu : rien (le journal est rangé par IA)."""
     global _WRITER
     try:
-        if agent not in AGENTS:
+        if agent not in AGENTS or not actif():
             return
         maintenant = datetime.now(UTC)
         ligne = {

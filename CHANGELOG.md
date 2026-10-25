@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.12] - 2026-10-25
+
+### Added
+
+- `NEXUS_JOURNAL=0` (also `off`, `false`, `no`) in the server's environment turns the shared journal off: nothing
+  written, no folder created.
+
+### Changed
+
+- CI: the private development copy tests Python 3.14 only and skips Scorecard; the public repository keeps the full
+  3.12–3.14 matrix. A newer push cancels the running test (Windows minutes count double on private repositories).
+  The computed Python version reaches the scripts through the environment, never expanded inside them.
+- Workspace reorganisation: the shared guardrail policy, the shared image rule and the comparison benchmark moved to
+  their new locations; paths and links updated accordingly.
+- Skill: `look` is described as text first (element list alone; the image is joined only when needed or asked for).
+- The MCP session to AI mapping used by the journal keeps the 32 most recent sessions, like the per-session screen
+  views (it grew without limit on the shared daemon).
+- Real-phone smoke run, `pytest` marker and the `map note` error message in English.
+- Benchmark: the test environment path is computed like `test.ps1` does instead of a fixed key.
+
+### Fixed
+
+- `install.ps1` no longer fails on a new machine when it runs the offline tests: it first prepares the development
+  dependencies in the uv cache (online), and skips the tests with a warning when Node.js is missing.
+- Real-phone smoke run counts unread conversations with the `UNREAD` marker the server actually writes.
+- README, Privacy: the journal written since 0.9.8 under `%LOCALAPPDATA%\NexusJournal\android\` is documented (what
+  it holds, how to delete it or turn it off); it used to say no log was written.
+- Text first: server instructions, `act`, `draft`, `launch`, skill and README no longer promise the image after an
+  unverified step (`~`). Since 0.9.10 it is joined only when the screen did not change; otherwise
+  `look(show="both")`. Server instructions and `act` stay under 2048 characters.
+- Tests: the wait for the user to let go of the phone is checked every 0.25 s, and MMS photos are read in one batch
+  then one by one when missing (EXIF orientation applied, unreadable ones flagged); the journal tests no longer leak
+  session state.
+
 ## [0.9.11] - 2026-10-24
 
 ### Fixed
@@ -913,7 +947,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.11...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.9.12...HEAD
+[0.9.12]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.12
 [0.9.11]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.11
 [0.9.10]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.10
 [0.9.9]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.9.9

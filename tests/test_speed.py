@@ -139,3 +139,83 @@ def test_settle_quiet_is_uiautomators_and_the_phone_accepts_it():
     assert screen.SETTLE_QUIET_MS == 500
     source = (Path(__file__).parents[1] / "phone" / "NexusQuery.java").read_text(encoding="utf-8")
     assert "QUIET_MS = 1_000" in source  # le lecteur accepte toute attente de 0 à 1000 ms
+
+
+# ---------------------------------------------------------------- 0.9.6 : attente de l'utilisateur, photos MMS
+
+
+def test_owner_wait_is_checked_every_quarter_second(monkeypatch):
+    # L'utilisateur touche encore le téléphone : relu toutes les 0,25 s (au plus), et l'agent repart dès les
+    # BUSY_QUIET s de calme atteintes, sans attendre une seconde de plus.
+    idles = iter([0.5, 1.0, 2.9, server.BUSY_QUIET])
+    sleeps: list[float] = []
+    monkeypatch.setattr(server.awake, "ENABLED", False)
+    monkeypatch.setattr(server, "_LAST_INPUT", 0.0)
+    monkeypatch.setattr(server.awake, "idle_on_phone", lambda adb: next(idles))
+    monkeypatch.setattr(server.time, "sleep", sleeps.append)
+    assert server._wait_for_owner(object(), SimpleNamespace(awake=True)) == ""  # type: ignore[arg-type]
+    assert sleeps[:2] == [0.25, 0.25] and sleeps[2] == pytest.approx(server.BUSY_QUIET - 2.9)
+    assert len(sleeps) == 3
+
+
+def _photo(size: tuple[int, int], orientation: int = 1) -> bytes:
+    import io
+
+    from PIL import Image as PILImage
+
+    picture = PILImage.new("RGB", size, (200, 30, 30))
+    exif = PILImage.Exif()
+    exif[0x0112] = orientation  # Orientation
+    out = io.BytesIO()
+    picture.save(out, "JPEG", exif=exif.tobytes())
+    return out.getvalue()
+
+
+class PhotoBook:
+    """Conversation simulée : trois photos MMS, dont une absente de la lecture groupée et une illisible."""
+
+    def __init__(self) -> None:
+        from datetime import datetime
+
+        from nexus_android.messages import Message
+
+        self.message = Message(datetime(2026, 10, 24, 12, 0), False, "photos", "RCS/MMS",
+                               attachments=[("11", "image/jpeg"), ("12", "image/jpeg"), ("13", "image/png"),
+                                            ("14", "video/mp4")])
+        self.batched: list[list[str]] = []
+        self.alone: list[str] = []
+
+    def thread(self, conversation: int, limit: int, before_ms: int | None = None):
+        return ["Alice (0611223344)"], [self.message]
+
+    def parts(self, ids: list[str]) -> dict[str, bytes]:
+        self.batched.append(list(ids))
+        return {"11": _photo((40, 20), orientation=6), "13": b"not an image"}
+
+    def part(self, part_id: str) -> bytes:
+        self.alone.append(part_id)
+        return _photo((30, 30))
+
+    def hidden(self, conversation: int) -> bool:
+        return False
+
+
+def test_mms_photos_are_read_together_then_alone_if_missing(monkeypatch):
+    import io
+
+    from PIL import Image as PILImage
+
+    book = PhotoBook()
+    monkeypatch.setattr(server, "ADB", object())
+    monkeypatch.setattr(server, "SCREEN", object())
+    monkeypatch.setattr(server, "MESSAGES", book)
+    out = server._messages(7, None, 15, 4)
+    assert book.batched == [["11", "12", "13"]]  # images seulement, en une lecture groupée
+    assert book.alone == ["12"]  # seule la photo absente de la lecture groupée est relue à part
+    text = out[0]
+    assert "[image 1]" in text and "[image 2]" in text and "[unreadable image]" in text
+    assert "[video not shown]" in text or "not shown]" in text
+    pictures = [PILImage.open(io.BytesIO(block.data)) for block in out[1:]]
+    assert len(pictures) == 2
+    # Orientation EXIF appliquée : la photo 40×20 marquée « tournée de 90° » arrive debout.
+    assert any(p.height > p.width for p in pictures)

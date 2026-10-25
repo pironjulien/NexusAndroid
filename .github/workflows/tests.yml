@@ -8,14 +8,22 @@ on:
 permissions:
   contents: read
 
+# A newer push makes the running check pointless: cancel it (Windows minutes count double on private repositories).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.12", "3.13", "3.14"]
+        # Full matrix on the public repository (free minutes); the private development copy checks 3.14 only.
+        python: ${{ github.repository == 'pironjulien/NexusAndroid' && fromJSON('["3.12", "3.13", "3.14"]') || fromJSON('["3.14"]') }}
     name: test (Python ${{ matrix.python }})
+    env:
+      PYTHON_VERSION: ${{ matrix.python }}  # through the environment: the matrix is computed, never expanded in a script
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -25,11 +33,11 @@ jobs:
         shell: pwsh
         run: |
           $env:UV_PROJECT_ENVIRONMENT = Join-Path $env:RUNNER_TEMP 'nexus-android-prepare'
-          uv sync --frozen --python ${{ matrix.python }}
+          uv sync --frozen --python $env:PYTHON_VERSION
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: test.ps1 (ruff, pyright, unit tests; no phone needed)
         shell: pwsh
-        run: ./test.ps1 -Python ${{ matrix.python }}
+        run: ./test.ps1 -Python $env:PYTHON_VERSION
 
   startup-linux:
     # What MCP directories (Glama) check in a Linux container: the server starts and lists its tools.

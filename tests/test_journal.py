@@ -111,12 +111,37 @@ def test_only_a_package_name_goes_in_app():
 
 
 def test_agent_from_the_mcp_client_name_is_kept_for_the_session(monkeypatch):
+    monkeypatch.setattr(server, "_AGENTS_BY_SESSION", type(server._AGENTS_BY_SESSION)())  # état du module rendu après
     params = SimpleNamespace(clientInfo=SimpleNamespace(name="codex-mcp-client"))
     first = SimpleNamespace(request=SimpleNamespace(headers={"mcp-session-id": "s1", "user-agent": "python-httpx"}),
                             session=SimpleNamespace(client_params=params))
     later = SimpleNamespace(request=SimpleNamespace(headers={"mcp-session-id": "s1", "user-agent": "python-httpx"}),
                             session=SimpleNamespace(client_params=None))
     assert server._agent_key(first) == "codex" and server._agent_key(later) == "codex"
+
+
+def test_sessions_remembered_are_capped_like_views(monkeypatch):
+    monkeypatch.setattr(server, "_AGENTS_BY_SESSION", type(server._AGENTS_BY_SESSION)())
+    params = SimpleNamespace(clientInfo=SimpleNamespace(name="claude-code"))
+    for i in range(server.MAX_VIEWS + 10):
+        ctx = SimpleNamespace(request=SimpleNamespace(headers={"mcp-session-id": f"s{i}"}),
+                              session=SimpleNamespace(client_params=params))
+        assert server._agent_key(ctx) == "claude"
+    assert len(server._AGENTS_BY_SESSION) == server.MAX_VIEWS
+    assert "s0" not in server._AGENTS_BY_SESSION and f"s{server.MAX_VIEWS + 9}" in server._AGENTS_BY_SESSION
+
+
+@pytest.mark.parametrize("value", ["0", "off", "False", " no "])
+def test_nexus_journal_0_turns_the_journal_off(tmp_path, monkeypatch, value):
+    monkeypatch.setenv("NEXUS_JOURNAL_HOME", str(tmp_path))
+    monkeypatch.setenv("NEXUS_JOURNAL", value)
+    journal.ecrire("claude", "a1", "com.whatsapp", "tap", "✓", 12)
+    journal.flush()
+    assert not list(tmp_path.rglob("*"))  # ni ligne ni dossier
+    monkeypatch.setenv("NEXUS_JOURNAL", "1")
+    journal.ecrire("claude", "a2", "com.whatsapp", "tap", "✓", 12)
+    journal.flush()
+    assert len(list(tmp_path.rglob("*.jsonl"))) == 1
 
 
 # ---------------------------------------------------------------- relecture Codex (journal)
@@ -189,7 +214,7 @@ def _ctx(session=None, client=None, ua=None):
 
 
 def test_the_mcp_client_name_wins_and_a_session_keeps_its_ai(monkeypatch):
-    monkeypatch.setattr(server, "_AGENTS_BY_SESSION", {})
+    monkeypatch.setattr(server, "_AGENTS_BY_SESSION", type(server._AGENTS_BY_SESSION)())
     assert server._agent_key(_ctx("s2", client="claude-code", ua="Codex Desktop/1.0")) == "claude"
     assert server._agent_key(_ctx("s3", client="codex-mcp-client")) == "codex"
     assert server._agent_key(_ctx("s3", ua="Jetski/1.2")) == "codex"  # établie : un User-Agent ne la remplace pas

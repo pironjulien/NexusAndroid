@@ -134,8 +134,21 @@ if (-not $NoRegister) {
 if (-not $SkipTests) {
     # Tests under the same Python version as the environment just created.
     $version = & $python -c "import sys; print('%d.%d' % sys.version_info[:2])"
-    & (Join-Path $project 'test.ps1') -Python $version
-    if ($LASTEXITCODE) { throw 'Tests failed.' }
+    if (-not (Get-Command node -CommandType Application -ErrorAction SilentlyContinue)) {
+        Write-Warning 'Node.js not found: offline tests skipped (Pyright needs it). Install Node.js, then run test.ps1.'
+    } else {
+        # test.ps1 is offline: prepare the development and build dependencies in the uv cache first (online), in a
+        # throwaway environment, never the server's (README, Development).
+        $prepare = Join-Path $state 'prepare-venv'
+        $env:UV_PROJECT_ENVIRONMENT = $prepare
+        & $uv sync --frozen --quiet --python $version --project $project
+        $prepared = -not $LASTEXITCODE
+        $env:UV_PROJECT_ENVIRONMENT = $venv
+        Remove-Item $prepare -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not $prepared) { throw 'Preparing the test dependencies failed (uv sync).' }
+        & (Join-Path $project 'test.ps1') -Python $version
+        if ($LASTEXITCODE) { throw 'Tests failed.' }
+    }
 }
 if ($Live) {
     & $python (Join-Path $project 'tests\live_smoke.py')

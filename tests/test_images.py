@@ -1,4 +1,4 @@
-"""Règle commune des images (NexusHarness/shared/images.md) : taille, WebP, plafonds, image inchangée non renvoyée."""
+"""Règle commune des images (NexusHarness/NexusShared/images.md) : taille, WebP, plafonds, image inchangée non renvoyée."""
 
 from __future__ import annotations
 

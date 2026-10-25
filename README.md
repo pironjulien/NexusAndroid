@@ -97,7 +97,7 @@ flowchart LR
     S -.->|"shared lock, screen-awake state"| L[("~/.nexus")]
 ```
 
-`look` returns a screenshot plus the numbered UI tree; `act` runs a batch of gestures, re-reading the screen before
+`look` returns the numbered UI tree, text first (the screenshot only when nothing is readable or on request); `act` runs a batch of gestures, re-reading the screen before
 each one and reporting what really happened. Messages, notifications, contacts and settings are read through
 Android's own providers and `dumpsys`, never by scraping the screen.
 
@@ -112,7 +112,7 @@ screen-awake session and the same safeguards.
 | Tool | Role |
 | --- | --- |
 | `phone` | Connected phone (USB or Wi-Fi), model, screen, foreground app, fold posture, reboot detection (structured output) |
-| `look` | Numbered `[N]` elements with text, state and center `@x,y`, text first: the screen image is joined when nothing is readable (`act` and `launch` also join it when a step is not read back), or on request (`show=both` or `image`, `region`); `marks` draws the `[N]` numbers on the image (`auto`: all when few, else the unnamed elements; `all`; `none`) |
+| `look` | Numbered `[N]` elements with text, state and center `@x,y`, text first: the screen image is joined when nothing is readable (`act` and `launch` also join it when a step fails (`✗`), loses the link (`?`), or is not read back (`~`) and the screen did not change; otherwise `look(show="both")`), or on request (`show=both` or `image`, `region`); `marks` draws the `[N]` numbers on the image (`auto`: all when few, else the unnamed elements; `all`; `none`) |
 | `act` | Batched gestures: tap, long press, typing (accents and emoji included), clear, keys, scroll, swipe, wait, links (`geo:`, `google.navigation:`, `tel:` opens the dialer without calling, `mailto:`, `https://`); `then="changes"` returns only the elements added, changed and removed since the last list (unchanged ones counted, `[N]` kept valid), or the full list when the app or most of the screen changed |
 | `launch` | Open an app by package or part of its name, or a precise screen: `action` (`android.settings.WIFI_SETTINGS`), `data` (deep link), `extras`; target resolved first and reported; calling, sending or paying directly needs `confirm=true` and the accord for that exact intent, banking and identity apps are never opened this way |
 | `clipboard` | Read the phone's clipboard (codes masked, a lone code, password or token never shown) or write text to it, without pasting |
@@ -396,11 +396,18 @@ it).
   identifiers, tokens, addresses and numbers masked), the phone's serial number, Wi-Fi address and wireless debugging
   port, the saved screen timeout, a lock file, the pinned scrcpy server, and, with `install.ps1`, its environment and
   backups of the client configs it edits. Files you `pull` go to `~/Downloads/Telephone`. The server writes no
-  messages, screenshots or logs to disk.
+  messages or screenshots to disk.
+- **Journal**, under `%LOCALAPPDATA%\NexusJournal\android\<agent>\<YYYY-MM>.jsonl` (or `NEXUS_JOURNAL_HOME`),
+  shared format of the Nexus tools: one line per gesture or tool call with the calling AI (Claude, Codex,
+  Antigravity), the action, the outcome, the duration, the technique, the app's package name and an error category
+  from a fixed list. Never screen text, SMS, contact, typed text or code. Nothing is sent anywhere; months are kept
+  until you delete them: delete the `android` folder (or single month files) at any time. `NEXUS_JOURNAL=0` in the
+  server's environment turns it off (nothing written, no folder created).
 - **On the phone**, in `/data/local/tmp`: the two helpers (`nexus-scrcpy.jar`, `nexus-query-*.dex`) stay there; the
   UI dump (`nexus-android-ui-*.xml`) and the temporary read folders (`nexus-q-*`, `nexus-p-*`) are deleted right after
   each read. The read helper stops by itself after 10 minutes without a request.
-- **Removing it**: delete `~/.nexus/nexus-android/` and `~/.nexus/android.lock`, remove the `nexus-android` entry
+- **Removing it**: delete `~/.nexus/nexus-android/`, `~/.nexus/android.lock` and
+  `%LOCALAPPDATA%\NexusJournal\android\`, remove the `nexus-android` entry
   from each client's config, run `adb shell "rm -rf /data/local/tmp/nexus-*"` (helpers, UI dumps and any read folder
   left by an interrupted read), and revoke the PC's key on the phone (Developer options → Revoke USB debugging
   authorizations).

@@ -23,7 +23,7 @@ from . import ocr, query
 from .adb import STATE_WAIT, Adb, PhoneError
 from .messages import has_keyword, mask_codes
 
-# Image rendue à l'agent (règle commune des Nexus, NexusHarness/shared/images.md) : côté long ≤ 1568 px et ≤ 1,15 Mpx
+# Image rendue à l'agent (règle commune des Nexus, NexusHarness/NexusShared/images.md) : côté long ≤ 1568 px et ≤ 1,15 Mpx
 # (limite standard de Claude, sans réduction ; GPT-5.x et Gemini 3 aussi), WebP sans perte, qualité 85 puis 70 au-delà
 # de 200 Ko, jamais plus de 500 Ko (au-delà, Antigravity rejette la requête).
 MAX_SIDE = 1568

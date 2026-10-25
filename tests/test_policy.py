@@ -14,7 +14,7 @@ from nexus_android import policy, screen, server
 from nexus_android.screen import Element, Screen
 from nexus_android.server import Step
 
-SHARED = Path(__file__).resolve().parents[2] / "shared" / "garde-fous.json"
+SHARED = Path(__file__).resolve().parents[2] / "NexusWindows" / "commun" / "garde-fous.json"
 
 # Un exemple réel de libellé par motif de la politique commune : tout nouveau motif doit recevoir le sien.
 EXAMPLES = {
@@ -115,7 +115,7 @@ def test_embedded_policy_is_the_shared_one():
     if not SHARED.exists():
         pytest.skip("hors de NexusHarness (version publique) : la copie embarquée fait foi")
     assert policy.POLICY_FILE.read_text(encoding="utf-8") == SHARED.read_text(encoding="utf-8"), (
-        "src/nexus_android/garde-fous.json diffère de NexusHarness/shared/garde-fous.json : recopier le fichier commun")
+        "src/nexus_android/garde-fous.json diffère de NexusHarness/NexusWindows/commun/garde-fous.json : recopier le fichier commun")
 
 
 def test_every_motif_has_an_example():

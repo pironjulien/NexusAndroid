@@ -440,7 +440,7 @@ def _spawn(adb: Adb, argv: list[str], make: Callable[[subprocess.Popen[bytes], f
     """screenrecord lancé sur le téléphone, la commande adb gardée ouverte ; (enregistrement, erreur : "" s'il tourne
     encore après START_CHECK s). Tout ce qui suit le lancement peut être filmé : la surveillance (_CURRENT, fils de
     surveillance et de fin) part dès la commande envoyée, avant le pid et START_CHECK, et le temps non surveillé se
-    compte depuis le dernier premier plan lu avant le lancement (une banque passée pendant le démarrage est vue)."""
+    compte depuis le lancement de cet essai (`started`, passé à make : rien de ce qui le précède n'est filmé)."""
     global _CURRENT
     started = screen_mod.stamp()
     proc = adb.background("echo $$; exec " + " ".join(shlex.quote(a) for a in argv) + " 2>&1")

@@ -59,7 +59,7 @@ PROTECTED_PACKAGES = {
 _PROTECTED_PATTERN = re.compile(r"bank|banque|wallet|crypto|authenticator|binance|(?:^|[._])(?:pay|auth)", re.I)
 
 # Confirmation : politique commune de Claude, Antigravity et Codex (accord du 18/10/2026, `garde-fous.json`, copie
-# identique de NexusHarness\shared vérifiée par les tests). Payer, envoyer, publier, supprimer définitivement, formater,
+# identique de NexusHarness\NexusWindows\commun vérifiée par les tests). Payer, envoyer, publier, supprimer définitivement, formater,
 # désinstaller, réinitialiser, résilier, rendre un dépôt public : confirm=true, que l'agent met sur l'ordre explicite de
 # l'utilisateur pour ce geste ou après son oui ; appeler aussi (appel réel sur un téléphone). Tout le reste est libre
 # (supprimer vers la corbeille, accepter, partager...).
@@ -169,7 +169,7 @@ def irreversible(element: Element, screen_text: str = "") -> str | None:
 # Geste SORTANT (envoyer, appeler, payer, publier, transférer) : confirm=true ET accord=<jeton> rendu par l'outil pour
 # CETTE action (application, bouton, en-tête de l'écran où figure le destinataire, texte des champs) ; tout changement
 # entre l'accord et le geste l'annule. Destructions locales (désinstaller, réinitialiser...) : confirm=true seul.
-# `garde_fous.py` : copie identique de NexusHarness\shared (vérifiée par les tests), comme garde-fous.json.
+# `garde_fous.py` : copie identique de NexusHarness\NexusWindows\commun (vérifiée par les tests), comme garde-fous.json.
 from . import garde_fous  # noqa: E402
 
 ACCORDS = garde_fous.Accords()
