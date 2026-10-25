@@ -2894,6 +2894,9 @@ def main() -> None:
 
         sys.exit(firstrun.run(sys.argv[2:]))
     http = "--http" in sys.argv
+    from . import updates
+
+    updates.start()  # dernière version, Platform Tools à nous, état pour l'appli Nexus : en arrière-plan
     if awake.ENABLED:
         _schedule(0)  # session laissée par un serveur arrêté ou planté : rendue dès qu'elle a expiré
     try:

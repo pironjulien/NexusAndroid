@@ -7,9 +7,9 @@ import tomllib
 
 import pytest
 
-from nexus_android import __version__, firstrun, register
+from nexus_android import firstrun, register
 
-SPEC = f"nexus-android=={__version__}"
+SPEC = "nexus-android"  # sans version : uvx garde la version en cache, updates.py prépare la suivante
 
 
 @pytest.fixture

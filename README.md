@@ -103,6 +103,14 @@ apps alone). The Nexus pack runs it with `NEXUS_PACK=1`: no question, no wait, e
 `NEXUS_PACK_RESULT Claude Desktop=declared; Codex=declared; Antigravity=plugin`. In Antigravity the server comes as a
 plugin (`~/.gemini/config/plugins/nexus-android`: server and agent guide), never as a global entry.
 
+**Updates.** The AI apps run `uvx --python 3.14 nexus-android` without a version: offline, uv keeps the cached
+version. At start, in the background and at most once a day, the server asks PyPI for the latest version; when it is
+newer and the server was started by `uvx`, it prepares it in uv's cache (`uvx nexus-android@latest`), used from the
+next start of the AI app. Its own copy of the Platform Tools is updated the same way (an `adb` you installed is never
+touched). The state goes to `~/.nexus/status/android.json` (`product`, `version`, `latest`, `state`, `checked_at`,
+`message`) for the Nexus app. The Claude Desktop extension and `install.ps1` stay on their version until installed
+again. `NEXUS_ANDROID_UPDATE=0` turns the checks off.
+
 `adb` is looked for in this order: `NEXUS_ANDROID_ADB` (full path), the `PATH`, winget's Platform Tools, the Android
 SDK (`ANDROID_HOME`, Android Studio's default folder), then `~/.nexus/nexus-android/tools/platform-tools`. When none
 is found, the server downloads the current stable Platform Tools for this system from Google's SDK repository
@@ -443,10 +451,11 @@ against malicious software running on the same PC, which can reach the phone dir
 ## Privacy
 
 NexusAndroid runs entirely on your PC and talks to your phone over ADB (USB cable or local Wi-Fi). It has no
-account, no telemetry, no analytics and no cloud relay. Its only internet requests are two one-time downloads: Google's
-Platform Tools from `dl.google.com` when no `adb` is found on the PC (off with `NEXUS_ANDROID_ADB_DOWNLOAD=0`), and
-the pinned scrcpy server from GitHub, the first time accented text is typed (skipped when `install.ps1` already
-fetched it).
+account, no telemetry, no analytics and no cloud relay. Its internet requests, none of which carries data about you
+or your phone: at most once a day, the latest version number from PyPI and, when it uses its own copy of `adb`,
+Google's SDK repository manifest (off with `NEXUS_ANDROID_UPDATE=0`); Google's Platform Tools from `dl.google.com`
+when no `adb` is found on the PC or its own copy is outdated (off with `NEXUS_ANDROID_ADB_DOWNLOAD=0`); the pinned
+scrcpy server from GitHub, the first time accented text is typed (skipped when `install.ps1` already fetched it).
 
 - **What it reads**: the screen and UI tree, SMS/RCS messages, notifications, files in shared storage, location,
   recent calls, contacts and calendar, only when the agent calls the matching tool. Security codes are masked before
@@ -456,7 +465,8 @@ fetched it).
 - **What it stores on the PC**, under `~/.nexus/`: the phone map (`map/`: the Settings tree, the screens noted with
   `map note`, and up to 30 snapshots of settings values, apps, permissions and Bluetooth device names, with
   identifiers, tokens, addresses and numbers masked), the phone's serial number, Wi-Fi address and wireless debugging
-  port, the saved screen timeout, a lock file, the pinned scrcpy server, the downloaded Platform Tools (when no `adb`
+  port, the saved screen timeout, a lock file, the date of the last update check (`update.json`), the pinned scrcpy
+  server, the downloaded Platform Tools (when no `adb`
   was found), backups of the AI client configs that `setup` or
   `install.ps1` edits (`backups/`), and, with `install.ps1`, its environment. Files you `pull` go to `~/Downloads/Telephone`. The server writes no
   messages or screenshots to disk.

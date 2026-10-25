@@ -3,7 +3,7 @@
   "name": "io.github.pironjulien/nexus-android",
   "title": "NexusAndroid",
   "description": "Android computer use over plain ADB: screen, gestures, SMS, notifications, files. No root, no app.",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "websiteUrl": "https://julienpiron.fr/nexusandroid/",
   "repository": {
     "url": "https://github.com/pironjulien/NexusAndroid",
@@ -14,7 +14,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "nexus-android",
-      "version": "0.12.1",
+      "version": "0.13.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
@@ -45,6 +45,20 @@
           "isRequired": false,
           "format": "number",
           "default": "120"
+        },
+        {
+          "name": "NEXUS_ANDROID_ADB_DOWNLOAD",
+          "description": "0 never downloads Google's Platform Tools when adb is missing or the server's own copy is outdated",
+          "isRequired": false,
+          "format": "string",
+          "default": "1"
+        },
+        {
+          "name": "NEXUS_ANDROID_UPDATE",
+          "description": "0 turns off the daily update check (PyPI, Platform Tools manifest)",
+          "isRequired": false,
+          "format": "string",
+          "default": "1"
         }
       ]
     }

@@ -20,7 +20,8 @@ TOOLS = {"look", "act", "launch", "clipboard", "messages", "draft", "notificatio
 
 def test_initialize_and_list_tools(tmp_path):
     # État hors du vrai profil (HOME et USERPROFILE), écran gardé allumé coupé : aucun appel à adb au démarrage.
-    env = {**os.environ, "HOME": str(tmp_path), "USERPROFILE": str(tmp_path), "NEXUS_ANDROID_KEEP_AWAKE": "0"}
+    env = {**os.environ, "HOME": str(tmp_path), "USERPROFILE": str(tmp_path), "NEXUS_ANDROID_KEEP_AWAKE": "0",
+           "NEXUS_ANDROID_UPDATE": "0"}
     params = StdioServerParameters(command=sys.executable, args=["-m", "nexus_android"], env=env)
 
     async def check():

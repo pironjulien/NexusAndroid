@@ -78,8 +78,8 @@ def test_latest_takes_the_stable_archive_for_this_os():
 def test_fetch_unpacks_the_official_archive(tools, monkeypatch):
     asked = _serve(monkeypatch, _zip({"platform-tools/adb.exe": b"MZ", "platform-tools/AdbWinApi.dll": b"x"}))
     path = platformtools.find()
-    assert path == str(tools / "platform-tools" / "adb.exe")
-    assert (tools / "platform-tools" / "AdbWinApi.dll").is_file()
+    assert path == str(tools / "platform-tools-37.0.1" / "adb.exe")
+    assert (tools / "platform-tools-37.0.1" / "AdbWinApi.dll").is_file()
     assert asked[-1].endswith("platform-tools_r37.0.1-win.zip")
     assert not list(tools.glob("*.part"))
 
@@ -92,7 +92,7 @@ def test_fetch_rejects_a_wrong_hash_or_size(tools, monkeypatch):
     _serve(monkeypatch, archive, size=len(archive) + 1)
     with pytest.raises(PhoneError, match="winget install Google.PlatformTools"):
         platformtools.find()
-    assert not (tools / "platform-tools").exists()
+    assert not (tools / "platform-tools-37.0.1").exists()
 
 
 def test_fetch_rejects_paths_outside_the_folder(tools, monkeypatch):

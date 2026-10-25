@@ -6,8 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-26
+
+### Added
+
+- The server keeps itself up to date, outside any app container: at start, in the background and at most once a day,
+  it asks PyPI for the latest version and, when started by `uvx`, prepares it in uv's cache for the next start of the
+  AI app; its own copy of the Platform Tools is updated from Google's SDK repository (in a folder per version, the
+  older one removed once unlocked). `NEXUS_ANDROID_UPDATE=0` turns this off.
+- `~/.nexus/status/android.json`: version, latest version, state (`idle`, `checking`, `updating`, `done`, `failed`),
+  time of the check and a short message, written at every start for the Nexus app.
+
 ### Changed
 
+- `setup` declares `uvx --python 3.14 nexus-android` without a version: the cached version still starts offline, and
+  the next one arrives through the server's own update. Earlier pinned entries of ours are replaced at the next
+  `setup`.
 - README, Quick start: uv is installed with `winget install --id astral-sh.uv -e` instead of piping a downloaded
   script into PowerShell (`irm … | iex`), a command line antivirus engines flag.
 
@@ -1005,7 +1019,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.13.0
 [0.12.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.12.1
 [0.12.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.12.0
 [0.11.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.11.0

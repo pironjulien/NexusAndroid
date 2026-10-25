@@ -1,5 +1,5 @@
 """Déclaration du serveur aux IA trouvées sur ce PC (`nexus-android setup`, pack Nexus), comme
-NexusBrowser/scripts/register_clients.py : une entrée stdio `uvx --python 3.14 nexus-android==<version>` par client.
+NexusBrowser/scripts/register_clients.py : une entrée stdio `uvx --python 3.14 nexus-android` (sans version, voir updates.py) par client.
 
 Claude Code : rien si un plugin nexus-android est activé, sinon `claude mcp add --scope user` (ou ~/.claude.json).
 Claude Desktop : claude_desktop_config.json (installation classique et Store). Codex : [mcp_servers.nexus-android] de
@@ -18,8 +18,6 @@ import subprocess
 import tomllib
 from datetime import datetime
 from pathlib import Path
-
-from . import __version__
 
 NAME = "nexus-android"
 PLUGIN_SOURCE = Path(__file__).resolve().parent / "plugin"
@@ -41,7 +39,9 @@ def uvx() -> str:
 
 
 def entry() -> dict:
-    return {"command": uvx(), "args": ["--python", "3.14", f"{NAME}=={__version__}"]}
+    """Sans version : uvx garde la version en cache (hors ligne compris) ; le serveur prépare la suivante (updates.py),
+    prise au prochain démarrage de l'IA."""
+    return {"command": uvx(), "args": ["--python", "3.14", NAME]}
 
 
 def ours(existing: object) -> bool:
