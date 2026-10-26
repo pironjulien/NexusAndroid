@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-10-26
+
+### Fixed
+
+- `~/.nexus/status/android.json` no longer stays on `checking` when the server is stopped during its update check (a
+  client that starts it only to list the tools): the state is written once, with the result.
+
 ## [0.14.1] - 2026-10-26
 
 ### Fixed
@@ -1049,7 +1056,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.14.2...HEAD
+[0.14.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.14.2
 [0.14.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.14.1
 [0.14.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.14.0
 [0.13.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.13.1

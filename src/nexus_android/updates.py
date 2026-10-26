@@ -100,7 +100,8 @@ def check(now: float | None = None) -> None:
     if now - float(memo.get("checked", 0)) < DAY and memo.get("latest"):
         latest = str(memo["latest"])
     else:
-        write_status("checking", memo.get("latest"), "checking for updates")
+        # Pas d'état « checking » écrit : un serveur arrêté pendant la vérification (client fermé aussitôt) le laissait
+        # figé ; l'état précédent reste en place jusqu'au résultat, d'une seconde le plus souvent.
         try:
             latest = latest_on_pypi()
         except (OSError, ValueError, KeyError) as e:
