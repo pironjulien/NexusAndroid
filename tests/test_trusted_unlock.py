@@ -76,7 +76,7 @@ def test_trusted_lock_screen_lifted_by_look(fold):
 
 def test_untrusted_lock_screen_refused_as_before(fold):
     fold.trust = UNTRUSTED
-    assert "LOCKED (the user must unlock it)" in text(server._view("elements"))
+    assert "LOCKED, code required (the user must unlock it)" in text(server._view("elements"))
     report = server._act([Step(do="tap", target="Accueil")], "none")[0]
     assert "✗ 1. Phone locked" in report and screen.LIFTED not in report
     assert DISMISS not in fold.calls and not [c for c in fold.inputs if c[1] != "keyevent"]
@@ -101,7 +101,7 @@ def test_lock_screen_that_does_not_lift_stays_refused(fold, monkeypatch):
     """Android dit deviceLocked=0 mais l'écran de verrouillage reste (confiance retirée entre-temps) : refus."""
     monkeypatch.setattr(fold, "run", lambda *argv, timeout=30.0: (
         fold.calls.append(argv) or (0, "", "")) if argv == DISMISS else TrustPhone.run(fold, *argv, timeout=timeout))
-    assert "LOCKED (the user must unlock it)" in text(server._view("elements"))
+    assert "LOCKED, code required (the user must unlock it)" in text(server._view("elements"))
     assert "Phone locked" in server._act([Step(do="tap", target="Accueil")], "none")[0]
     assert not [c for c in fold.inputs if c[1] != "keyevent"]
 

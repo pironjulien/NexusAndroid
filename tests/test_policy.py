@@ -350,7 +350,13 @@ def test_structured_settings_and_info(phone, monkeypatch):
     server.InfoResult.model_validate(out.structured_content)
 
 
-def test_status_is_structured_and_read_in_one_round_trip(monkeypatch):
+@pytest.mark.parametrize(("keyguard", "trust", "locked", "code"), [
+    ("false", "", False, False),
+    ("true", "User \"Owner\" (id=0) (current): trustState=TRUSTED, deviceLocked=0", True, False),
+    ("true", "User \"Owner\" (id=0) (current): trustState=UNTRUSTED, deviceLocked=1", True, True),
+    ("true", "", True, True),  # confiance illisible : code exigé
+])
+def test_status_is_structured_and_read_in_one_round_trip(monkeypatch, keyguard, trust, locked, code):
     calls: list[tuple[str, ...]] = []
     mark = server.STATUS_MARK
 
@@ -369,7 +375,7 @@ def test_status_is_structured_and_read_in_one_round_trip(monkeypatch):
             calls.append(argv)
             return (f"SM-F971B\n{mark}\n17\n{mark}\n8d190673-68dc-4533-a5ac-f55a80c09663\n{mark}\n"
                     "    mCommittedState=Optional[DeviceState{identifier=0, name='CLOSED', app_accessible=true}]\n"
-                    f"{mark}\nmWakefulness=Awake\nisKeyguardShowing=false\n"
+                    f"{mark}\n{trust}\n{mark}\nmWakefulness=Awake\nisKeyguardShowing={keyguard}\n"
                     "  mCurrentFocus=Window{abc u0 com.app/x.Main}\n")
 
     link, scr = Adb(), screen.Screen(None)  # type: ignore[arg-type]
@@ -377,7 +383,9 @@ def test_status_is_structured_and_read_in_one_round_trip(monkeypatch):
     monkeypatch.setattr(server, "_awake_note", lambda adb: "")
     monkeypatch.setattr(server.awake, "ENABLED", False)
     status = server._status()
-    assert status.posture == "folded" and status.transport == "wifi" and status.screen_on and not status.locked
+    assert status.posture == "folded" and status.transport == "wifi" and status.screen_on
+    assert (status.locked, status.code_required) == (locked, code)
+    assert ("code required" in status.text) == code and ("without code" in status.text) == (locked and not code)
     assert status.foreground == "com.app" and "SM-F971B" in status.text and status.android == "17"
     assert len(calls) == 1 and link.boots == ["8d190673-68dc-4533-a5ac-f55a80c09663"]
     assert scr.last_state and scr.last_state.package == "com.app"

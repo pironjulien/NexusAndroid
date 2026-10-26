@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-26
+
+### Added
+
+- `phone` reports `code_required`: a lock screen that Android keeps unlocked (trusted place or device, Smart Lock:
+  `dumpsys trust` says `deviceLocked=0`) reads `locked: true, code_required: false`, and its text says it is lifted by
+  `look` or the first gesture. Read in the same single round trip; an unreadable trust state counts as a code.
+
+### Changed
+
+- Server instructions and agent guide: a lock screen with no code needed is lifted by `look` or `act`, the agent no
+  longer asks the user to unlock the phone; only a phone that requires its code is left to the user (still no code
+  ever typed). The `look` header and the refusal of a gesture now say the code is required.
+- Real-phone scenarios (`test.ps1 -Full`) lift a lock screen without code like the server instead of stopping, and
+  compare automatic brightness on its mode (Android recomputes the value itself).
+
 ## [0.15.0] - 2026-10-26
 
 ### Added
@@ -1069,7 +1085,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.16.0
 [0.15.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.15.0
 [0.14.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.14.2
 [0.14.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.14.1

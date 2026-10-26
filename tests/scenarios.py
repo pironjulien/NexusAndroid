@@ -95,7 +95,9 @@ def brightness_set_and_restored() -> str:
     finally:
         adb().shell("settings", "put", "system", "screen_brightness", value, check=False)
         adb().shell("settings", "put", "system", "screen_brightness_mode", mode, check=False)
-    assert (setting("system", "screen_brightness_mode"), setting("system", "screen_brightness")) == (mode, value)
+    assert setting("system", "screen_brightness_mode") == mode, "mode not restored"
+    if mode != "1":  # automatique : Android recalcule lui-même la valeur, seul le mode compte
+        assert setting("system", "screen_brightness") == value, "value not restored"
     return f"brightness mode {mode}, value {value} restored"
 
 
@@ -136,9 +138,12 @@ def app_stopped() -> str:
 
 def main(names: list[str]) -> int:
     status = s._status()
-    if status.locked:
-        print("Phone locked: unlock it, then run again.")
-        return 2
+    if status.locked:  # écran de verrouillage qu'Android tient déverrouillé (lieu de confiance) : levé sans code
+        adb_, screen, _ = s._init()
+        state, _lifted = s._lift(adb_, screen, screen.state())
+        if state.locked:
+            print("Phone locked: unlock it, then run again.")
+            return 2
     failed = 0
     for name, fn in SCENARIOS.items():
         if names and name not in names:
