@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-10-26
+
+### Changed
+
+- Nexus family icon for the `.mcpb` bundle (`mcpb/icon.png`, 512 px): the NexusAndroid phone pictogram set in the
+  julienpiron.fr medallion (clean silver ring, inner circuits faded), the same on the site and in every Nexus product.
+
 ## [0.16.0] - 2026-10-26
 
 ### Added
