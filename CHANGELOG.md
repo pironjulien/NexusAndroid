@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-10-27
+
+### Added
+
+- Antigravity plugin logo: the Nexus family icon (`plugin/logo.png`, 256 px, `logo` key of `plugin.json`), copied
+  with the plugin by `setup`, like the other Nexus products. The `.mcpb` bundle icon (512 px) is exported from the
+  medallion at its full source resolution.
+
 ## [0.16.1] - 2026-10-26
 
 ### Changed

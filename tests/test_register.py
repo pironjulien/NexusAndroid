@@ -44,6 +44,7 @@ def test_every_client_declared(home):
                                                      "startup_timeout_sec": 60}
     plugin = home / ".gemini" / "config" / "plugins" / "nexus-android"
     assert (plugin / "plugin.json").is_file() and (plugin / "skills" / "nexus-android" / "SKILL.md").is_file()
+    assert (plugin / "logo.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"  # logo du plugin (icône de la famille Nexus)
     assert json.loads((plugin / "mcp_config.json").read_text(encoding="utf-8"))["mcpServers"]["nexus-android"]["args"][-1] == SPEC
     assert not (home / ".gemini" / "config" / "mcp_config.json").exists()  # jamais d'entrée globale
     assert json.loads((store / "claude_desktop_config.json").read_text(encoding="utf-8"))["mcpServers"]["nexus-android"]
