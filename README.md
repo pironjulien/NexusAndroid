@@ -110,7 +110,8 @@ plugin (`~/.gemini/config/plugins/nexus-android`: server and agent guide), never
 version. At start, in the background and at most once a day, the server asks PyPI for the latest version; when it is
 newer and the server was started by `uvx`, it prepares it in uv's cache (`uvx nexus-android@latest`), used from the
 next start of the AI app. Its own copy of the Platform Tools is updated the same way (an `adb` you installed is never
-touched). The state goes to `~/.nexus/status/android.json` (`product`, `version`, `latest`, `state`, `checked_at`,
+touched). Installed with `setup` 0.11 to 0.12.1, the declaration still names a version: run `uvx nexus-android setup` once
+to switch it. The state goes to `~/.nexus/status/android.json` (`product`, `version`, `latest`, `state`, `checked_at`,
 `message`) for the Nexus app. The Claude Desktop extension and `install.ps1` stay on their version until installed
 again, and so does a plugin that pins a version and sets `NEXUS_ANDROID_MANAGED` (its state says who updates
 it). `NEXUS_ANDROID_UPDATE=0` turns the checks off.

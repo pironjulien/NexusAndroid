@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- README, Updates: a declaration written by `setup` 0.11 to 0.12.1 still names a version; running `setup` once
+  switches it to the unpinned one.
+
 ## [0.14.2] - 2026-10-26
 
 ### Fixed
