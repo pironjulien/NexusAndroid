@@ -149,6 +149,7 @@ def test_scope_leaves_other_apps_alone(home):
 
 
 def test_setup_scope_from_the_pack(monkeypatch):
+    monkeypatch.delenv("NEXUS_PACK_TARGETS", raising=False)
     monkeypatch.setenv("NEXUS_PACK", "1")
     monkeypatch.setenv("NEXUS_PACK_APPS", "claude-desktop, antigravity")
     monkeypatch.setattr(firstrun.platformtools, "find", lambda say: "adb")
@@ -157,6 +158,10 @@ def test_setup_scope_from_the_pack(monkeypatch):
     assert firstrun.run([]) == 0 and seen == [{"claude-desktop", "antigravity"}]
     assert firstrun.run(["--apps", "codex"]) == 0 and seen[-1] == {"codex"}
     assert firstrun.run(["--apps", "nope"]) == firstrun.APP_FAILED
+    monkeypatch.setenv("NEXUS_PACK_TARGETS", "codex,claude-code")  # nom du pack 1.6.7, prioritaire
+    assert firstrun.run([]) == 0 and seen[-1] == {"codex", "claude-code"}
+    monkeypatch.setenv("NEXUS_PACK_TARGETS", "")  # définie mais vide : aucune IA touchée
+    assert firstrun.run([]) == 0 and seen[-1] == set()
 
 
 class _Phone:
@@ -170,6 +175,7 @@ class _Phone:
 def test_phone_connected_but_app_failed(monkeypatch, capsys):
     monkeypatch.delenv("NEXUS_PACK", raising=False)
     monkeypatch.delenv("NEXUS_PACK_APPS", raising=False)
+    monkeypatch.delenv("NEXUS_PACK_TARGETS", raising=False)
     monkeypatch.setattr(firstrun.platformtools, "find", lambda say: "adb")
     monkeypatch.setattr(firstrun.register, "declare_all", lambda apps: {"Codex": "failed: bad toml", "Antigravity": "plugin"})
     monkeypatch.setattr(firstrun, "Adb", _Phone)

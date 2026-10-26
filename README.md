@@ -101,7 +101,7 @@ args = ["nexus-android"]
 
 `setup` options: `--no-wait` (declare and get `adb`, without waiting for the phone), `--no-register` (leave the AI
 apps alone), `--apps claude-code,codex` (only these AI apps: `claude-code`, `claude-desktop`, `codex`, `antigravity`;
-the pack passes its `-Only`/`-Skip` choice as `NEXUS_PACK_APPS`). Exit code: 0 everything ready, 1 `adb` or the phone
+the pack passes its `-Only`/`-Skip` choice as `NEXUS_PACK_TARGETS`, same names; set but empty: no AI app). Exit code: 0 everything ready, 1 `adb` or the phone
 not ready, 2 an AI app not configured, 3 both. The Nexus pack runs it with `NEXUS_PACK=1`: no question, no wait, exit code 0 on success and a last line
 `NEXUS_PACK_RESULT Claude Desktop=declared; Codex=declared; Antigravity=plugin`. In Antigravity the server comes as a
 plugin (`~/.gemini/config/plugins/nexus-android`: server and agent guide), never as a global entry.

@@ -3,7 +3,7 @@ trouvées (register.py), puis le pas-à-pas du débogage USB affiché et suivi j
 téléphone est alors enregistré pour ce PC.
 
 Pack Nexus (NEXUS_PACK=1, ou --no-wait) : aucune question ni attente du téléphone, et une dernière ligne
-`NEXUS_PACK_RESULT Client=état; …`. --no-register : aucune IA touchée ; --apps claude-code,codex (ou NEXUS_PACK_APPS) :
+`NEXUS_PACK_RESULT Client=état; …`. --no-register : aucune IA touchée ; --apps claude-code,codex (ou NEXUS_PACK_TARGETS du pack) :
 seules ces IA. Code de sortie : 0 tout est prêt, 1 adb ou téléphone pas prêt, 2 une IA pas configurée, 3 les deux."""
 
 from __future__ import annotations
@@ -35,11 +35,16 @@ def _short(result: str) -> str:
 
 
 def _apps(argv: list[str]) -> set[str] | None:
-    """Périmètre d'IA : --apps, sinon NEXUS_PACK_APPS (pack, -Only/-Skip), sinon toutes (None)."""
-    scope = os.environ.get("NEXUS_PACK_APPS", "")
+    """Périmètre d'IA : --apps, sinon NEXUS_PACK_TARGETS du pack (noms séparés par des virgules ; définie mais vide :
+    aucune IA), sinon NEXUS_PACK_APPS (nom de la 0.14.0), sinon toutes (None)."""
     if "--apps" in argv:
         index = argv.index("--apps")
         scope = argv[index + 1] if index + 1 < len(argv) else ""
+        return register.parse_apps(scope) if scope.strip() else None
+    targets = os.environ.get("NEXUS_PACK_TARGETS")
+    if targets is not None:
+        return register.parse_apps(targets)
+    scope = os.environ.get("NEXUS_PACK_APPS", "")
     return register.parse_apps(scope) if scope.strip() else None
 
 

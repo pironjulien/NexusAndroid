@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-10-26
+
+### Fixed
+
+- `setup` reads the AI app scope from `NEXUS_PACK_TARGETS`, the variable the Nexus pack sets (1.6.7 and later); set
+  but empty, no AI app is touched. `NEXUS_PACK_APPS` (0.14.0) is still read when it is absent.
+
 ## [0.14.0] - 2026-10-26
 
 ### Added
@@ -1042,7 +1049,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.14.1
 [0.14.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.14.0
 [0.13.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.13.1
 [0.13.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.13.0
