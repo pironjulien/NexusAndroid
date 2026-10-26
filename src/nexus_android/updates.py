@@ -2,7 +2,7 @@
 démarrage, en arrière-plan et au plus une fois par jour, dernière version sur PyPI, Platform Tools à nous remises à
 jour, et état écrit dans ~/.nexus/status/android.json pour l'appli Nexus.
 
-Le serveur lancé par une IA (`uvx --python 3.14 nexus-android`, sans version) prend la nouvelle version au prochain
+Le serveur lancé par une IA (`uvx nexus-android`, sans version) prend la nouvelle version au prochain
 démarrage de l'IA : ici, `uvx nexus-android@latest` la prépare dans le cache de uv. Hors ligne, uvx garde la version
 en cache. NEXUS_ANDROID_UPDATE=0 : aucune requête, l'état dit seulement la version en cours."""
 
@@ -81,7 +81,7 @@ def prepare(version: str) -> str | None:
     if not uvx:
         return "uvx not found on the PATH"
     try:
-        done = subprocess.run([uvx, "--python", "3.14", f"nexus-android@{version}", "--version"], capture_output=True,
+        done = subprocess.run([uvx, f"nexus-android@{version}", "--version"], capture_output=True,
                               text=True, timeout=600, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except (OSError, subprocess.TimeoutExpired) as e:
         return f"uvx failed ({e})"

@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-26
+
+### Added
+
+- `setup --apps claude-code,codex` (or `NEXUS_PACK_APPS`, passed by the Nexus pack from `-Only`/`-Skip`): only these AI
+  apps are declared, the others are not touched; an unknown name is refused.
+- CI: Python 3.15 in the public test matrix.
+
+### Changed
+
+- `setup` tells the phone and the AI apps apart: `Phone connected` and `AI apps NOT configured: ...` are separate
+  lines, `Ready.` only when both are fine, and the exit code says which failed (0 ready, 1 `adb` or phone, 2 an AI
+  app, 3 both). Before, a failed declaration still ended with "Phone ready" and 0 once the phone answered.
+- The declared command and every README command no longer force `--python 3.14`: uv takes an installed Python 3.12
+  or newer, or fetches one (`uvx nexus-android`). The VS Code and Cursor buttons follow.
+
 ## [0.13.1] - 2026-10-26
 
 ### Added
@@ -1026,7 +1042,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.14.0
 [0.13.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.13.1
 [0.13.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.13.0
 [0.12.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.12.1

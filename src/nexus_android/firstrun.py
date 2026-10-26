@@ -2,8 +2,9 @@
 trouvées (register.py), puis le pas-à-pas du débogage USB affiché et suivi jusqu'à ce que le téléphone réponde ; le
 téléphone est alors enregistré pour ce PC.
 
-Pack Nexus (NEXUS_PACK=1, ou --no-wait) : aucune question ni attente du téléphone ; code 0 si adb est prêt et aucune
-déclaration n'a échoué, et une dernière ligne `NEXUS_PACK_RESULT Client=état; …`. --no-register : aucune IA touchée."""
+Pack Nexus (NEXUS_PACK=1, ou --no-wait) : aucune question ni attente du téléphone, et une dernière ligne
+`NEXUS_PACK_RESULT Client=état; …`. --no-register : aucune IA touchée ; --apps claude-code,codex (ou NEXUS_PACK_APPS) :
+seules ces IA. Code de sortie : 0 tout est prêt, 1 adb ou téléphone pas prêt, 2 une IA pas configurée, 3 les deux."""
 
 from __future__ import annotations
 
@@ -16,6 +17,8 @@ from .adb import FIRST_PLUG, UNAUTHORIZED, Adb, PhoneError
 
 POLL = 2.0  # s entre deux relectures d'adb devices
 WAIT = 900.0  # s au plus (15 min) pour activer le débogage et brancher le téléphone
+PHONE_FAILED = 1  # adb introuvable, ou téléphone pas connecté
+APP_FAILED = 2  # au moins une IA pas configurée
 
 
 def _steps(text: str) -> str:
@@ -31,10 +34,24 @@ def _short(result: str) -> str:
     return "declared"
 
 
+def _apps(argv: list[str]) -> set[str] | None:
+    """Périmètre d'IA : --apps, sinon NEXUS_PACK_APPS (pack, -Only/-Skip), sinon toutes (None)."""
+    scope = os.environ.get("NEXUS_PACK_APPS", "")
+    if "--apps" in argv:
+        index = argv.index("--apps")
+        scope = argv[index + 1] if index + 1 < len(argv) else ""
+    return register.parse_apps(scope) if scope.strip() else None
+
+
 def run(argv: list[str] | None = None, wait: float = WAIT) -> int:
     argv = argv or []
     pack = os.environ.get("NEXUS_PACK", "").strip().lower() in {"1", "true", "yes"}
     no_wait = pack or "--no-wait" in argv
+    try:
+        apps = _apps(argv)
+    except ValueError as e:
+        print(f"setup: {e}")
+        return APP_FAILED
     print(f"NexusAndroid {__version__}: setup on this PC" + ("" if no_wait else " (Ctrl+C to stop)") + ".\n", flush=True)
     try:
         path = platformtools.find(say=lambda text: print(text, flush=True))
@@ -42,22 +59,26 @@ def run(argv: list[str] | None = None, wait: float = WAIT) -> int:
         print(e)
         if pack:
             print("NEXUS_PACK_RESULT adb=failed")
-        return 1
+        return PHONE_FAILED
     print(f"adb: {path}\n")
-    failed = False
+    failed: list[str] = []
     if "--no-register" not in argv:
-        results = register.declare_all()
+        results = register.declare_all(apps)
         for client, result in results.items():
             print(f"{client}: {result}")
         print("Restart each AI app to load nexus-android.\n" if results else
               "No AI client found (Claude, Codex, Antigravity): install one, then run setup again.\n")
-        failed = any(r.startswith("failed") for r in results.values())
+        failed = [client for client, result in results.items() if result.startswith("failed")]
         if pack:
             print("NEXUS_PACK_RESULT " + "; ".join(f"{c}={_short(r)}" for c, r in results.items()), flush=True)
+    apps_code = APP_FAILED if failed else 0
+    apps_line = f"AI apps NOT configured: {', '.join(failed)} (see above); fix it, then run setup again."
     if no_wait:
         if not pack:
-            print("Phone not checked (--no-wait): run `uvx --python 3.14 nexus-android setup` to connect it.")
-        return 1 if failed else 0
+            print("Phone not checked (--no-wait): run `uvx nexus-android setup` to connect it.")
+            if failed:
+                print(apps_line)
+        return apps_code
     adb = Adb()
     shown = ""
     deadline = time.monotonic() + wait
@@ -78,15 +99,20 @@ def run(argv: list[str] | None = None, wait: float = WAIT) -> int:
                     print(message + "\n")
                     shown = message
             if time.monotonic() > deadline:
-                print("No phone after 15 minutes: run `nexus-android setup` again when it is plugged in.")
-                return 1
+                print("Phone NOT connected after 15 minutes: run `nexus-android setup` again when it is plugged in.")
+                if failed:
+                    print(apps_line)
+                return PHONE_FAILED | apps_code
             time.sleep(POLL)
     except KeyboardInterrupt:
-        print("\nStopped.")
-        return 1
-    print(f"Phone ready: {device.model or device.serial} ({device.transport.upper()}), registered on this PC.")
-    print("Now ask your AI: \"Look at my phone and tell me what is on the screen.\"")
+        print("\nStopped: phone NOT connected." + (f" {apps_line}" if failed else ""))
+        return PHONE_FAILED | apps_code
+    print(f"Phone connected: {device.model or device.serial} ({device.transport.upper()}), registered on this PC.")
     if device.transport == "usb":
         print("Without the cable: Developer options > Wireless debugging > Pair device with pairing code, then "
               f"\"{path}\" pair <ip>:<port> with the code shown (once per PC, same Wi-Fi).")
+    if failed:
+        print(apps_line)
+        return apps_code
+    print("Ready. Now ask your AI: \"Look at my phone and tell me what is on the screen.\"")
     return 0

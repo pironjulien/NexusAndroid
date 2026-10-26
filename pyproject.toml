@@ -1,6 +1,6 @@
 [project]
 name = "nexus-android"
-version = "0.13.1"
+version = "0.14.0"
 description = "Android computer use for AI agents over ADB: one MCP server shared by Claude Code, Codex and Antigravity"
 authors = [{ name = "Julien Piron" }]
 license = "MIT"
@@ -16,6 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Communications :: Telephony",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]

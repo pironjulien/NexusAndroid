@@ -7,11 +7,11 @@
 [![Tests](https://github.com/pironjulien/NexusAndroid/actions/workflows/tests.yml/badge.svg)](https://github.com/pironjulien/NexusAndroid/actions/workflows/tests.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pironjulien/NexusAndroid/badge)](https://scorecard.dev/viewer/?uri=github.com/pironjulien/NexusAndroid)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/pironjulien/NexusAndroid/blob/main/LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue?logo=python&logoColor=white)](https://github.com/pironjulien/NexusAndroid/blob/main/pyproject.toml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue?logo=python&logoColor=white)](https://github.com/pironjulien/NexusAndroid/blob/main/pyproject.toml)
 [![MCP](https://img.shields.io/badge/MCP-server-7ee2a8)](https://modelcontextprotocol.io)
 
-[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_nexus--android-0098FF?logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%7B%22name%22%3A%22nexus-android%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--python%22%2C%223.14%22%2C%22nexus-android%22%5D%7D)
-[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=nexus-android&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLXB5dGhvbiIsIjMuMTQiLCJuZXh1cy1hbmRyb2lkIl19)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_nexus--android-0098FF?logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%7B%22name%22%3A%22nexus-android%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22nexus-android%22%5D%7D)
+[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=nexus-android&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJuZXh1cy1hbmRyb2lkIl19)
 [![Claude Desktop extension](https://img.shields.io/badge/Claude_Desktop-Download_extension-D97757?logo=claude&logoColor=white)](https://github.com/pironjulien/NexusAndroid/releases/latest/download/nexus-android.mcpb)
 
 [![NexusAndroid: Android computer use for AI agents, over plain ADB. Works with Claude, Codex and Antigravity.](https://raw.githubusercontent.com/pironjulien/NexusAndroid/main/docs/assets/banner.webp)](https://julienpiron.fr/nexusandroid/)
@@ -51,7 +51,7 @@ official [Platform Tools](https://developer.android.com/tools/releases/platform-
 2. **Run setup**, once per PC:
 
    ```powershell
-   uvx --python 3.14 nexus-android setup
+   uvx nexus-android setup
    ```
 
    It downloads what is missing, declares the server to the AI apps it finds (Claude Code, Claude Desktop, Codex,
@@ -62,16 +62,17 @@ official [Platform Tools](https://developer.android.com/tools/releases/platform-
      ([Android guide](https://developer.android.com/studio/debug/dev-options));
    - plug the phone in with a USB data cable and accept **Allow USB debugging?** (tick *Always allow*).
 
-   It ends with `Phone ready: <model>`. Phone plugged in but never seen: install the maker's
+   It ends with `Ready.` once the phone is connected and every AI app is configured; otherwise it says which part
+   is not. Phone plugged in but never seen: install the maker's
    [USB driver](https://developer.android.com/studio/run/oem-usb)
    ([Samsung](https://developer.samsung.com/android-usb-driver)).
 3. **Restart your AI app.** To declare it by hand instead:
    - **VS Code** or **Cursor**: the *Install* buttons at the top of this page;
    - **Claude Desktop**: download [`nexus-android.mcpb`](https://github.com/pironjulien/NexusAndroid/releases/latest/download/nexus-android.mcpb) and open it (Settings > Extensions);
-   - **Claude Code**: `claude mcp add nexus-android --scope user -- uvx --python 3.14 nexus-android`
+   - **Claude Code**: `claude mcp add nexus-android --scope user -- uvx nexus-android`
      (or, for the whole Nexus pack: `/plugin marketplace add pironjulien/nexus-plugins`, then
      `/plugin install nexus-android@nexus-plugins`);
-   - **Codex**: `codex mcp add nexus-android -- uvx --python 3.14 nexus-android`;
+   - **Codex**: `codex mcp add nexus-android -- uvx nexus-android`;
    - **Antigravity**: agent panel **⋯** > **MCP Servers** > **Manage MCP Servers** > **View raw config**, add the
      `nexus-android` entry below inside `"mcpServers"`, save.
 
@@ -83,7 +84,7 @@ Then ask your AI: *"Look at my phone and tell me what is on the screen."*
 ```toml
 [mcp_servers.nexus-android]
 command = "uvx"
-args = ["--python", "3.14", "nexus-android"]
+args = ["nexus-android"]
 ```
 
 ```json
@@ -91,7 +92,7 @@ args = ["--python", "3.14", "nexus-android"]
   "mcpServers": {
     "nexus-android": {
       "command": "uvx",
-      "args": ["--python", "3.14", "nexus-android"]
+      "args": ["nexus-android"]
     }
   }
 }
@@ -99,11 +100,13 @@ args = ["--python", "3.14", "nexus-android"]
 </details>
 
 `setup` options: `--no-wait` (declare and get `adb`, without waiting for the phone), `--no-register` (leave the AI
-apps alone). The Nexus pack runs it with `NEXUS_PACK=1`: no question, no wait, exit code 0 on success and a last line
+apps alone), `--apps claude-code,codex` (only these AI apps: `claude-code`, `claude-desktop`, `codex`, `antigravity`;
+the pack passes its `-Only`/`-Skip` choice as `NEXUS_PACK_APPS`). Exit code: 0 everything ready, 1 `adb` or the phone
+not ready, 2 an AI app not configured, 3 both. The Nexus pack runs it with `NEXUS_PACK=1`: no question, no wait, exit code 0 on success and a last line
 `NEXUS_PACK_RESULT Claude Desktop=declared; Codex=declared; Antigravity=plugin`. In Antigravity the server comes as a
 plugin (`~/.gemini/config/plugins/nexus-android`: server and agent guide), never as a global entry.
 
-**Updates.** The AI apps run `uvx --python 3.14 nexus-android` without a version: offline, uv keeps the cached
+**Updates.** The AI apps run `uvx nexus-android` without a version: offline, uv keeps the cached
 version. At start, in the background and at most once a day, the server asks PyPI for the latest version; when it is
 newer and the server was started by `uvx`, it prepares it in uv's cache (`uvx nexus-android@latest`), used from the
 next start of the AI app. Its own copy of the Platform Tools is updated the same way (an `adb` you installed is never
@@ -510,7 +513,7 @@ uv sync --frozen --python 3.14  # explicitly online preparation, including devel
 pwsh -NoProfile -File test.ps1 -Python 3.14
 ```
 
-`-Python 3.12`, `3.13` or `3.14` selects an already installed interpreter and a separate test environment.
+`-Python 3.12`, `3.13`, `3.14` or `3.15` selects an already installed interpreter and a separate test environment.
 `-Full` additionally runs the existing real-phone scenarios; the phone must be reachable and unlocked.
 
 ## License

@@ -37,10 +37,10 @@ def test_every_client_declared(home):
     assert results == {"Claude Code": "declared", "Codex": "declared", "Antigravity": "plugin",
                        "Claude Desktop": "declared", "Claude Desktop (2)": "declared"}
     claude = json.loads((home / ".claude.json").read_text(encoding="utf-8"))["mcpServers"]
-    assert claude["other"] == {"command": "x"} and claude["nexus-android"]["args"] == ["--python", "3.14", SPEC]
+    assert claude["other"] == {"command": "x"} and claude["nexus-android"]["args"] == [SPEC]
     codex = tomllib.loads((home / ".codex" / "config.toml").read_text(encoding="utf-8"))
     assert codex["model"] == "gpt" and codex["mcp_servers"]["other"] == {"command": "x"}
-    assert codex["mcp_servers"]["nexus-android"] == {"command": r"C:\uv\uvx.exe", "args": ["--python", "3.14", SPEC],
+    assert codex["mcp_servers"]["nexus-android"] == {"command": r"C:\uv\uvx.exe", "args": [SPEC],
                                                      "startup_timeout_sec": 60}
     plugin = home / ".gemini" / "config" / "plugins" / "nexus-android"
     assert (plugin / "plugin.json").is_file() and (plugin / "skills" / "nexus-android" / "SKILL.md").is_file()
@@ -117,13 +117,13 @@ def test_pack_mode_never_waits(monkeypatch, capsys):
     monkeypatch.setenv("NEXUS_PACK", "1")
     monkeypatch.setattr(firstrun.platformtools, "find", lambda say: "adb")
     monkeypatch.setattr(firstrun.register, "declare_all",
-                        lambda: {"Claude Desktop": "declared", "Codex": "already declared", "Antigravity": "plugin"})
+                        lambda apps: {"Claude Desktop": "declared", "Codex": "already declared", "Antigravity": "plugin"})
     monkeypatch.setattr(firstrun, "Adb", lambda: pytest.fail("pack mode must not wait for the phone"))
     assert firstrun.run([]) == 0
     last = capsys.readouterr().out.strip().splitlines()[-1]
     assert last == "NEXUS_PACK_RESULT Claude Desktop=declared; Codex=declared; Antigravity=plugin"
-    monkeypatch.setattr(firstrun.register, "declare_all", lambda: {"Codex": "failed: bad toml"})
-    assert firstrun.run([]) == 1
+    monkeypatch.setattr(firstrun.register, "declare_all", lambda apps: {"Codex": "failed: bad toml"})
+    assert firstrun.run([]) == firstrun.APP_FAILED
 
 
 def test_pack_mode_adb_failure(monkeypatch, capsys):
@@ -135,3 +135,46 @@ def test_pack_mode_adb_failure(monkeypatch, capsys):
     monkeypatch.setattr(firstrun.platformtools, "find", no_adb)
     assert firstrun.run([]) == 1
     assert capsys.readouterr().out.strip().endswith("NEXUS_PACK_RESULT adb=failed")
+
+
+def test_scope_leaves_other_apps_alone(home):
+    (home / ".codex").mkdir()
+    (home / ".gemini" / "antigravity").mkdir(parents=True)
+    (home / "AppData" / "Roaming" / "Claude").mkdir(parents=True)
+    assert register.declare_all({"codex"}) == {"Codex": "declared"}
+    assert not (home / ".gemini" / "config" / "plugins").exists()
+    assert not (home / "AppData" / "Roaming" / "Claude" / "claude_desktop_config.json").exists()
+    with pytest.raises(ValueError, match="unknown AI app"):
+        register.parse_apps("codex,chatgpt")
+
+
+def test_setup_scope_from_the_pack(monkeypatch):
+    monkeypatch.setenv("NEXUS_PACK", "1")
+    monkeypatch.setenv("NEXUS_PACK_APPS", "claude-desktop, antigravity")
+    monkeypatch.setattr(firstrun.platformtools, "find", lambda say: "adb")
+    seen = []
+    monkeypatch.setattr(firstrun.register, "declare_all", lambda apps: seen.append(apps) or {})
+    assert firstrun.run([]) == 0 and seen == [{"claude-desktop", "antigravity"}]
+    assert firstrun.run(["--apps", "codex"]) == 0 and seen[-1] == {"codex"}
+    assert firstrun.run(["--apps", "nope"]) == firstrun.APP_FAILED
+
+
+class _Phone:
+    def __init__(self):
+        self.model, self.serial, self.transport = "Pixel", "X", "wifi"
+
+    def connect(self, scan=True):
+        return self
+
+
+def test_phone_connected_but_app_failed(monkeypatch, capsys):
+    monkeypatch.delenv("NEXUS_PACK", raising=False)
+    monkeypatch.delenv("NEXUS_PACK_APPS", raising=False)
+    monkeypatch.setattr(firstrun.platformtools, "find", lambda say: "adb")
+    monkeypatch.setattr(firstrun.register, "declare_all", lambda apps: {"Codex": "failed: bad toml", "Antigravity": "plugin"})
+    monkeypatch.setattr(firstrun, "Adb", _Phone)
+    assert firstrun.run([]) == firstrun.APP_FAILED
+    out = capsys.readouterr().out
+    assert "Phone connected: Pixel" in out and "AI apps NOT configured: Codex" in out and "Ready." not in out
+    monkeypatch.setattr(firstrun.register, "declare_all", lambda apps: {"Codex": "declared"})
+    assert firstrun.run([]) == 0 and "Ready." in capsys.readouterr().out

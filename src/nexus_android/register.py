@@ -1,5 +1,5 @@
 """Déclaration du serveur aux IA trouvées sur ce PC (`nexus-android setup`, pack Nexus), comme
-NexusBrowser/scripts/register_clients.py : une entrée stdio `uvx --python 3.14 nexus-android` (sans version, voir updates.py) par client.
+NexusBrowser/scripts/register_clients.py : une entrée stdio `uvx nexus-android` (sans version, voir updates.py) par client.
 
 Claude Code : rien si un plugin nexus-android est activé, sinon `claude mcp add --scope user` (ou ~/.claude.json).
 Claude Desktop : claude_desktop_config.json (installation classique et Store). Codex : [mcp_servers.nexus-android] de
@@ -41,7 +41,7 @@ def uvx() -> str:
 def entry() -> dict:
     """Sans version : uvx garde la version en cache (hors ligne compris) ; le serveur prépare la suivante (updates.py),
     prise au prochain démarrage de l'IA."""
-    return {"command": uvx(), "args": ["--python", "3.14", NAME]}
+    return {"command": uvx(), "args": [NAME]}  # Python : celui que uv trouve (3.12 ou plus), sinon il le pose
 
 
 def ours(existing: object) -> bool:
@@ -216,17 +216,33 @@ def antigravity() -> str | None:
     return state + (", turned off in Antigravity's settings" if disabled else "")
 
 
-def declare_all() -> dict[str, str]:
-    """Résultat par client trouvé (les absents ne figurent pas)."""
+APPS = ("claude-code", "claude-desktop", "codex", "antigravity")  # noms des IA, ceux des options -Only/-Skip du pack
+
+
+def parse_apps(text: str) -> set[str]:
+    """Liste d'IA (« claude-code,codex ») ; un nom inconnu est refusé plutôt qu'ignoré."""
+    names = {n.strip().lower() for n in text.split(",") if n.strip()}
+    if unknown := names - set(APPS):
+        raise ValueError(f"unknown AI app {', '.join(sorted(unknown))} (known: {', '.join(APPS)})")
+    return names
+
+
+def declare_all(apps: set[str] | None = None) -> dict[str, str]:
+    """Résultat par client trouvé (les absents ne figurent pas) ; apps : seules ces IA sont touchées (None : toutes)."""
+    wanted = set(APPS) if apps is None else apps
     results: dict[str, str | None] = {}
-    for client, declare in (("Claude Code", claude_code), ("Codex", codex), ("Antigravity", antigravity)):
+    for app, client, declare in (("claude-code", "Claude Code", claude_code), ("codex", "Codex", codex),
+                                 ("antigravity", "Antigravity", antigravity)):
+        if app not in wanted:
+            continue
         try:
             results[client] = declare()
         except (OSError, ValueError, tomllib.TOMLDecodeError) as error:  # fichier illisible : laissé tel quel
             results[client] = f"failed: {error}"
-    try:
-        for index, result in enumerate(claude_desktop()):
-            results["Claude Desktop" + (f" ({index + 1})" if index else "")] = result
-    except (OSError, ValueError) as error:
-        results["Claude Desktop"] = f"failed: {error}"
+    if "claude-desktop" in wanted:
+        try:
+            for index, result in enumerate(claude_desktop()):
+                results["Claude Desktop" + (f" ({index + 1})" if index else "")] = result
+        except (OSError, ValueError) as error:
+            results["Claude Desktop"] = f"failed: {error}"
     return {client: result for client, result in results.items() if result is not None}
