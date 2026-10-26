@@ -2893,6 +2893,10 @@ def main() -> None:
         from . import firstrun
 
         sys.exit(firstrun.run(sys.argv[2:]))
+    if sys.argv[1:2] == ["mirror"]:  # écran du téléphone par scrcpy, avec le même adb que le serveur
+        from . import mirror
+
+        sys.exit(mirror.run(sys.argv[2:]))
     http = "--http" in sys.argv
     from . import updates
 

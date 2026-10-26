@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-26
+
+### Added
+
+- `nexus-android mirror`: the phone's screen on the PC through scrcpy (installed by the user, e.g.
+  `winget install Genymobile.scrcpy`), started with the same `adb` as the server so the agents' link stays up;
+  options pass through to scrcpy, `NEXUS_ANDROID_SCRCPY` gives its path. No app installed on the phone.
+
 ### Changed
 
 - README, Updates: a declaration written by `setup` 0.11 to 0.12.1 still names a version; running `setup` once
@@ -1061,7 +1069,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.14.2...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.15.0
 [0.14.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.14.2
 [0.14.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.14.1
 [0.14.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.14.0

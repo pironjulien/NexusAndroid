@@ -116,6 +116,12 @@ to switch it. The state goes to `~/.nexus/status/android.json` (`product`, `vers
 again, and so does a plugin that pins a version and sets `NEXUS_ANDROID_MANAGED` (its state says who updates
 it). `NEXUS_ANDROID_UPDATE=0` turns the checks off.
 
+**Watch the phone on the PC.** `uvx nexus-android mirror` opens [scrcpy](https://github.com/Genymobile/scrcpy)
+(install it once: `winget install Genymobile.scrcpy`) with the same `adb` as the server, so the agents' link is not
+cut by a second `adb` of another version. Options pass through to scrcpy (`mirror --turn-screen-off`, `mirror -s
+SERIAL` with several phones); `NEXUS_ANDROID_SCRCPY` gives its full path. No app is installed on the phone: scrcpy
+only copies its small server to `/data/local/tmp`, as the gestures already do.
+
 `adb` is looked for in this order: `NEXUS_ANDROID_ADB` (full path), the `PATH`, winget's Platform Tools, the Android
 SDK (`ANDROID_HOME`, Android Studio's default folder), then `~/.nexus/nexus-android/tools/platform-tools`. When none
 is found, the server downloads the current stable Platform Tools for this system from Google's SDK repository
