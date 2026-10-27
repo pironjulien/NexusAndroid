@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from test_extras import field
-from test_guards import FakePhone, node, phone, ui  # noqa: F401  (fixture phone)
+from test_guards import node, phone, ui  # noqa: F401  (fixture phone)
 
 from nexus_android import clip, journal, server
 from nexus_android.adb import PhoneError

@@ -118,7 +118,7 @@ def check(now: float | None = None) -> None:
             memo_file().parent.mkdir(parents=True, exist_ok=True)
             memo_file().write_text(json.dumps(memo), encoding="utf-8")
         except OSError:
-            pass
+            pass  # mémo de vérification non écrit : la vérification sera simplement refaite
     notes = "; ".join(memo.get("notes") or [])
     extra = f"; {notes}" if notes else ""
     if _version(latest) <= _version(__version__):  # version en cours plus récente que PyPI (pas encore servie) : elle

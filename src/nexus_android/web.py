@@ -127,7 +127,7 @@ class WebSocket:
         try:
             self.sock.close()
         except OSError:
-            pass
+            pass  # prise déjà fermée par l'autre bout
 
 
 def sockets(adb: Adb) -> list[tuple[str, str]]:
@@ -159,7 +159,7 @@ def forward(adb: Adb, name: str) -> Iterator[int]:
         try:
             adb.host("forward", "--remove", f"tcp:{port}", timeout=10)
         except PhoneError:
-            pass
+            pass  # téléphone parti : sa redirection est tombée avec le lien
 
 
 def _json(port: int, path: str) -> object:

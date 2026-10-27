@@ -155,7 +155,7 @@ class Control:
             try:
                 stack.close()
             except (OSError, PhoneError):
-                pass
+                pass  # canal déjà fermé ou téléphone parti : rien à libérer
 
     def close(self) -> None:
         with self._lock:

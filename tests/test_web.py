@@ -180,7 +180,7 @@ def test_deadline_holds_against_endless_pings(monkeypatch):
                 conn.sendall(bytes([0x89, 0]))
                 time.sleep(0.01)
         except OSError:
-            pass
+            pass  # client parti : c'est ce que le test provoque
         conn.close()
         listener.close()
 

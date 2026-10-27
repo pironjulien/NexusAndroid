@@ -371,7 +371,7 @@ def _seen(package: str, since: float) -> None:
         try:
             guard(_CURRENT.adb, package, since)
         except PhoneError:
-            pass
+            pass  # lien perdu : la surveillance de la vidéo garde son propre contrôle (WATCH_GAP)
 
 
 screen_mod.ON_STATE = _seen
@@ -471,7 +471,7 @@ def _abandon(rec: Recording) -> None:
     try:
         _erase(rec)
     except PhoneError:
-        pass
+        pass  # fichier laissé : effacé au prochain lancement (restes de plus d'une heure)
     for thread in (rec.watcher, rec.ender):
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=STATE_WAIT + WATCH_EVERY)
@@ -584,7 +584,7 @@ def wait_end(timeout: float) -> None:
         try:
             rec.proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            pass
+            pass  # attente bornée voulue : l'enregistrement continue
 
 
 def stop(adb: Adb) -> str:
@@ -628,7 +628,7 @@ def _vet(rec: Recording) -> None:
         try:
             _erase(rec)
         except PhoneError:
-            pass
+            pass  # vidéo jetée quand même : rien ne vient sur le PC, le reste est effacé au prochain lancement
         raise Discarded(_discarded(f"the foreground app could not be checked for {unseen:.0f} s during the recording "
                                    "(link lost?), so a banking or identity screen may be in it"))
 

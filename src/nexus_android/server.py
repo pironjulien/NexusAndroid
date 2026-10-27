@@ -267,7 +267,7 @@ def _video_guard() -> None:
         try:  # seulement une lecture postérieure au début de la vidéo (un vieux premier plan ne la jette pas)
             capture_mod.guard(adb, screen.last_state.package, screen.last_seen_at)
         except PhoneError:
-            pass
+            pass  # lien perdu : la surveillance de la vidéo garde son propre contrôle (WATCH_GAP)
 
 
 _APPEL: ContextVar[str | None] = ContextVar("nexus_android_appel", default=None)

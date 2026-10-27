@@ -174,8 +174,8 @@ def test_identical_crashes_in_one_block_and_reprint_dropped(fake):
     blocks = text.split("\n\n")[1:]
     assert [b.splitlines()[0] for b in blocks] == [  # groupe placé à son dernier plantage : le plus récent en dernier
         "10-19 15:50:00 com.foo (pid 4321): Java exception",
-        "process without package (shell, app_process): Java exception ×3 (first 10-19 15:44:46, last 16:02:10, "
-        "pids 698, 1234, 5678)",
+        ("process without package (shell, app_process): Java exception ×3 (first 10-19 15:44:46, last 16:02:10, "
+         "pids 698, 1234, 5678)"),
     ]
     shell = blocks[1]
     assert shell.count("UiAutomationService") == 1 and "Couldn't report crash" not in shell

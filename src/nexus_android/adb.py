@@ -165,7 +165,7 @@ def open_ports(host: str, ports: Iterable[int] = TLS_PORTS, timeout: float = 0.4
                     if speaks_adb(await asyncio.wait_for(reader.readexactly(24), HANDSHAKE_WAIT)):
                         found.append(port)
                 except (OSError, TimeoutError, asyncio.IncompleteReadError):
-                    pass
+                    pass  # port muet ou fermé : ce n'est pas adbd, il n'est pas retenu
                 finally:
                     writer.close()
 
@@ -208,7 +208,7 @@ class Adb:
                 subprocess.run([self.path, "disconnect", stale], capture_output=True, timeout=5,
                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             except (OSError, subprocess.TimeoutExpired):
-                pass
+                pass  # déconnexion de politesse : l'adresse périmée n'est de toute façon plus utilisée
 
     def devices(self) -> list[Device]:
         return parse_devices(self._raw(["devices", "-l"], serial=False).stdout.decode("utf-8", "replace"))
@@ -301,7 +301,7 @@ class Adb:
             try:
                 self._remember_wifi(chosen.serial, ident)
             except (OSError, PhoneError):
-                pass
+                pass  # adresse Wi-Fi non mémorisée : l'USB marche, elle sera relue au prochain branchement
         elif re.fullmatch(r"\d+\.\d+\.\d+\.\d+:\d+", chosen.serial) and chosen.serial != remembered.get("address"):
             self._save({**remembered, "serialno": ident, "address": chosen.serial})  # port du débogage sans fil changé
         self.serial = chosen.serial

@@ -114,7 +114,7 @@ def test_scanned_ports_tried_with_a_limit(monkeypatch, tmp_path):
         adb_mod.Adb().connect()
     tried = [a[1] for a in calls if a[0] == "connect"]
     assert tried[0] == "192.0.2.67:33915" and len(tried) == 1 + adb_mod.MAX_TRIED
-    calls, scans = wifi(monkeypatch, tmp_path, ports=(40000, 40001), answers="192.0.2.67:40001")
+    wifi(monkeypatch, tmp_path, ports=(40000, 40001), answers="192.0.2.67:40001")
     assert adb_mod.Adb().connect().serial == "192.0.2.67:40001"
 
 

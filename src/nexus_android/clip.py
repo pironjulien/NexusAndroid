@@ -173,7 +173,7 @@ def _session(adb: Adb, use: str = TYPING) -> Iterator[Channel]:
                     break
                 candidate.close()
             except OSError:
-                pass
+                pass  # serveur scrcpy pas encore prêt : nouvel essai jusqu'au délai
             if time.monotonic() > deadline:
                 raise LinkError("clipboard: scrcpy server unreachable after 8 s; nothing was done")
             time.sleep(0.1)
@@ -190,12 +190,12 @@ def _session(adb: Adb, use: str = TYPING) -> Iterator[Channel]:
                 try:  # arrêter aussi le serveur côté téléphone : aucun programme d'aide ne doit y rester
                     adb.shell("pkill", "-f", f"scid=[{scid[0]}]{scid[1:]}", check=False, timeout=10)  # [x] : pas soi
                 except PhoneError:
-                    pass
+                    pass  # téléphone parti : le serveur scrcpy est tombé avec le lien
         if port.isdigit():
             try:
                 adb.host("forward", "--remove", f"tcp:{port}", timeout=10)
             except PhoneError:
-                pass
+                pass  # téléphone parti : sa redirection est tombée avec le lien
 
 
 def _sequence() -> int:

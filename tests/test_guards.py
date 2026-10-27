@@ -273,8 +273,9 @@ def test_empty_list_message_after_look_without_list(phone):
 def test_lock_between_processes(tmp_path):
     path = tmp_path / "android.lock"
     holder = subprocess.Popen(
-        [sys.executable, "-c", "import sys; from pathlib import Path; from nexus_android.lock import PhoneLock\n"
-         "with PhoneLock(Path(sys.argv[1])):\n    print('pris', flush=True); sys.stdin.read()", str(path)],
+        [sys.executable, "-c", ("import sys; from pathlib import Path; from nexus_android.lock import PhoneLock\n"
+                                "with PhoneLock(Path(sys.argv[1])):\n    print('pris', flush=True); sys.stdin.read()"),
+         str(path)],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
     try:
         assert holder.stdout and holder.stdout.readline().strip() == "pris"

@@ -54,7 +54,7 @@ _SENSITIVE_KEY = re.compile(
 # Valeur qui est une adresse (IPv4, IPv6, MAC), quelle que soit sa clé.
 _MAC = re.compile(r"(?i)\b([0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b")
 _IPV4 = re.compile(r"(?<![\d.])\d{1,3}(?:\.\d{1,3}){3}(?![\d.]*\d)")
-_ADDRESS_CANDIDATE = re.compile(r"[0-9A-Fa-f:.%\[\]A-Za-z_-]{2,64}")
+_ADDRESS_CANDIDATE = re.compile(r"[0-9A-Za-z:.%\[\]_-]{2,64}")
 
 
 def has_address(value: str) -> bool:

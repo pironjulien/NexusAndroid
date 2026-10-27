@@ -207,7 +207,7 @@ class QueryServer:
                     return
                 self._request([["release"]], timeout=3)
             except (OSError, ValueError, PhoneError):
-                pass
+                pass  # serveur déjà parti : il s'arrête seul après son temps d'inactivité
 
     def _adopt(self) -> bool:
         """Reprend la redirection déjà posée pour ce téléphone (autre processus, démon relancé), avec son jeton, pour ne
