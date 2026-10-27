@@ -20,3 +20,9 @@ def test_stack_frame_lines_are_masked_too() -> None:
     for seed in (b"\x03\x07at a.b(\x00", b"\x03\x07#00 pc \x00"):
         targets.mask(seed)
     targets.mask(bytes.fromhex("0207617420612e6228000307010800020201"))  # « at a.b( | OTP : 471802 | »
+
+
+def test_crashes_found_by_the_fuzzer() -> None:
+    import base64
+
+    targets.target(base64.b64decode("cnJycnJycnK0cnJyMSB8IGFhYUBhYS5mcjBhNDhiMTYzYf8="))  # copie collée autour (CI)

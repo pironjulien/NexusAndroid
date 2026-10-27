@@ -100,6 +100,8 @@ def mask(data: bytes) -> None:
         secret = shown = b.pick(_PREFIXES) + b.chars(_ALNUM + "abcdefghijklmnopqrstuvwxyz", 24 + b.byte() % 16)
     else:
         secret = shown = f"{b.chars('abcdefgh123', 1 + b.byte() % 10)}@{b.chars('abcdefgh', 2 + b.byte() % 8)}.fr"
+    while secret in before or secret in after:  # seule la donnée insérée est jugée, pas une copie collée autour
+        before, after = before.replace(secret, ""), after.replace(secret, "")
     text = f"{before} | {shown} | {after}"  # « | » : un code suivi de « $ » ou « € » est un montant, voulu
     out = logs.mask(text) if kind >= 3 or b.byte() & 1 else messages.mask_codes(text)
     if secret in out:
