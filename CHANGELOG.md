@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-27
+
+### Added
+
+- Second tested device: an Android 14 emulator (Google APIs, x86_64). A new CI job `emulator` (public repository,
+  Linux with KVM, `reactivecircus/android-emulator-runner` pinned by SHA) runs `tests/test_emulator.py` on every push:
+  the real server over stdio and the real `adb` call `phone`, `look` (elements and image), `launch`, `act` (keys,
+  scrolls, typing read back), `settings` (six reads, then a volume change restored), `apps`, `files`,
+  `notifications`, `checkup`, `logs` and `clipboard`. The tests are marked `emulator` and skipped unless
+  `NEXUS_ANDROID_SERIAL` names an emulator, so they never touch a real phone.
+- README: the NexusAndroid medallion (Nexus family icon) above the title.
+
+### Fixed
+
+- `files(action="list", path="/sdcard")` described the `/sdcard` link (`/sdcard -> /storage/self/primary`) instead of
+  listing the shared storage: the folder is now listed with a trailing slash, so the link is followed; a file path
+  gets a clear "Not a directory" error. Found by the emulator tests.
+
+### Changed
+
+- README compatibility: one consistent statement for other systems. Linux: the server is tested against the emulator
+  in CI, no real phone yet, no installer; macOS: not tested; the installer, `test.ps1` and OCR are Windows only.
+- Publishing: `pypa/gh-action-pypi-publish` pinned to v1.14.3 (`7245906`, fixes GHSA-5xjx-3w67-w9x9).
+
 ## [0.16.2] - 2026-10-27
 
 ### Added
@@ -1100,7 +1124,10 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.17.0
+[0.16.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.16.2
+[0.16.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.16.1
 [0.16.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.16.0
 [0.15.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.15.0
 [0.14.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.14.2

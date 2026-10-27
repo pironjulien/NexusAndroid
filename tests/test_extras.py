@@ -461,3 +461,33 @@ def phone(monkeypatch):
     monkeypatch.setattr(server, "MESSAGES", object())
     monkeypatch.setattr(time, "sleep", lambda s: None)
     return fake
+
+
+def test_list_files_follows_the_sdcard_link():
+    # /sdcard est un lien : `ls -l /sdcard` décrit le lien, `ls -l /sdcard/` liste le dossier (émulateur Android 14).
+    class LinkPhone:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, ...]] = []
+
+        def shell(self, *argv, **kw):
+            self.calls.append(argv)
+            if argv[-1].endswith("/"):
+                return ("total 8\ndrwxrws--- 3 u0_a177 media_rw 4096 2026-10-27 09:21 Download\n"
+                        "drwxrws--- 3 u0_a177 media_rw 4096 2026-10-27 09:20 Pictures\n")
+            return "lrw-r--r-- 1 root root 21 2024-07-11 18:27 /sdcard -> /storage/self/primary\n"
+
+    phone = LinkPhone()
+    listing = extras.list_files(phone, "/sdcard")  # type: ignore[arg-type]
+    assert "Download  (folder)" in listing and "Pictures" in listing and "->" not in listing
+    assert phone.calls[-1] == ("ls", "-lAt", "/sdcard/")
+    extras.list_files(phone, "Download/")  # type: ignore[arg-type]
+    assert phone.calls[-1] == ("ls", "-lAt", "/sdcard/Download/")
+
+
+def test_list_files_on_a_file_is_a_clear_error():
+    class FilePhone:
+        def shell(self, *argv, **kw):
+            return "ls: /sdcard/Download/a.pdf/: Not a directory\n"
+
+    with pytest.raises(PhoneError, match="Not a directory"):
+        extras.list_files(FilePhone(), "Download/a.pdf")  # type: ignore[arg-type]

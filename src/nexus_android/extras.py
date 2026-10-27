@@ -120,8 +120,10 @@ def phone_path(path: str | None, default: str = "/sdcard/Download") -> str:
 
 def list_files(adb: Adb, path: str | None, limit: int = 50) -> str:
     target = phone_path(path)
-    out = adb.shell("ls", "-lAt", target, check=False)
-    if "No such file" in out or "Permission denied" in out:
+    # Barre finale : /sdcard est un lien (vers /storage/self/primary) ; sans elle, `ls -l` décrit le lien lui-même au
+    # lieu de lister le dossier (vu sur l'émulateur Android 14 le 27/10).
+    out = adb.shell("ls", "-lAt", target.rstrip("/") + "/", check=False)
+    if "No such file" in out or "Permission denied" in out or "Not a directory" in out:
         raise PhoneError(f"{target}: {out.strip()[:200]}")
     rows = []
     for line in out.splitlines():

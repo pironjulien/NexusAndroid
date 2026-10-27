@@ -51,3 +51,32 @@ jobs:
         run: |
           uv sync --frozen --quiet
           uv run --frozen pytest -q tests/test_startup.py
+
+  emulator:
+    # Second tested device: the real server (stdio) and the real adb against an Android emulator, Linux + KVM. Public
+    # repository only (free minutes); tests/test_emulator.py is skipped anywhere else.
+    if: github.repository == 'pironjulien/NexusAndroid'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXUS_ANDROID_SERIAL: emulator-5554
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - run: uv sync --frozen --quiet
+      - name: Integration tests on the emulator (Android 14, Google APIs)
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d  # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: uv run --frozen pytest -m emulator -v tests/test_emulator.py

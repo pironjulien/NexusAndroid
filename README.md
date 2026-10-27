@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/pironjulien/NexusAndroid/main/docs/assets/nexusandroid-mark.png" width="128" height="128" alt="NexusAndroid medallion"></p>
+
 # NexusAndroid
 
 <!-- mcp-name: io.github.pironjulien/nexus-android -->
@@ -352,6 +354,7 @@ listed as tested has been run here. Report your device in an
 | --- | --- |
 | Samsung Galaxy Fold `SM-F971B`, One UI, Android 17, USB and wireless debugging | **Tested** (real-phone scenarios, `tests/scenarios.py`) |
 | Windows 11 PC | **Tested** |
+| Android 14 emulator (Google APIs, x86_64) on a Linux PC | **Tested** in CI on every push (`tests/test_emulator.py`: real server and real `adb`) |
 | Other Samsung phones (One UI) | Expected: same system and apps as the tested phone |
 | Pixel, Motorola, Nothing, OnePlus, Sony, Fairphone and other near-stock Android | Expected, not tested |
 | Xiaomi, Redmi, POCO (MIUI, HyperOS) | Expected once "USB debugging (Security settings)" is on in Developer options (gestures refused before; the error says so) |
@@ -360,7 +363,8 @@ listed as tested has been run here. Report your device in an
 | Phones managed by an employer (USB debugging blocked by policy) | Not possible |
 | iPhone, iPad | Not supported (no ADB) |
 | Android emulators | Ignored unless named with `NEXUS_ANDROID_SERIAL` (for tests) |
-| macOS, Linux PC | Expected: the server starts on Linux in CI; no phone tested; OCR is Windows only |
+| Linux PC | Server tested against the emulator only (no real phone yet); no installer, run it with `uvx nexus-android`; OCR is Windows only |
+| macOS PC | Not tested; no installer; OCR is Windows only |
 
 ## Known limitations
 
@@ -377,7 +381,7 @@ listed as tested has been run here. Report your device in an
 - The link is USB or local Wi-Fi through wireless debugging, paired with each PC. ADB does not work over Bluetooth.
 - Xiaomi, Redmi and POCO (MIUI, HyperOS) refuse injected gestures until "USB debugging (Security settings)" is turned
   on in Developer options; the error says so.
-- Windows only for now: the installer, the tests and the default paths target Windows.
+- The installer (`install.ps1`), `test.ps1` and OCR are Windows only. On Linux the server itself runs and is tested against an emulator in CI; macOS is not tested.
 
 ## Rejected options
 

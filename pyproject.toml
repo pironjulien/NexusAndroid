@@ -1,6 +1,6 @@
 [project]
 name = "nexus-android"
-version = "0.16.2"
+version = "0.17.0"
 description = "Android computer use for AI agents over ADB: one MCP server shared by Claude Code, Codex and Antigravity"
 authors = [{ name = "Julien Piron" }]
 license = "MIT"
@@ -60,5 +60,5 @@ pythonVersion = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["live: tests on the real phone"]
-addopts = "-m 'not live' -p no:cacheprovider"
+markers = ["live: tests on the real phone", "emulator: integration tests against an Android emulator (NEXUS_ANDROID_SERIAL=emulator-NNNN)"]
+addopts = "-m 'not live and not emulator' -p no:cacheprovider"
