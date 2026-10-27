@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-27
+
+### Changed
+- Screen images sent to the AI (`look`, `act`) follow the common Nexus image rule of 27/10: long side up to
+  2000 px and 2.56 MP (was 1568 px and 1.15 MP; a 1080×2340 screen is now sent as 923×2000 instead of 724×1568),
+  lossless WebP while it fits 500 KB (was 200 KB, so a real screen went lossy), then quality 90, 80, 70…; never over
+  500 KB. Small text is read better (98.8 % of characters instead of 92 % in our benchmark).
+
+### Added
+- `server.json`: `icons` (Nexus family medallion, PNG and SVG) so the MCP Registry and its clients show the
+  product icon.
+
 ## [0.17.0] - 2026-10-27
 
 ### Added
@@ -1124,7 +1136,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.18.0
 [0.17.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.17.0
 [0.16.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.16.2
 [0.16.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.16.1

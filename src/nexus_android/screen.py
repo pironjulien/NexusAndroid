@@ -23,12 +23,12 @@ from . import ocr, query
 from .adb import STATE_WAIT, Adb, PhoneError
 from .messages import has_keyword, mask_codes
 
-# Image rendue à l'agent (règle commune des Nexus, NexusHarness/NexusShared/images.md) : côté long ≤ 1568 px et ≤ 1,15 Mpx
-# (limite standard de Claude, sans réduction ; GPT-5.x et Gemini 3 aussi), WebP sans perte, qualité 85 puis 70 au-delà
-# de 200 Ko, jamais plus de 500 Ko (au-delà, Antigravity rejette la requête).
-MAX_SIDE = 1568
-MAX_PIXELS = 1_150_000
-LOSSLESS_MAX = 200 * 1024
+# Image rendue à l'agent (règle commune des Nexus, NexusHarness/NexusShared/images.md, 27/10) : côté long ≤ 2000 px et
+# ≤ 2,56 Mpx (Claude Code réduit lui-même au-delà de 2000 px ; 2 500 tuiles GPT en detail high ; Gemini 3 compte un
+# nombre fixe de jetons par image), WebP sans perte tant qu'il tient 500 Ko, sinon qualité 90, 80 puis 70 ; jamais plus
+# de 500 Ko (plafond gardé pour Antigravity). Un écran 1080×2340 part en 923×2000 (724×1568 avant).
+MAX_SIDE = 2000
+MAX_PIXELS = 2_560_000
 IMAGE_MAX = 500 * 1024
 
 
@@ -41,7 +41,7 @@ def fit(width: float, height: float) -> float:
 
 def sized(width: float, height: float) -> tuple[int, int]:
     """Taille d'une image de cette taille pour l'agent : réduite par fit, arrondie vers le bas (jamais au-dessus des
-    plafonds : 1234×932 dépasserait 1,15 Mpx de 88 pixels)."""
+    plafonds : un arrondi au plus près dépasserait la surface de quelques pixels)."""
     factor = fit(width, height)
     if factor >= 1.0:
         return int(width), int(height)
@@ -53,26 +53,21 @@ def within(size: tuple[int, int]) -> bool:
 
 
 def encode(image: PILImage.Image, photo: bool = False) -> tuple[bytes, tuple[int, int]]:
-    """WebP pour l'agent et sa taille finale : sans perte (méthode 0, la plus rapide) s'il tient en 200 Ko, sinon
-    qualité 85 puis 70 ; réduit encore si même 70 dépasse 500 Ko (photo très chargée) — l'appelant recale alors son
-    échelle sur la taille rendue. photo : une photo dépasse toujours 200 Ko sans perte, l'essai est sauté."""
+    """WebP pour l'agent et sa taille finale : sans perte (méthode 0, la plus rapide) s'il tient en 500 Ko, sinon
+    qualité 90, 80 puis 70 ; réduit encore si même 70 dépasse 500 Ko (photo très chargée) — l'appelant recale alors son
+    échelle sur la taille rendue. photo : une photo dépasse toujours 500 Ko sans perte, l'essai est sauté."""
     image = image.convert("RGB")
     if not photo:
         out = io.BytesIO()
         image.save(out, "WEBP", lossless=True, method=0)
-        if out.tell() <= LOSSLESS_MAX:
+        if out.tell() <= IMAGE_MAX:
             return out.getvalue(), image.size
     while True:
-        tries = []
-        for quality in (85, 70):
+        for quality in (90, 80, 70):
             out = io.BytesIO()
             image.save(out, "WEBP", quality=quality, method=2)
-            if out.tell() <= LOSSLESS_MAX:
+            if out.tell() <= IMAGE_MAX:
                 return out.getvalue(), image.size
-            tries.append(out.getvalue())
-        # Même 70 dépasse 200 Ko : la meilleure qualité qui tient sous le plafond (85 si possible).
-        if fitting := [data for data in tries if len(data) <= IMAGE_MAX]:
-            return fitting[0], image.size
         image = image.resize((max(1, image.width * 3 // 4), max(1, image.height * 3 // 4)), PILImage.Resampling.LANCZOS)
 
 
@@ -95,7 +90,7 @@ UI_DUMP = f"/data/local/tmp/nexus-android-ui-{os.getpid()}.xml"
 # Lecture rapide par le serveur gardé en vie (query.py, phone/NexusQuery.java) : arbre, capture et état en un échange.
 # False : toujours uiautomator dump et screencap (tests sur un téléphone simulé).
 FAST = True
-PHONE_QUALITY = 90  # JPEG fait par le téléphone, réencodé à 80 par render après le noircissement et les numéros
+PHONE_QUALITY = 90  # JPEG fait par le téléphone, réencodé en WebP par render après le noircissement et les numéros
 # ms sans événement d'accessibilité avant de lire l'arbre : le calme qu'UiAutomator attend avant chacune de ses actions
 # (QueryController, 500 ms) ; l'attente s'allonge tant que l'écran bouge (jusqu'à 3 s, puis arbre de l'instant).
 SETTLE_QUIET_MS = 500

@@ -35,7 +35,7 @@ def _photo(size=(1234, 931), seed=1) -> PILImage.Image:
 def test_simple_screens_are_lossless_webp():
     data, size = screen.encode(_ui())
     back = PILImage.open(io.BytesIO(data))
-    assert back.format == "WEBP" and len(data) <= screen.LOSSLESS_MAX
+    assert back.format == "WEBP" and len(data) <= screen.IMAGE_MAX
     assert back.convert("RGB").tobytes() == _ui().tobytes()  # sans perte : pixels identiques
 
 

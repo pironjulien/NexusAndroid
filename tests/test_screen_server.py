@@ -251,7 +251,7 @@ def test_server_unavailable_falls_back_to_the_old_reads(fast):
     assert any(c[0] == "screencap" for c in adb.calls)
     assert any(c[0] == "sh" and "uiautomator dump" in c[2] for c in adb.calls)
     assert len(out) == 2 and scr.shrink == 1.0
-    assert "image 853×1348" in out[0].splitlines()[0]  # 1,15 Mpx au plus (règle commune des images)
+    assert "image 1248×1972" in out[0].splitlines()[0]  # sous 2000 px et 2,56 Mpx : telle quelle (853×1348 avant le 27/10)
 
 
 def test_dump_before_a_gesture_uses_the_reader(fast):
