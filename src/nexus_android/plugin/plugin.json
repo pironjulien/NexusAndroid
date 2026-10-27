@@ -1,6 +1,6 @@
 {
   "name": "nexus-android",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "logo": "logo.png",
   "description": "Android phone over ADB, shared with Claude, Codex and Antigravity: see the screen, tap, type, scroll, open apps and links, SMS/RCS, notifications, files, quick settings; paying, sending and calling only after the user's yes"
 }

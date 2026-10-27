@@ -1,6 +1,6 @@
 [project]
 name = "nexus-android"
-version = "0.20.0"
+version = "0.20.1"
 description = "Android computer use for AI agents over ADB: one MCP server shared by Claude Code, Codex and Antigravity"
 authors = [{ name = "Julien Piron" }]
 license = "MIT"

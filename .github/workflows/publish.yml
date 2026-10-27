@@ -97,12 +97,15 @@ jobs:
 
   mcpb:
     # Claude Desktop extension (MCPB, server type "uv": the host installs this exact version from PyPI), attached to
-    # the release under a fixed name so that releases/latest/download/nexus-android.mcpb always points to it.
+    # the release under a fixed name so that releases/latest/download/nexus-android.mcpb always points to it. Signed:
+    # build provenance (Sigstore, GitHub attestation), its bundle attached as well.
     needs: publish
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -120,8 +123,16 @@ jobs:
           PY
       - name: Pack (validates the manifest)
         run: npx --yes @anthropic-ai/mcpb@2.1.2 pack mcpb nexus-android.mcpb
-      - name: Attach to the release
+      - name: Sign the extension (build provenance, Sigstore)
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: nexus-android.mcpb
+      - name: Attach to the release, with the signature bundle (gh attestation verify <file> --repo <repo>)
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG" nexus-android.mcpb --clobber --repo "$GITHUB_REPOSITORY"
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" nexus-android.sigstore.json
+          gh release upload "$TAG" nexus-android.mcpb nexus-android.sigstore.json --clobber --repo "$GITHUB_REPOSITORY"

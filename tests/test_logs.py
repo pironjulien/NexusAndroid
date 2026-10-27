@@ -333,3 +333,23 @@ def test_mask_keeps_ordinary_numbers_readable():
     from nexus_android.logs import mask
     text = "Start proc 7391:com.app/u0a245 for activity; size 1048576; uid 10245"
     assert mask(text) == text
+
+
+def test_mask_stack_frame_hides_secrets_keeps_numbers():
+    frame = "\tat com.foo.Main.onCreate(Main.kt:4242) ghp_AAAAAAAAAAAAAAAAAAAAAAAAbC1 a@example.com"
+    out = logs.mask(frame)
+    assert "ghp_" not in out and "a@example.com" not in out and "Main.kt:4242" in out
+
+
+def test_mask_stack_frame_keeps_only_its_technical_part():
+    out = logs.mask("\tat com.foo.Main.onCreate(Main.kt:4242) OTP : 482913")
+    assert out.startswith("\tat com.foo.Main.onCreate(Main.kt:4242)") and "482913" not in out
+    native = "  #00 pc 000000000004a2b0  /apex/com.android.runtime/lib64/bionic/libc.so (abort+164)"
+    assert logs.mask(native) == native
+
+
+@pytest.mark.parametrize("secret", ["a@example.com", "AKIAAAAAAAAAAAAAAAAAAAAAAAAA", "code : 482913"])
+def test_mask_native_frame_prefix_needs_a_whole_address(secret):
+    """Relecture de Codex : « #00 pc » suivi d'une donnée n'en prenait pas le premier caractère pour une adresse."""
+    out = logs.mask(f"#00 pc {secret}")
+    assert secret.split()[-1] not in out

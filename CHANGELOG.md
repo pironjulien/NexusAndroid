@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-27
+
+### Added
+- CodeQL code scanning of the server (Python), the phone-side helper (Java) and the workflows, on every push and
+  weekly.
+- Coverage-guided fuzzing (Atheris, `fuzz/`, `.github/workflows/fuzz.yml`) of the shared masking (cards, IBANs,
+  announced codes, tokens, e-mails never come out of any text) and of accords (valid for the exact action only, once).
+- The Claude Desktop extension attached to a release is signed (build provenance, Sigstore bundle
+  `nexus-android.sigstore.json`).
+
+### Changed
+- `SECURITY.md`: disclosure timeline (first answer within 3 days, fix and advisory usually within 30 days); the
+  committed `nexus-query.dex` explained (source, pinned build).
+- Shared guard policy (`garde_fous.py`) brought up to date: zero-width and other format characters, and common
+  Cyrillic or Greek look-alikes, no longer hide a word that needs confirmation.
+
+### Fixed
+- Log lines that start like a stack frame (`at …(`, `#00 pc …`) no longer escape masking: tokens, e-mails, cards
+  and IBANs are masked there too, line numbers and addresses kept (found by the new fuzzing).
+
 ## [0.20.0] - 2026-10-27
 
 ### Added
@@ -1162,7 +1182,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.20.1...HEAD
+[0.20.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.20.1
 [0.19.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.19.0
 [0.18.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.18.0
 [0.17.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.17.0

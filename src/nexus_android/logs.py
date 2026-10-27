@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 from . import policy
 from .adb import Adb, PhoneError
-from .messages import _B64, _HEX, _JWT, _KEY_PREFIX, _PEM, CARD, IBAN, mask_codes  # noqa: F401  (CARD, IBAN : noms publics)
+from .messages import _B64, _HEX, _JWT, _KEY_PREFIX, _PEM, CARD, IBAN, _mask_accounts, mask_codes  # noqa: F401  (CARD, IBAN : noms publics)
 
 MAX_LOG = 30_000  # caractères au plus d'une réponse
 MAX_LINES = 2000
@@ -32,6 +32,10 @@ _LINE = re.compile(r"^(?P<stamp>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3})\s+(?P<pid
                    r"(?P<level>[VDIWEFSA])\s+(?P<tag>.*?)\s*: ?(?P<msg>.*)$")
 _JAVA_FRAME = re.compile(r"^\s*at\s+([\w$.<>-]+)\(")
 _NATIVE_FRAME = re.compile(r"^\s*#\d+\s+pc\s")
+# Partie technique d'une ligne de pile, aux nombres gardés : la frame Java complète (source et numéro de ligne, ou
+# méthode native, ou source inconnue), ou l'adresse d'une frame native.
+_FRAME_HEAD = re.compile(r"^\s*(?:at\s+[\w$.<>-]+\((?:[\w$.<>-]+(?::\d+)?|Native Method|Unknown Source)\)"
+                         r"|#\d+\s+pc\s+[0-9a-fA-F]+(?=\s|$))")  # adresse entière, sinon tout le texte est masqué
 _FRAMEWORK = re.compile(r"^(?:android|androidx|java|javax|kotlin|kotlinx|dalvik|libcore|sun|jdk|com\.android|"
                         r"com\.google\.android\.material|org\.json|org\.xmlpull|org\.chromium\.base)\.")
 _EXCEPTION = re.compile(r"^\s*((?:Caused by|Suppressed): )?([\w$.]+)")
@@ -79,9 +83,20 @@ def mask_secrets(text: str) -> str:
 
 def mask(text: str) -> str:
     """Texte d'un journal sans secret, adresse e-mail, numéro de téléphone ni code (tout code : le mot-clé peut être
-    sur une autre ligne). Les lignes de pile (at …, #00 pc …) restent telles quelles : numéros de ligne utiles."""
-    if not text or _JAVA_FRAME.match(text) or _NATIVE_FRAME.match(text):
+    sur une autre ligne). Ligne de pile : seule sa partie technique reconnue (« at a.B.c(B.kt:42) », « #00 pc 4a2b0 »)
+    garde ses nombres, jetons, e-mails, cartes et IBAN y restent masqués ; la suite est masquée comme tout texte
+    (trouvé par le fuzzing : une ligne qui commençait comme une pile n'était pas masquée du tout)."""
+    if not text:
         return text
+    head = _FRAME_HEAD.match(text)
+    if not head:
+        return _mask_text(text)
+    frame = mask_secrets(text[: head.end()])
+    frame = frame if frame == SECRET else _mask_accounts(_EMAIL.sub(EMAIL, frame))
+    return frame + (_mask_text(text[head.end() :]) if head.end() < len(text) else "")
+
+
+def _mask_text(text: str) -> str:
     text = mask_secrets(text)
     if text == SECRET:
         return text

@@ -1,0 +1,40 @@
+# Coverage-guided fuzzing (Atheris, libFuzzer) of fuzz/targets.py: masking of what the phone shows (cards, IBANs, codes,
+# tokens, e-mails) and accords bound to the exact action.
+# Short run on every push and pull request, longer weekly run; a property broken fails the job with the input.
+# Atheris is pinned by hash (fuzz/requirements.txt), the project's dependencies by uv.lock.
+name: Fuzzing
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "41 3 * * 3"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    # Public repository only (Linux minutes are free there): the private development copy skips it.
+    if: github.repository == 'pironjulien/NexusAndroid'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          enable-cache: false
+      - name: Project and Atheris
+        run: |
+          uv sync --frozen --quiet --python 3.14
+          uv pip install --quiet --require-hashes -r fuzz/requirements.txt
+      - name: Fuzz
+        env:
+          SECONDS_BUDGET: ${{ github.event_name == 'schedule' && 1800 || 180 }}
+        run: uv run --frozen --no-sync python fuzz/fuzz_masking.py -max_total_time="$SECONDS_BUDGET" -timeout=10

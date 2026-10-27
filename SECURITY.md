@@ -18,8 +18,16 @@ within a few days.
 - **Phone-side read helper** (`nexus-query.dex`, started under the shell identity): it is read-only, accepts
   connections only from the shell or root identity (peer credentials checked by the kernel, which no app on the
   phone can have), and each launch draws a random token that is part of its socket name and must come back in every
-  answer, so the PC never trusts another server listening on that name.
+  answer, so the PC never trusts another server listening on that name. It is the only binary in the repository,
+  committed on purpose (the package pushes it to the phone, so users need no Java toolchain): its source is
+  `phone/NexusQuery.java`, and `phone/build.ps1` rebuilds it with Google's d8, pinned by SHA-256.
 - **Hotspot / `adb tcpip 5555` mode**: classic ADB over TCP is not encrypted (only Android's wireless debugging
   uses TLS). Use it only on a network you control, and turn it off with `adb usb` or a reboot.
+
+## Disclosure
+
+You will get a first answer within 3 days. A confirmed vulnerability is fixed in a new release, usually within 30
+days, then disclosed in a GitHub security advisory that credits the reporter unless they prefer otherwise. Please
+keep it private until that release is out.
 
 Only the latest release is supported.

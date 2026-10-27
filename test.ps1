@@ -33,7 +33,7 @@ try {
     }
     uv sync --frozen --quiet
     if ($LASTEXITCODE) { throw 'Offline dependency sync failed. Prepare the locked packages and build dependencies in the uv cache first (README, Development); test.ps1 never downloads them.' }
-    & $pythonExe -m ruff check src tests
+    & $pythonExe -m ruff check src tests fuzz
     if ($LASTEXITCODE) { throw 'ruff reported errors.' }
     # Run the wheel's bundled Pyright with the existing Node: its Python wrapper can fetch updates or install Node.
     $pyright = & $pythonExe -c 'from importlib.resources import files; print(files("pyright").joinpath("dist", "index.js"))'
