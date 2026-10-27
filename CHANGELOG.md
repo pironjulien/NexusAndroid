@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-27
+
+### Changed
+- The phone captures the screen without loss (WebP lossless from Android 11, PNG before) instead of JPEG quality 90:
+  the image sent to the AI is no longer compressed twice, so small text keeps no JPEG artifacts. Measured on a Galaxy
+  Z Fold over Wi-Fi ADB (Settings screen, 1248×1972): 109 ms instead of 163–185 ms per read, 467 KB instead of 160 KB
+  over the link. The phone-side helper takes `--format jpeg|lossless` (JPEG stays the default).
+
 ## [0.18.0] - 2026-10-27
 
 ### Changed
@@ -1136,7 +1144,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.19.0
 [0.18.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.18.0
 [0.17.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.17.0
 [0.16.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.16.2

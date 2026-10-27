@@ -90,7 +90,11 @@ UI_DUMP = f"/data/local/tmp/nexus-android-ui-{os.getpid()}.xml"
 # Lecture rapide par le serveur gardé en vie (query.py, phone/NexusQuery.java) : arbre, capture et état en un échange.
 # False : toujours uiautomator dump et screencap (tests sur un téléphone simulé).
 FAST = True
-PHONE_QUALITY = 90  # JPEG fait par le téléphone, réencodé en WebP par render après le noircissement et les numéros
+# Capture faite par le téléphone SANS PERTE (WebP sans perte dès Android 11, PNG avant), puis noircie, numérotée et
+# réencodée en WebP par render : un JPEG ici laissait ses artefacts sur le petit texte (double compression). Effort 0 :
+# encodage le plus rapide ; l'image pèse plus lourd, mais la liaison (10 Mo/s en Wi-Fi mesuré le 27/10) le rattrape.
+PHONE_FORMAT = "lossless"
+PHONE_QUALITY = 0  # effort de compression du sans-perte (0 le plus rapide, 100 le plus petit)
 # ms sans événement d'accessibilité avant de lire l'arbre : le calme qu'UiAutomator attend avant chacune de ses actions
 # (QueryController, 500 ms) ; l'attente s'allonge tant que l'écran bouge (jusqu'à 3 s, puis arbre de l'instant).
 SETTLE_QUIET_MS = 500
@@ -744,7 +748,8 @@ class Screen:
         if server is None:
             return None
         since = stamp()
-        tables = server.run([["screen", "--image", image, "--max", str(MAX_SIDE), "--quality", str(PHONE_QUALITY),
+        tables = server.run([["screen", "--image", image, "--max", str(MAX_SIDE), "--format", PHONE_FORMAT,
+                              "--quality", str(PHONE_QUALITY),
                               "--quiet", str(SETTLE_QUIET_MS if settle else 0)]])
         if not tables or not tables[0].raw:
             return None

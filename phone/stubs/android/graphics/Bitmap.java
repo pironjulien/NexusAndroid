@@ -3,7 +3,7 @@ package android.graphics;
 
 public final class Bitmap {
     public enum Config { ARGB_8888, HARDWARE }
-    public enum CompressFormat { JPEG }
+    public enum CompressFormat { JPEG, PNG, WEBP_LOSSLESS }
     public int getWidth() { throw new RuntimeException("stub"); }
     public int getHeight() { throw new RuntimeException("stub"); }
     public Config getConfig() { throw new RuntimeException("stub"); }

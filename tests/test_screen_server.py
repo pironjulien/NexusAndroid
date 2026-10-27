@@ -191,8 +191,8 @@ def test_look_in_one_exchange(fast):
     fake.raw = payload(STATUS, (1248, 1972), NODES, jpeg((810, 1280)), (1248, 1972))
     out = server._view("both")
     assert adb.calls == []  # ni dumpsys, ni screencap, ni uiautomator
-    assert fake.queries == [["screen", "--image", "scaled", "--max", str(screen.MAX_SIDE), "--quality", str(screen.PHONE_QUALITY),
-                             "--quiet", str(screen.SETTLE_QUIET_MS)]]
+    assert fake.queries == [["screen", "--image", "scaled", "--max", str(screen.MAX_SIDE), "--format", "lossless",
+                             "--quality", str(screen.PHONE_QUALITY), "--quiet", str(screen.SETTLE_QUIET_MS)]]
     header = out[0].splitlines()[0]
     assert header.startswith("Foreground: com.app") and "image 810×1280" in header
     assert scr.size == (1248, 1972) and scr.posture == "OPENED" and scr.scale == pytest.approx(810 / 1248)

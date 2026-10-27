@@ -25,12 +25,14 @@
 //     0, nombre de colonnes, noms des colonnes, nombre de lignes, valeurs (ligne par ligne)   lecture réussie
 //     1, message                                                                             erreur
 //     2, taille, octets                                                                      lecture d'écran
-//   Lecture d'écran (screen [--image none|scaled|full] [--max côté] [--quality q] [--quiet ms]), dans les octets :
+//   Lecture d'écran (screen [--image none|scaled|full] [--max côté] [--format jpeg|lossless] [--quality q] [--quiet ms]),
+//   dans les octets :
 //     état (sortie de STATUS_SH), rotation, largeur, hauteur de l'affichage 0,
 //     arbre : 0, nombre de nœuds, puis par nœud (ordre du document de `uiautomator dump`) texte, resource-id, classe,
 //             paquet, content-desc, drapeaux (bits dans l'ordre de walk), limites visibles x1 y1 x2 y2, profondeur
 //             (0 pour la racine), ordre de dessin parmi ses frères (getDrawingOrder) ; ou 1, message
-//     image : 0, largeur et hauteur de la capture, taille, JPEG ; 1, message ; 2 (non demandée)
+//     image : 0, largeur et hauteur de la capture, taille, octets (JPEG, ou avec --format lossless WebP sans perte dès
+//             Android 11, PNG avant ; --quality est alors l'effort de compression) ; 1, message ; 2 (non demandée)
 
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.UiAutomation;
@@ -38,6 +40,7 @@ import android.graphics.Bitmap;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.net.LocalServerSocket;
+import android.os.Build;
 import android.net.LocalSocket;
 import android.os.HandlerThread;
 import android.os.Looper;
@@ -470,7 +473,7 @@ public final class NexusQuery {
     }
 
     private static byte[] screen(String[] argv) {
-        String image = "none";
+        String image = "none", format = "jpeg";
         int maxSide = 1280, quality = 90;
         long quietMs = QUIET_MS;  // --quiet 0 : arbre de l'instant (relecture entre les deux appuis d'un double appui)
         for (int i = 1; i < argv.length; i += 2) {
@@ -481,6 +484,7 @@ public final class NexusQuery {
                 switch (argv[i]) {
                     case "--image": image = argv[i + 1]; break;
                     case "--max": maxSide = Integer.parseInt(argv[i + 1]); break;
+                    case "--format": format = argv[i + 1]; break;
                     case "--quality": quality = Integer.parseInt(argv[i + 1]); break;
                     case "--quiet": quietMs = Long.parseLong(argv[i + 1]); break;
                     default: return failure("Error: unsupported option " + argv[i]);
@@ -490,13 +494,14 @@ public final class NexusQuery {
             }
         }
         if (!image.equals("none") && !image.equals("scaled") && !image.equals("full")
-                || maxSide < 16 || quality < 1 || quality > 100 || quietMs < 0 || quietMs > QUIET_MS) {
+                || !format.equals("jpeg") && !format.equals("lossless")
+                || maxSide < 16 || quality < 0 || quality > 100 || quietMs < 0 || quietMs > QUIET_MS) {
             return failure("Error: bad screen options");
         }
         synchronized (SCREEN_LOCK) {
             lastScreen = System.currentTimeMillis();
             try {
-                return snapshot(image, maxSide, quality, quietMs);
+                return snapshot(image, maxSide, format, quality, quietMs);
             } catch (Throwable e) {
                 return failure("Error: screen read failed (" + e + ")");
             } finally {
@@ -505,7 +510,7 @@ public final class NexusQuery {
         }
     }
 
-    private static byte[] snapshot(String image, int maxSide, int quality, long quietMs) throws Exception {
+    private static byte[] snapshot(String image, int maxSide, String format, int quality, long quietMs) throws Exception {
         Process status = null;
         try {
             status = new ProcessBuilder("sh", "-c", STATUS_SH).redirectErrorStream(true).start();
@@ -556,7 +561,7 @@ public final class NexusQuery {
             ua = null;
             release();  // connexion douteuse : rouverte à la prochaine lecture, ou laissée à `uiautomator dump`
         }
-        byte[] jpeg = null;
+        byte[] encoded = null;
         int shotWidth = 0, shotHeight = 0;
         String imageError = null;
         if (!image.equals("none")) {
@@ -580,8 +585,12 @@ public final class NexusQuery {
                                 (int) Math.rint(shotHeight * factor), true);
                     }
                     ByteArrayOutputStream out = new ByteArrayOutputStream(256 * 1024);
-                    pixels.compress(Bitmap.CompressFormat.JPEG, quality, out);
-                    jpeg = out.toByteArray();
+                    // Sans perte : le PC noircit les codes, dessine les numéros puis réencode en WebP ; un JPEG ici
+                    // laissait ses artefacts sur le petit texte (double compression). WebP sans perte dès Android 11.
+                    Bitmap.CompressFormat how = !format.equals("lossless") ? Bitmap.CompressFormat.JPEG
+                            : Build.VERSION.SDK_INT >= 30 ? Bitmap.CompressFormat.WEBP_LOSSLESS : Bitmap.CompressFormat.PNG;
+                    pixels.compress(how, quality, out);
+                    encoded = out.toByteArray();
                 }
             } catch (Throwable e) {
                 imageError = "screenshot failed (" + e + ")";
@@ -601,12 +610,12 @@ public final class NexusQuery {
         }
         if (image.equals("none")) {
             body.writeInt(2);
-        } else if (jpeg != null) {
+        } else if (encoded != null) {
             body.writeInt(0);
             body.writeInt(shotWidth);
             body.writeInt(shotHeight);
-            body.writeInt(jpeg.length);
-            body.write(jpeg);
+            body.writeInt(encoded.length);
+            body.write(encoded);
         } else {
             body.writeInt(1);
             text(body, imageError);
