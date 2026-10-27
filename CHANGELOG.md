@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-27
+
+### Added
+- The server sends its icon and website to clients when they connect (`serverInfo`, the same as in `server.json`),
+  and announces how long its tool list stays fresh (one minute, private cache: MCP protocol 2026-07-28).
+
+### Changed
+- `web` and `launch` are marked as reaching the outside world (`openWorldHint`): `web` reads Internet pages, `launch`
+  opens `https:`, `tel:` and `mailto:` links. Clients can ask for confirmation accordingly.
+
+### Fixed
+- `look` and `act` no longer crash on a screen holding an element one pixel high or with inverted bounds
+  (`ValueError: y1 must be greater than or equal to y0` while drawing the [N] marks; seen 4 times in the daemon log on
+  10/26): the outline is clamped to the element.
+- Daemon log: a client that leaves without closing its connection no longer writes a `ConnectionResetError`
+  traceback (`_ProactorBasePipeTransport._call_connection_lost`, a known asyncio quirk on Windows, harmless): 606 of
+  them drowned the real errors on 10/27. Every other asyncio error is still written.
+
 ## [0.19.0] - 2026-10-27
 
 ### Changed

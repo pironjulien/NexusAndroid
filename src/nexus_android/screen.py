@@ -455,9 +455,11 @@ def draw_marks(image: PILImage.Image, elements: list[Element], factor: float,
     for e in elements:
         x1, y1, x2, y2 = ((e.bounds[0] - ox) * factor, (e.bounds[1] - oy) * factor,
                           (e.bounds[2] - ox) * factor, (e.bounds[3] - oy) * factor)
+        x1, x2 = sorted((x1, x2))  # bornes inversées ou élément d'un pixel (26/10 : look plantait sur y1 < y0)
+        y1, y2 = sorted((y1, y2))
         if x2 <= 0 or y2 <= 0 or x1 >= image.width or y1 >= image.height:
             continue  # hors de la zone agrandie (region)
-        draw.rectangle((x1, y1, x2 - 1, y2 - 1), outline=MARK_EDGE, width=1)
+        draw.rectangle((x1, y1, max(x1, x2 - 1), max(y1, y2 - 1)), outline=MARK_EDGE, width=1)
         label = str(e.index)
         box = draw.textbbox((0, 0), label, font=font)
         tw, th = box[2] - box[0] + 6, box[3] - box[1] + 4

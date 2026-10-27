@@ -31,6 +31,17 @@ def test_marks_auto_all_none():
     assert marked(many, "all") == many and marked(many, "none") == []
 
 
+def test_marks_survive_flat_or_inverted_elements():
+    """26/10 : un élément d'un pixel de haut (ou aux bornes inversées) faisait planter look entier (y1 < y0)."""
+    from nexus_android.screen import draw_marks
+
+    flat = Element(1, "View", "", "", "", "com.app", (10, 50, 200, 50), True)
+    thin = Element(2, "View", "", "", "", "com.app", (10, 60, 200, 61), True)
+    inverted = Element(3, "View", "", "", "", "com.app", (200, 90, 10, 70), True)
+    image = draw_marks(PILImage.new("RGB", (300, 300)), [flat, thin, inverted], 0.5)
+    assert image.size == (300, 300)
+
+
 def _magenta(data: bytes) -> int:
     raw = PILImage.open(io.BytesIO(data)).convert("RGB").tobytes()
     return sum(1 for i in range(0, len(raw), 3) if raw[i] > 150 and raw[i + 1] < 90 and raw[i + 2] > 70)
