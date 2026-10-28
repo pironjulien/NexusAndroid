@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.20.3] - 2026-10-28
+
+### Changed
+- Public agent guide: progress updates use ordinary commentary; question tools are reserved for actual questions
+  that require a user answer. The guide remains shared by the product's clients, without private profile rules.
+- Antigravity plugin manifest: `displayName` « NexusAndroid », so Antigravity shows the product name instead of the technical id.
+
 ## [0.20.2] - 2026-10-27
 
 ### Changed

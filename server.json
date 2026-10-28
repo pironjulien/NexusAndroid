@@ -3,7 +3,7 @@
   "name": "io.github.pironjulien/nexus-android",
   "title": "NexusAndroid",
   "description": "Android computer use over plain ADB: screen, gestures, SMS, notifications, files. No root, no app.",
-  "version": "0.20.2",
+  "version": "0.20.3",
   "websiteUrl": "https://julienpiron.fr/nexusandroid/",
   "icons": [
     {
@@ -30,7 +30,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "nexus-android",
-      "version": "0.20.2",
+      "version": "0.20.3",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
