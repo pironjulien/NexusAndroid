@@ -10,11 +10,17 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag (vX.Y.Z) whose server.json to send to the MCP registry again
+        required: true
 
 permissions: {}
 
 jobs:
   release:
+    if: github.event_name == 'push'
     runs-on: windows-latest
     permissions:
       contents: write
@@ -103,6 +109,7 @@ jobs:
     # server.json to the official MCP registry: the .mcpb just published (its URL and SHA-256). mcp-publisher pinned by
     # version and SHA-256; GitHub OIDC login, no token stored.
     needs: release
+    if: always() && (needs.release.result == 'success' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -116,14 +123,15 @@ jobs:
           persist-credentials: false
       - name: server.json for this release
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Not a release tag: $TAG"; exit 1; }
           version="${TAG#v}"
           url="https://github.com/${REPOSITORY}/releases/download/${TAG}/nexus-android.mcpb"
           curl -fsSL --retry 5 -o nexus-android.mcpb "$url"
-          sums=$(curl -fsSL --retry 5 "https://github.com/${REPOSITORY}/releases/download/${TAG}/SHA256SUMS.txt")
+          sums=$(curl -fsSL --retry 5 "https://github.com/${REPOSITORY}/releases/download/${TAG}/SHA256SUMS.txt" | tr -d '\r')  # written on Windows: CRLF
           sha=$(sha256sum nexus-android.mcpb | cut -d' ' -f1)
           grep -qx "${sha}  nexus-android.mcpb" <<<"$sums" || { echo "nexus-android.mcpb differs from the attested SHA256SUMS.txt"; exit 1; }
           jq --arg v "$version" --arg u "$url" --arg s "$sha" \
