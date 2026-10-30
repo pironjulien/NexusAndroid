@@ -86,6 +86,71 @@ public sealed class ExecutableTests
     private static readonly string[] Expected = ["act", "apps", "capture", "checkup", "clipboard", "draft", "files", "functions", "info",
         "launch", "logs", "look", "map", "messages", "notifications", "phone", "settings", "web"];
 
+    private static string TokenFile(string token)
+    {
+        var path = Path.Combine(TestPaths.Root, "token-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllText(path, token);
+        return path;
+    }
+
+    private static int FreePort()
+    {
+        var allocation = new TcpListener(IPAddress.Loopback, 0);
+        allocation.Start();
+        var port = ((IPEndPoint)allocation.LocalEndpoint).Port;
+        allocation.Stop();
+        return port;
+    }
+
+    /// <summary>Status code of an authenticated initialize, once the daemon answers its health check.</summary>
+    private static async Task<HttpStatusCode> InitializeWith(int port, string token)
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (true)
+        {
+            try { await http.GetStringAsync($"http://127.0.0.1:{port}/health"); break; }
+            catch (HttpRequestException) when (DateTime.UtcNow < deadline) { await Task.Delay(50); }
+        }
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{port}/mcp") { Content = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}""", Encoding.UTF8, "application/json") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await http.SendAsync(request);
+        return response.StatusCode;
+    }
+
+    /// <summary>Shared token rule: the token file is the truth (NEXUS_MCP_TOKEN_FILE, else ~/.nexus/mcp-token.txt);
+    /// a different NEXUS_MCP_TOKEN never wins over it, so all Nexus daemons and the user variable agree.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DaemonTokenFileWinsOverTheVariable(bool declaredFile)
+    {
+        var home = Path.Combine(TestPaths.Root, "home-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(home, ".nexus"));
+        File.WriteAllText(Path.Combine(home, ".nexus", "mcp-token.txt"), "shared-file-token\n");
+        var port = FreePort();
+        using var process = Start(s =>
+        {
+            s.Environment["USERPROFILE"] = home;
+            s.Environment["NEXUS_MCP_TOKEN"] = "stale-variable-token";
+            if (declaredFile) s.Environment["NEXUS_MCP_TOKEN_FILE"] = TokenFile("declared-file-token");
+            else s.Environment.Remove("NEXUS_MCP_TOKEN_FILE");
+        }, "--http", port.ToString());
+        try
+        {
+            Assert.Equal(HttpStatusCode.OK, await InitializeWith(port, declaredFile ? "declared-file-token" : "shared-file-token"));
+            Assert.Equal(HttpStatusCode.Unauthorized, await InitializeWith(port, "stale-variable-token"));
+        }
+        finally { if (!process.HasExited) process.Kill(true); }
+    }
+
+    [Fact]
+    public void InitializeReportsTheEngineVersion()
+    {
+        var init = new McpServer().HandleRequest(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = 1, ["method"] = "initialize" });
+        Assert.Equal(Program.Version, init?["result"]?["serverInfo"]?["version"]?.ToString());
+    }
+
     private static Process Start(Action<ProcessStartInfo>? configure = null, params string[] args)
     {
         var start = new ProcessStartInfo(Exe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
@@ -143,7 +208,7 @@ public sealed class ExecutableTests
         var port = ((IPEndPoint)allocation.LocalEndpoint).Port;
         allocation.Stop();
         var request = Path.Combine(TestPaths.Root, "restart-own-" + Guid.NewGuid().ToString("N") + ".request");
-        using var process = Start(s => { s.Environment["NEXUS_MCP_TOKEN"] = "synthetic"; s.Environment["NEXUS_ANDROID_RESTART_REQUEST"] = request; }, "--http", port.ToString());
+        using var process = Start(s => { s.Environment["NEXUS_MCP_TOKEN_FILE"] = TokenFile("synthetic-restart-token"); s.Environment["NEXUS_ANDROID_RESTART_REQUEST"] = request; }, "--http", port.ToString());
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
@@ -172,7 +237,7 @@ public sealed class ExecutableTests
         var port = ((IPEndPoint)allocation.LocalEndpoint).Port;
         allocation.Stop();
         const string token = "synthetic-native-contract-token";
-        using var process = Start(s => s.Environment["NEXUS_MCP_TOKEN"] = token, "--http", port.ToString());
+        using var process = Start(s => s.Environment["NEXUS_MCP_TOKEN_FILE"] = TokenFile(token), "--http", port.ToString());
         using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}"), Timeout = TimeSpan.FromSeconds(5) };
         try
         {

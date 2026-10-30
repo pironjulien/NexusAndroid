@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.3] - 2026-10-30
+
+### Fixed
+- Shared daemon token: every Nexus daemon installer now uses one token file (`NEXUS_MCP_TOKEN_FILE`, else
+  `%USERPROFILE%\.nexus\mcp-token.txt`), reused when present and created once with an exclusive write; the user
+  variable `NEXUS_MCP_TOKEN` is set to its content, and the daemon reads that file first. Installed after another
+  Nexus product, the daemon answered 401 to the token of the variable (fresh-PC install, 30/10).
+- The server announced version 0.21.0 in `initialize` and `/health` whatever its real version, so a native install
+  looked like the old PyPI server; it now reports its own version.
+
 ## [0.22.2] - 2026-10-30
 
 ### Added

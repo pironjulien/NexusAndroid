@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "nexus-android",
   "display_name": "NexusAndroid",
-  "version": "0.22.2",
+  "version": "0.22.3",
   "description": "Android computer use over plain ADB: screen, gestures, SMS, notifications, files. No root, no app on the phone.",
   "long_description": "Lets Claude see and drive your real Android phone over a USB cable or the local Wi-Fi: screen and numbered elements, taps, typing with accents, SMS/RCS reading and reply drafts, notifications, files, quick settings. Nothing is installed on the phone. `adb` is found on the PC (or installed once by NexusAndroid setup). Sending, calling, paying and other irreversible gestures need your explicit yes. First time: turn on USB debugging on the phone and plug it in; the tools explain each step.",
   "author": {

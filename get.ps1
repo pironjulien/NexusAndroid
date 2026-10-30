@@ -117,19 +117,55 @@ function Install-NexusAndroid {
     }
 }
 
+function Get-SharedToken([bool]$Workstation) {
+    # Shared token of the Nexus daemons (rule common to NexusRelay, NexusAndroid, NexusBrowser): one token file is the
+    # truth: NEXUS_MCP_TOKEN_FILE when set (a Nexus workstation's NexusSecure file), else %USERPROFILE%\.nexus\mcp-token.txt.
+    # Reused when present, never regenerated; created once otherwise (exclusive creation: two installers, one after the
+    # other or at the same time, end with the same token). The user variable NEXUS_MCP_TOKEN gets its content; the AI
+    # apps read ${NEXUS_MCP_TOKEN}, the token is never written into their configs. Returns the file's path.
+    $file = [Environment]::GetEnvironmentVariable('NEXUS_MCP_TOKEN_FILE', 'Process')
+    if (-not $file) { $file = [Environment]::GetEnvironmentVariable('NEXUS_MCP_TOKEN_FILE', 'User') }
+    if (-not $file -and $Workstation -and $env:OneDrive) {
+        $vault = Join-Path $env:OneDrive 'Documents\NexusSecure\agents\nexus-mcp-token.txt'
+        if (Test-Path -LiteralPath $vault) { $file = $vault }
+    }
+    if (-not $file) { $file = Join-Path $UserHome '.nexus\mcp-token.txt' }
+    $token = if (Test-Path -LiteralPath $file) { ([IO.File]::ReadAllText($file)).Trim() } else { '' }
+    if (-not $token) {
+        $bytes = New-Object byte[] 32
+        [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+        $fresh = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+        New-Item -ItemType Directory -Force (Split-Path $file) | Out-Null
+        try {
+            $stream = [IO.File]::Open($file, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+            try { $data = [Text.Encoding]::ASCII.GetBytes($fresh); $stream.Write($data, 0, $data.Length) } finally { $stream.Dispose() }
+            $token = $fresh
+        } catch [IO.IOException] {
+            Start-Sleep -Milliseconds 200  # another installer created it first: its token wins
+            $token = ([IO.File]::ReadAllText($file)).Trim()
+        }
+        if (-not $token) { throw "Shared token file $file is empty." }
+    }
+    if (-not $Sandbox -and [Environment]::GetEnvironmentVariable('NEXUS_MCP_TOKEN', 'User') -cne $token) {
+        [Environment]::SetEnvironmentVariable('NEXUS_MCP_TOKEN', $token, 'User')
+        Say 'User variable NEXUS_MCP_TOKEN set from the shared token file (restart the AI apps to see it).'
+    }
+    $env:NEXUS_MCP_TOKEN = $token
+    return $file
+}
+
 function Install-Daemon([string]$Exe) {
     # Shared MCP daemon (127.0.0.1:16180): one nexus-android process for every session of Claude, Codex and Antigravity,
     # MCP Streamable HTTP with a bearer token. On a Nexus workstation, declared to the daemon supervisor (spec with key
-    # exe and restart_request: the running daemon stops once idle and the supervisor starts this build). Elsewhere: the
-    # token in the user variable NEXUS_MCP_TOKEN (created once, shared with the other Nexus products) and a hidden
-    # logon task.
+    # exe and restart_request: the running daemon stops once idle and the supervisor starts this build). Elsewhere: a
+    # hidden logon task. Either way the token is the shared one (Get-SharedToken).
     $port = 16180
     $state = Join-Path $UserHome '.nexus\nexus-android'
     $request = Join-Path $state 'daemon-restart.request'
     $utf8 = New-Object Text.UTF8Encoding $false
     $supervised = [bool](Get-ScheduledTask -TaskName 'Nexus MCP Daemons' -ErrorAction SilentlyContinue)
-    $tokenFile = if ($env:OneDrive) { Join-Path $env:OneDrive 'Documents\NexusSecure\agents\nexus-mcp-token.txt' }
-    if ($supervised -and $tokenFile -and (Test-Path -LiteralPath $tokenFile)) {
+    $tokenFile = Get-SharedToken $supervised
+    if ($supervised) {
         $specFile = Join-Path $UserHome '.nexus\daemons\specs\nexus-android.json'
         $spec = [ordered]@{ port = $port; exe = $Exe; args = @(); env = [ordered]@{ NEXUS_MCP_TOKEN_FILE = $tokenFile }; restart_request = $request }
         $text = $spec | ConvertTo-Json -Depth 5
@@ -143,14 +179,7 @@ function Install-Daemon([string]$Exe) {
         $Results['Daemon'] = 'supervised'
         return
     }
-    $token = [Environment]::GetEnvironmentVariable('NEXUS_MCP_TOKEN', 'User')
-    if (-not $token -or $token.Length -lt 32) {
-        $bytes = New-Object byte[] 32
-        [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-        $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
-        [Environment]::SetEnvironmentVariable('NEXUS_MCP_TOKEN', $token, 'User')
-        Say 'User variable NEXUS_MCP_TOKEN set (restart the AI apps to see it).'
-    }
+    # The daemon reads the same token file (NEXUS_MCP_TOKEN_FILE, else %USERPROFILE%\.nexus\mcp-token.txt).
     $task = 'NexusAndroid MCP Daemon'
     $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
     # conhost --headless: the engine is a console program; no window ever opens.
@@ -200,6 +229,7 @@ try {
         & $exe @setup
         $code = $LASTEXITCODE
     } finally { foreach ($key in $saved.Keys) { Set-Item "env:$key" $saved[$key] } }
+    if ($Sandbox) { $null = Get-SharedToken $false }  # test home: the shared token file only, no user variable
     if (-not $Sandbox -and -not $NoDaemon) {
         try { Install-Daemon $exe } catch { Write-Warning "Shared daemon not installed ($($_.Exception.Message)); the stdio servers still work."; $Results['Daemon'] = 'failed' }
     }

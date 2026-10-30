@@ -89,7 +89,7 @@ public sealed class McpServer
                     ["serverInfo"] = new JsonObject
                     {
                         ["name"] = "nexus-android",
-                        ["version"] = "0.21.0",
+                        ["version"] = Program.Version,
                     }
                 }
             };
@@ -172,22 +172,23 @@ public sealed class McpServer
 
     public string CallTool(string name, JsonObject args) => _engine.Execute(name, args).ToJsonString();
 
-    private static string? ConfiguredToken()
+    /// <summary>Shared token of the Nexus daemons (common rule): the token file is the truth, so that every Nexus daemon
+    /// and the user variable NEXUS_MCP_TOKEN agree. NEXUS_MCP_TOKEN_FILE when set, else %USERPROFILE%\.nexus\mcp-token.txt;
+    /// NEXUS_MCP_TOKEN only when no such file exists; last, the former workstation location (Documents\NexusSecure).</summary>
+    internal static string? ConfiguredToken()
     {
+        static string? Read(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
+            try { var text = File.ReadAllText(path).Trim(); return text.Length > 0 ? text : null; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+        }
+        var declared = Environment.GetEnvironmentVariable("NEXUS_MCP_TOKEN_FILE");
+        if (!string.IsNullOrWhiteSpace(declared)) return Read(declared);
+        if (Read(Path.Combine(Tools.Home, ".nexus", "mcp-token.txt")) is { } shared) return shared;
         var env = Environment.GetEnvironmentVariable("NEXUS_MCP_TOKEN");
-        if (!string.IsNullOrWhiteSpace(env))
-            return env.Trim();
-        var file = Environment.GetEnvironmentVariable("NEXUS_MCP_TOKEN_FILE");
-        if (string.IsNullOrWhiteSpace(file))
-        {
-            var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-            file = Path.Combine(docs, "NexusSecure", "agents", "nexus-mcp-token.txt");
-        }
-        if (File.Exists(file))
-        {
-            try { return File.ReadAllText(file).Trim(); } catch { }
-        }
-        return null;
+        if (!string.IsNullOrWhiteSpace(env)) return env.Trim();
+        return Read(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "NexusSecure", "agents", "nexus-mcp-token.txt"));
     }
 
     private static bool CheckAuth(Dictionary<string, string> headers, string? expectedToken)
@@ -370,7 +371,7 @@ public sealed class McpServer
                         ["service"] = "nexus-android",
                         ["runtime"] = "native",
                         ["pid"] = Environment.ProcessId,
-                        ["version"] = "0.21.0",
+                        ["version"] = Program.Version,
                     };
                     await WriteHttpResponseAsync(stream, 200, "application/json", Encoding.UTF8.GetBytes(healthJson.ToJsonString()));
                     return;
