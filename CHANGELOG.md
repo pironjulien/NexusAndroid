@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.2] - 2026-10-30
+
+### Added
+- Claude Desktop extension for Arm64 Windows: `nexus-android-arm64.mcpb` (native Arm64 build), next to
+  `nexus-android.mcpb` (x64, also the MCP registry package), both in `SHA256SUMS.txt` and attested.
+
 ## [0.22.1] - 2026-10-30
 
 ### Changed

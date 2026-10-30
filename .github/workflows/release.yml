@@ -1,6 +1,6 @@
 # Release: on a vX.Y.Z tag, runs test.ps1, builds the native engine for Windows x64 and Arm64 (self-contained single
-# file, no .NET to install), packs NexusAndroid-win-x64.zip, NexusAndroid-win-arm64.zip and the Claude Desktop extension
-# nexus-android.mcpb, writes SHA256SUMS.txt, attests their build provenance (Sigstore, keyless: verify a file with
+# file, no .NET to install), packs NexusAndroid-win-x64.zip, NexusAndroid-win-arm64.zip and the Claude Desktop extensions
+# nexus-android.mcpb (x64) and nexus-android-arm64.mcpb, writes SHA256SUMS.txt, attests their build provenance (Sigstore, keyless: verify a file with
 # `gh attestation verify <file> --repo pironjulien/NexusAndroid`; the bundle is attached as NexusAndroid-X.Y.Z.intoto.jsonl),
 # publishes the "NexusAndroid X.Y.Z" GitHub release with the CHANGELOG section as notes, then publishes server.json (the
 # .mcpb's URL and SHA-256) to the official MCP registry by GitHub OIDC. get.ps1 installs from releases/latest.
@@ -69,13 +69,16 @@ jobs:
           }
           & "$env:RUNNER_TEMP/publish-win-x64/NexusAndroid.exe" --version
           if ($LASTEXITCODE) { throw 'The x64 build does not start.' }
-          # Claude Desktop extension: the x64 build (Arm64 Windows runs it emulated).
-          $mcpb = Join-Path $env:RUNNER_TEMP 'mcpb'
-          New-Item -ItemType Directory "$mcpb/server" -Force | Out-Null
-          Copy-Item mcpb/manifest.json, mcpb/icon.png, LICENSE $mcpb
-          Copy-Item "$env:RUNNER_TEMP/publish-win-x64/NexusAndroid.exe" "$mcpb/server/"
-          npx --yes @anthropic-ai/mcpb@2.1.2 pack $mcpb dist/nexus-android.mcpb
-          if ($LASTEXITCODE) { throw 'mcpb pack failed.' }
+          # Claude Desktop extensions, one per architecture: nexus-android.mcpb (x64, also the MCP registry package) and
+          # nexus-android-arm64.mcpb (native Arm64).
+          foreach ($pair in @(@('win-x64', 'nexus-android.mcpb'), @('win-arm64', 'nexus-android-arm64.mcpb'))) {
+            $mcpb = Join-Path $env:RUNNER_TEMP "mcpb-$($pair[0])"
+            New-Item -ItemType Directory "$mcpb/server" -Force | Out-Null
+            Copy-Item mcpb/manifest.json, mcpb/icon.png, LICENSE $mcpb
+            Copy-Item "$env:RUNNER_TEMP/publish-$($pair[0])/NexusAndroid.exe" "$mcpb/server/"
+            npx --yes @anthropic-ai/mcpb@2.1.2 pack $mcpb "dist/$($pair[1])"
+            if ($LASTEXITCODE) { throw "mcpb pack failed ($($pair[1]))." }
+          }
           Copy-Item get.ps1 dist  # the installer too, checked and attested like the packages
           Get-ChildItem dist -File | ForEach-Object { '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } |
             Set-Content dist/SHA256SUMS.txt -Encoding utf8NoBOM
