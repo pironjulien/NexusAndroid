@@ -111,6 +111,11 @@ last line `NEXUS_PACK_RESULT Claude Desktop=declared; Codex=declared; Antigravit
 comes as a plugin (`~/.gemini/config/plugins/nexus-android`: server and agent guide), never as a global entry. An entry
 written by an earlier version (`uvx nexus-android`) is replaced by the executable.
 
+The HTTP daemon shares one token file with NexusRelay and NexusBrowser: `NEXUS_MCP_TOKEN_FILE` when set, otherwise
+`%USERPROFILE%\.nexus\mcp-token.txt`. The installer reuses that file (creates it once if absent), sets the user
+variable `NEXUS_MCP_TOKEN` to its content and never rotates an existing token. Restart AI apps after the first
+installation so they read the variable; installing another Nexus product keeps the same token.
+
 **Verify a download.** Every release file (both zips, both `.mcpb` extensions, `get.ps1`, `SHA256SUMS.txt`) carries a Sigstore
 build provenance attestation: `gh attestation verify NexusAndroid-win-x64.zip --repo pironjulien/NexusAndroid`
 (the bundle is also attached as `NexusAndroid-<version>.intoto.jsonl`).
@@ -424,19 +429,21 @@ mobile data.
 
 ## Shared daemon (optional)
 
-By default each client starts its own `nexus-android` process. To run a single process for all of them, start the
-server in HTTP mode:
+Clients configured with stdio start their own `NexusAndroid.exe` process. `get.ps1` also configures a shared HTTP
+daemon: the Nexus workstation supervisor when present, otherwise a hidden logon task. To start it manually after
+installation:
 
 ```powershell
-$env:NEXUS_MCP_TOKEN = "<random string, 32 characters or more>"   # or NEXUS_MCP_TOKEN_FILE = path of a file holding it
+$env:NEXUS_MCP_TOKEN_FILE = Join-Path $env:USERPROFILE '.nexus\mcp-token.txt' # or the shared file chosen at install
 NexusAndroid.exe --http 16180
 ```
 
 It serves MCP Streamable HTTP on `127.0.0.1` only (default port 16180), at `http://127.0.0.1:16180/mcp`, and refuses
 any request without the header `Authorization: Bearer <token>` (HTTP 401); it does not start without a token. Point
 each client at that URL with that header. Each MCP session keeps its own `[N]` numbering and conversation list; the
-ADB link and the phone lock are shared. Starting the daemon (at logon, for example) is up to you: the installers do
-not set it up. The token keeps a misconfigured client or a stray session from driving the phone; it is no protection
+ADB link and the phone lock are shared. The token file takes precedence over `NEXUS_MCP_TOKEN`; the variable is a
+fallback only when `NEXUS_MCP_TOKEN_FILE` is unset and the default shared file is absent. The token keeps a
+misconfigured client or a stray session from driving the phone; it is no protection
 against malicious software running on the same PC, which can reach the phone directly through ADB (see
 [SECURITY.md](https://github.com/pironjulien/NexusAndroid/blob/main/SECURITY.md)).
 

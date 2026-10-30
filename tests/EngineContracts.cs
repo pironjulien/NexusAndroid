@@ -53,7 +53,22 @@ Test("secret assignment families and structured JSON are masked",()=>{foreach(va
 Test("cancelled operation emits no input",()=>{using var cancel=new CancellationTokenSource();cancel.Cancel();NativeSafety.Cancellation.Value=cancel.Token;adb.Commands.Clear();Assert(Throws(()=>engine.Execute("act",Obj("{\"steps\":[{\"do\":\"tap\",\"target\":\"Open\"}]}")),"cancel"),"cancel ignored");Assert(adb.Inputs.Count==0,"cancel sent input");NativeSafety.Cancellation.Value=default;});
 Test("masked values cannot be inferred by wait or text targeting",()=>{fixture.Label="Code de validation 482913";adb.Commands.Clear();var waited=engine.Execute("act",Obj("{\"steps\":[{\"do\":\"wait\",\"text\":\"482913\",\"timeout\":0}]}"));Assert(waited["structuredContent"]?["verified"]?.GetValue<bool>()==false,"wait matched raw code");engine.Execute("act",Obj("{\"steps\":[{\"do\":\"tap\",\"target\":\"Code de validation 482913\"}]}"));Assert(adb.Inputs.Count==0,"target matched raw code");fixture.Label="Open";});
 Test("code masking handles multiline and alphanumeric codes while preserving dates and amounts",()=>{var masked=NativeSafety.Mask("Votre code :\nA7K9P2\n482913 ; rendez-vous 2026-10-29 ; montant 1 250 €");Assert(!masked.Contains("A7K9P2")&&!masked.Contains("482913")&&masked.Contains("2026-10-29")&&masked.Contains("1 250 €"),"code privacy or noncode values lost");Assert(!NativeSafety.MaskCodes("A7K9P2",true).Contains("A7K9P2"),"external code context ignored");});
-Test("only known current-session agreement tokens survive code masking",()=>{var token="";try{NativeSafety.Require(new(),"synthetic verify recipient",true);}catch(InvalidOperationException e){token=Regex.Match(e.Message,@"accord=([a-f0-9]{48})").Groups[1].Value;}Assert(token.Length==48,"proposal absent");Assert(NativeSafety.Mask("Verify recipient Single-use accord="+token).Contains(token),"own token damaged");var original=NativeSafety.Session.Value;NativeSafety.Session.Value="foreign-mask-session";Assert(!NativeSafety.Mask("Verify recipient accord="+token).Contains(token),"foreign token disclosed");NativeSafety.Session.Value=original;});
+Test("only known current-session agreement tokens survive code masking",()=>
+{
+    var original=NativeSafety.Session.Value;var own="mask-contract-"+Guid.NewGuid().ToString("N");NativeSafety.Session.Value=own;
+    try
+    {
+        var token="";try{NativeSafety.Require(new(),"synthetic verify recipient",true);}catch(InvalidOperationException e){token=Regex.Match(e.Message,@"accord=([a-f0-9]{48})").Groups[1].Value;}
+        Assert(token.Length==48,"proposal absent");
+        Assert(NativeSafety.Mask("Verify recipient Single-use accord="+token).Contains(token)&&NativeSafety.MaskCodes("accord="+token).Contains(token),"own token damaged");
+        NativeSafety.Session.Value="foreign-mask-session";
+        Assert(!NativeSafety.Mask("Verify recipient accord="+token).Contains(token)&&!NativeSafety.MaskCodes("accord="+token).Contains(token),"foreign token disclosed");
+        NativeSafety.Session.Value=own;
+        NativeSafety.Require(new JsonObject{["confirm"]=true,["accord"]=token},"synthetic verify recipient",true);
+        Assert(!NativeSafety.Mask("accord="+token,codes:false).Contains(token),"consumed token disclosed");
+    }
+    finally{NativeSafety.ForgetSession(own);NativeSafety.Session.Value=original;}
+});
 Test("foldable captures map logical display zero to its physical display",()=>{Assert(AdbClient.ParseLogicalDisplay("mDisplayId=0\n mPrimaryDisplayDevice=Fold(local:111)\nmDisplayId=1\n mPrimaryDisplayDevice=Inner(local:222)")=="111","wrong Fold display");Assert(AdbClient.ParseLogicalDisplay("mDisplayId=1\n mPrimaryDisplayDevice=Other(local:222)") is null,"unknown primary guessed");});
 Test("MCP ping and unsupported versions negotiate a real supported protocol",()=>{var server=new McpServer(engine);var p=server.HandleRequest(Obj("{\"jsonrpc\":\"2.0\",\"id\":100,\"method\":\"ping\"}"));Assert(p?["result"] is JsonObject,"ping refused");var init=server.HandleRequest(Obj("{\"jsonrpc\":\"2.0\",\"id\":101,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"made-up\"}}"));Assert(init?["result"]?["protocolVersion"]?.ToString()=="2025-11-25","invented protocol echoed");});
 Test("closing a session destroys its previous references",()=>{var prior=NativeSafety.Session.Value;NativeSafety.Session.Value="closing-fixture";engine.Execute("look",new());engine.CloseSession("closing-fixture");adb.Commands.Clear();var r=engine.Execute("act",Obj("{\"steps\":[{\"do\":\"tap\",\"target\":\"[1]\"}]}"));Assert(adb.Inputs.Count==0&&Text(r).Contains("reference"),"closed reference reused");NativeSafety.Session.Value=prior;});

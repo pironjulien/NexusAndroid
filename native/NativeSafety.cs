@@ -58,8 +58,12 @@ public static class NativeSafety
     private static string CodePlain(string text)=>string.Concat(text.Select(c=>char.IsSurrogate(c)?c.ToString():c is '’' or '‘' or 'ʼ'?"'":new string(c.ToString().Normalize(NormalizationForm.FormKD).Where(x=>CharUnicodeInfo.GetUnicodeCategory(x)!=UnicodeCategory.NonSpacingMark).ToArray()) is {Length:1} plain?plain:c.ToString()));
     public static bool HasCodeKeyword(params string[] values)=>values.Any(t=>CodeWords.IsMatch(CodePlain(t)));
     private static bool OwnAccord(string token)=>Accords.TryGetValue(token,out var accord)&&accord.Session==(Session.Value??"stdio")&&accord.Until>=DateTimeOffset.UtcNow;
+    // Agreement tokens have a fixed format: never infer their sensitivity from entropy or nearby code words.
+    // In particular, the generic scan sees `accord=<token>` as one word, which is not itself hexadecimal.
+    private static string MaskForeignAccords(string text)=>Regex.Replace(text,@"\b[a-fA-F0-9]{48}\b",m=>OwnAccord(m.Value)?m.Value:"[masked]");
     public static string MaskCodes(string text,bool context=false)
     {
+        text=MaskForeignAccords(text);
         var protectedTokens=new Dictionary<string,string>();text=Regex.Replace(text,@"\b[a-f0-9]{48}\b",m=>{if(!OwnAccord(m.Value))return m.Value;var placeholder=char.ConvertFromUtf32(0xF0000+protectedTokens.Count);protectedTokens[placeholder]=m.Value;return placeholder;});
         var words=CodeWords.Matches(CodePlain(text));if(!context&&words.Count==0){foreach(var token in protectedTokens)text=text.Replace(token.Key,token.Value,StringComparison.Ordinal);return text;}
         text=Regex.Replace(text,@"(?<![\w-])(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{4,10}(?![\w-])",m=>context||words.Any(k=>m.Index-60<=k.Index+k.Length&&k.Index<=m.Index+m.Length+60)?"[masked code]":m.Value);
@@ -67,6 +71,7 @@ public static class NativeSafety
     }
     public static string Mask(string text, bool personal = false,bool codes=true)
     {
+        text=MaskForeignAccords(text);
         text = Regex.Replace(text, @"(?i)\b(bearer\s+|(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|secret|authorization)\s*[=:]\s*)[^\s,;\r\n]+", "$1[masked]");
         text=Regex.Replace(text,"(?i)\\b((?:access|refresh|id|auth|session|csrf|api|client)?[_-]?(?:token|secret|password|passwd|pwd|cookie|authorization|api[_-]?key|session[_-]?id|sid))([\\\"']?\\s*[:=]\\s*[\\\"']?)([^\\s\\\"',;&}\\]]{4,})","$1$2[masked]");
         text = Regex.Replace(text, @"(?:sk-|sk_(?:live|test)_|rk_(?:live|test)_|gh[pousr]_|github_pat_|glpat-|AKIA|ASIA|xox[abposr]-|AIza|hf_|npm_|pypi-|SG\.|shpat_|ya29\.)[A-Za-z0-9._\-]{12,}|eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*", "[masked]");

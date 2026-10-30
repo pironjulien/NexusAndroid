@@ -67,6 +67,20 @@ public sealed class SelfTests
             new JsonObject { ["confirm"] = true, ["accord"] = "ACCORD:forged:9999999999:send:recipient" }, "send to synthetic recipient", true));
     }
 
+    [Theory]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("0123456789abcdef0123456789abcdef0123456789abcdef")]
+    public void UnregisteredAgreementTokensAreAlwaysMasked(string token)
+    {
+        // Low-entropy values and the `accord=` prefix must not let foreign tokens bypass the generic secret scan.
+        foreach (var text in new[] { token, "accord=" + token, "Verify recipient accord=" + token })
+        {
+            Assert.DoesNotContain(token, NativeSafety.Mask(text));
+            Assert.DoesNotContain(token, NativeSafety.Mask(text, codes: false));
+            Assert.DoesNotContain(token, NativeSafety.MaskCodes(text));
+        }
+    }
+
     [Fact]
     public void McpServerInitializesAndListsEighteenTools()
     {
