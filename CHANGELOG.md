@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.22.3] - 2026-10-30
+## [0.22.4] - 2026-10-30
 
 ### Fixed
 - Shared-token initialization uses a stable sibling lock file, like Relay and Browser. Concurrent installers reuse
@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Agreement tokens from another session (or already consumed) are always masked by their fixed format, including
   low-entropy values and the `accord=` prefix. The generic entropy scan and numeric code matching made the old
   behavior depend on the token's random bytes; deterministic regressions now cover both masking entry points.
+
+## [0.22.3] - 2026-10-30
+
+### Fixed
 - Shared daemon token: every Nexus daemon installer now uses one token file (`NEXUS_MCP_TOKEN_FILE`, else
   `%USERPROFILE%\.nexus\mcp-token.txt`), reused when present and created once with an exclusive write; the user
   variable `NEXUS_MCP_TOKEN` is set to its content, and the daemon reads that file first. Installed after another
