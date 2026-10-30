@@ -2,10 +2,7 @@
 
 # NexusAndroid
 
-<!-- mcp-name: io.github.pironjulien/nexus-android -->
-
 [![Release](https://img.shields.io/github/v/release/pironjulien/NexusAndroid)](https://github.com/pironjulien/NexusAndroid/releases)
-[![PyPI](https://img.shields.io/pypi/v/nexus-android)](https://pypi.org/project/nexus-android/)
 [![Tests](https://github.com/pironjulien/NexusAndroid/actions/workflows/tests.yml/badge.svg)](https://github.com/pironjulien/NexusAndroid/actions/workflows/tests.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pironjulien/NexusAndroid/badge)](https://scorecard.dev/viewer/?uri=github.com/pironjulien/NexusAndroid)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/pironjulien/NexusAndroid/blob/main/LICENSE)
@@ -35,6 +32,8 @@ Part of the Nexus family: [NexusWindows](https://julienpiron.fr/nexuswindows/)
 [NexusBrowser](https://julienpiron.fr/nexusbrowser/) ([repo](https://github.com/pironjulien/NexusBrowser)),
 [NexusAndroid](https://julienpiron.fr/nexusandroid/) ([repo](https://github.com/pironjulien/NexusAndroid)).
 Project page: [julienpiron.fr/nexusandroid](https://julienpiron.fr/nexusandroid/).
+
+**Install:** ask your AI to install NexusAndroid through [NexusSystem](https://github.com/pironjulien/NexusSystem) (or use the NexusSystem app from the Microsoft Store). New versions are no longer published to PyPI; earlier packages stay available.
 
 ## Quick start
 
