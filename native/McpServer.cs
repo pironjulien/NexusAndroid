@@ -89,7 +89,7 @@ public sealed class McpServer
                     ["serverInfo"] = new JsonObject
                     {
                         ["name"] = "nexus-android",
-                        ["version"] = "0.20.3",
+                        ["version"] = "0.21.0",
                     }
                 }
             };
@@ -333,7 +333,7 @@ public sealed class McpServer
                         ["service"] = "nexus-android",
                         ["runtime"] = "native",
                         ["pid"] = Environment.ProcessId,
-                        ["version"] = "0.20.3",
+                        ["version"] = "0.21.0",
                     };
                     await WriteHttpResponseAsync(stream, 200, "application/json", Encoding.UTF8.GetBytes(healthJson.ToJsonString()));
                     return;

@@ -159,7 +159,7 @@ def test_native_version() -> None:
     res = subprocess.run([str(exe), "--version"], capture_output=True, text=True, check=False)
     assert res.returncode == 0
     assert "NexusAndroid" in res.stdout
-    assert "0.20.3" in res.stdout
+    assert "0.21.0" in res.stdout
 
 
 def test_native_selftest() -> None:

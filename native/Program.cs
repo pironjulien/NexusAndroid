@@ -11,7 +11,7 @@ namespace NexusAndroid;
 
 public static class Program
 {
-    public const string Version = "0.20.3";
+    public const string Version = "0.21.0";
 
     public static async Task<int> Main(string[] args)
     {

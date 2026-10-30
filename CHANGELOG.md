@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-30
+
 ### Fixed
 - Common journal now in `%USERPROFILE%\.nexus\journal` instead of AppData: launched by Claude Desktop (an MSIX app), the engine's AppData writes went to a private copy the review and NexusSystem never saw.
 - Native MCP server: tools without structured output (`map`, `functions`, `apps`…) no longer send
@@ -1250,7 +1252,7 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.20.2...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.21.0...HEAD
 [0.20.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.20.2
 [0.20.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.20.1
 [0.19.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.19.0
