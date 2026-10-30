@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.1] - 2026-10-30
+
+### Changed
+- Installation is file-only, never code run from memory: Microsoft Defender flags one-line installers that pipe a
+  downloaded script into `Invoke-Expression` or `[scriptblock]::Create` ("Trojan:Win32/Commando.A!ml"). The main way
+  is the NexusSystem app from the Microsoft Store; the manual way downloads `get.ps1` and `SHA256SUMS.txt` from the
+  release, checks the hash (and optionally `gh attestation verify`), then runs `powershell -File .\get.ps1`.
+  `get.ps1` no longer documents a piped form and always ends with its exit code.
+
 ## [0.22.0] - 2026-10-30
 
 ### Changed

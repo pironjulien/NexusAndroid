@@ -1,6 +1,8 @@
 # NexusAndroid for Windows 10/11 (Windows PowerShell 5.1 or PowerShell 7), no administrator rights, nothing else to
-# install (no Python, no .NET: the engine is one self-contained executable). In one line:
-#   irm https://raw.githubusercontent.com/pironjulien/NexusAndroid/main/get.ps1 | iex
+# install (no Python, no .NET: the engine is one self-contained executable). Always run as a file, never from memory:
+# download get.ps1 and SHA256SUMS.txt from the latest release, compare get.ps1's SHA-256 with its line in
+# SHA256SUMS.txt (provenance: `gh attestation verify get.ps1 --repo pironjulien/NexusAndroid`), then
+#   powershell -NoProfile -ExecutionPolicy Bypass -File .\get.ps1
 #
 # It downloads the latest release's NexusAndroid-win-x64.zip or NexusAndroid-win-arm64.zip (this PC's architecture),
 # checks its SHA-256 against the release's SHA256SUMS.txt before extracting anything (build provenance:
@@ -206,8 +208,5 @@ try {
     if ($Pack) { Write-Output 'NEXUS_PACK_RESULT NexusAndroid=failed' }
     $code = 1
 }
-# Run as a file (the Nexus pack, -File): its exit code. Run by `irm | iex`: never `exit`, which would close the user's
-# window; a failure is an error instead.
-if ($PSCommandPath) { exit $code }
-if ($code -eq 1 -or $code -eq 3) { Write-Warning 'NexusAndroid: phone not connected yet (see above); run NexusAndroid.exe setup again once it is plugged in.' }
-elseif ($code) { throw 'NexusAndroid: some AI apps are not configured (see above).' }
+# Exit code: 0 ready, 1 adb or the phone not ready, 2 an AI app not configured, 3 both.
+exit $code

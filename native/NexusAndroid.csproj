@@ -4,7 +4,7 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <RootNamespace>NexusAndroid</RootNamespace>
     <AssemblyName>NexusAndroid</AssemblyName>
-    <Version>0.22.0</Version>
+    <Version>0.22.1</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
