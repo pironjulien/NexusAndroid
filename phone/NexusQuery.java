@@ -494,7 +494,7 @@ public final class NexusQuery {
             }
         }
         if (!image.equals("none") && !image.equals("scaled") && !image.equals("full")
-                || !format.equals("jpeg") && !format.equals("lossless")
+                || !format.equals("jpeg") && !format.equals("lossless") && !format.equals("png")
                 || maxSide < 16 || quality < 0 || quality > 100 || quietMs < 0 || quietMs > QUIET_MS) {
             return failure("Error: bad screen options");
         }
@@ -587,7 +587,7 @@ public final class NexusQuery {
                     ByteArrayOutputStream out = new ByteArrayOutputStream(256 * 1024);
                     // Sans perte : le PC noircit les codes, dessine les numéros puis réencode en WebP ; un JPEG ici
                     // laissait ses artefacts sur le petit texte (double compression). WebP sans perte dès Android 11.
-                    Bitmap.CompressFormat how = !format.equals("lossless") ? Bitmap.CompressFormat.JPEG
+                    Bitmap.CompressFormat how = format.equals("png") ? Bitmap.CompressFormat.PNG : !format.equals("lossless") ? Bitmap.CompressFormat.JPEG
                             : Build.VERSION.SDK_INT >= 30 ? Bitmap.CompressFormat.WEBP_LOSSLESS : Bitmap.CompressFormat.PNG;
                     pixels.compress(how, quality, out);
                     encoded = out.toByteArray();
@@ -666,6 +666,12 @@ public final class NexusQuery {
                 | (node.isScrollable() ? 1 << 6 : 0) | (node.isLongClickable() ? 1 << 7 : 0)
                 | (node.isPassword() ? 1 << 8 : 0) | (node.isSelected() ? 1 << 9 : 0)
                 | (node.isEditable() ? 1 << 10 : 0);
+        // Optional since API 26; old readers ignore the extra flag bit without changing the binary protocol.
+        try {
+            if ((boolean) AccessibilityNodeInfo.class.getMethod("isShowingHintText").invoke(node)) flags |= 1 << 11;
+        } catch (ReflectiveOperationException ignored) {
+            // Android 7.x has no hint-state API.
+        }
         out.writeInt(flags);
         Rect bounds = new Rect();
         node.getBoundsInScreen(bounds);

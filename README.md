@@ -406,6 +406,13 @@ pwsh -NoProfile -File install.ps1          # environment, scrcpy server, Codex/A
 pwsh -NoProfile -File install.ps1 -Live    # plus a run on the connected phone (types then clears a draft SMS, never sends)
 ```
 
+`install.ps1 -Runtime Native` builds the C# engine with the .NET 10 SDK and registers its shared HTTP daemon.
+It uses ADB, the bundled Java phone reader and the verified scrcpy server directly; Python is not used by the
+native daemon. `-Runtime Python` selects the reference engine. Without a runtime argument, installation preserves
+the installed selection; `-CheckOnly` checks its source/resource fingerprint without changing anything.
+Native `-Live` only reads phone status. The install never restarts an active shared daemon itself.
+The native implementation, verification commands and exact limits are documented in [NATIVE-QUALIFICATION.md](NATIVE-QUALIFICATION.md).
+
 What the script does (safe to run again, for example after `git pull`):
 
 - Environment: `~\.nexus\nexus-android\venv`, with a copy of the package (not a link to the clone).

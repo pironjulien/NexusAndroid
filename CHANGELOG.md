@@ -6,6 +6,60 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- Common journal now in `%USERPROFILE%\.nexus\journal` instead of AppData: launched by Claude Desktop (an MSIX app), the engine's AppData writes went to a private copy the review and NexusSystem never saw.
+- Native MCP server: tools without structured output (`map`, `functions`, `apps`…) no longer send
+  `structuredContent: null`, which Claude Code rejected as a malformed result; the field is now omitted.
+- Native `map` find: one readable line per hit again, as the Python version did (path, English title, section,
+  `now:` current value, `open:` instruction), instead of raw JSON rows with escaped accents.
+
+### Changed
+- Agent guide documents the qualified split-screen protections, screenshot/video safeguards and recovery after
+  an uncertain transport result. Replacing the shared server requires a fresh client initialization when its old
+  connection persists; recovery never replays gestures, targets or accords and keeps PC-side investigation with
+  the agent. The guide no longer presents one measured screen-read latency as a general guarantee.
+
+### Added
+- Native .NET 10 Android engine with the same 18 MCP input/output contracts as the reference server. It uses
+  the existing Java phone reader, ADB, the pinned scrcpy control protocol and Windows OCR directly, without
+  a Python production dependency. The reference engine remains available as an explicit installation choice.
+- Controlled transport tests, independent Python/C# contract comparisons, image checks and a native-only
+  interactive phone qualification driver. See `NATIVE-QUALIFICATION.md` for evidence and practical limits.
+- Native production activation verified on 30 October: the shared executable on port 16180 exposes all 18 tools
+  and answers a real Fold status read through a fresh authenticated HTTP MCP session. The already-open Codex
+  chat's stale transport still requires an application reload; that client is not reported as revalidated.
+
+### Fixed
+- Shared native deployment uses the product's user-state directory outside MSIX AppData redirection, so the
+  independent supervisor and the three AI applications load the same executable.
+- Replaced incomplete native handlers with actual screen interaction, Unicode typing, settings, messages,
+  drafts, notifications, files, captures, logs, contacts/calendar/location, AppFunctions, web reading and phone maps.
+- Restored current references, scaled image coordinates, focus and coverage checks, precise effect reports,
+  protected-app and password guards, emergency stop, user-presence checks and session-bound, single-use accords.
+- Replaced the invalid custom WebP representation with standard PNG/JPEG output. Inline images are bounded
+  to 2,000 pixels per edge, 2,560,000 decoded pixels and 500 KiB; EXIF orientation is applied before processing.
+- Selected the active physical display on foldable phones and added lossless PNG to the shared phone helper,
+  preventing Android's multi-display warning or an inactive screen from being treated as the screenshot.
+- Video checks use the phone's actual global window state; stopping identifies the owned recorder by PID and
+  its exact private file argument, preserving its fifteen-second MP4 finalization window instead of killing a shell.
+- ADB selection preserves the remembered hardware identity across USB/Wi-Fi and daemon restarts; an invalid boot
+  observation neither performs another transport query nor alters remembered state.
+- Split-screen safeguards judge the packages of both touched elements as well as the focused app. Protected
+  irreversible actions and unnamed buttons are refused; a visible bank requires screenshot confirmation, and
+  any session observing it during a recording permanently discards that recording and stops its private producer.
+- File transfers pass exact argument arrays to ADB, preserving Android directory names containing quotation
+  marks, spaces and Unicode without command-line reinterpretation.
+- Native phone status uses one fresh ADB batch, including hardware/boot identity, instead of repeating device
+  discovery and building an unused UI tree. Verified identity is shared only within the current operation's phone
+  lease; failures invalidate the transport and background restoration still checks the actual device. Paired HTTP
+  measurements reduced status from 1.14 s to 0.20–0.24 s on the Fold, versus 0.20–0.21 s for the reference engine.
+- Restored masked text and image replies, recurring calendar instances, message pagination, protected crash
+  filtering, intent checks, APK resource/DEX routing and masked device-state comparisons.
+- Added authenticated JSON HTTP sessions, cancellation, ping, honest protocol negotiation, session deletion
+  and resource cleanup; unsupported SSE GET requests return 405.
+- Native builds, test outputs and runtime versions stay outside OneDrive. Installation preserves the selected
+  runtime and never interrupts an active shared daemon by itself.
+
 ## [0.20.3] - 2026-10-28
 
 ### Changed

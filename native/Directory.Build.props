@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <!-- Hors OneDrive : tous les artefacts MSBuild/NuGet vont dans %LOCALAPPDATA%\NexusAndroid\build -->
+    <NexusLocalBuildRoot>$([System.Environment]::GetFolderPath(SpecialFolder.LocalApplicationData))\NexusAndroid\build</NexusLocalBuildRoot>
+    <BaseOutputPath>$(NexusLocalBuildRoot)\bin\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(NexusLocalBuildRoot)\obj\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(NexusLocalBuildRoot)\obj\</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+</Project>

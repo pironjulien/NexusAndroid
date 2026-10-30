@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <BaseOutputPath>$(LOCALAPPDATA)\NexusAndroid\connection-tests\$(MSBuildProjectName)\bin\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(LOCALAPPDATA)\NexusAndroid\connection-tests\$(MSBuildProjectName)\obj\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+</Project>

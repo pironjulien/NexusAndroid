@@ -30,4 +30,9 @@ try {
     if ($LASTEXITCODE) { throw 'd8 failed.' }
     Copy-Item "$work\dex\classes.dex" (Join-Path $PSScriptRoot '..\src\nexus_android\nexus-query.dex') -Force
     Write-Host 'nexus-query.dex rebuilt.'
-} finally { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
+} finally {
+    $workAbsolute = [IO.Path]::GetFullPath($work)
+    $toolsAbsolute = [IO.Path]::GetFullPath($tools).TrimEnd('\')
+    if (-not $workAbsolute.StartsWith($toolsAbsolute + '\', [StringComparison]::OrdinalIgnoreCase) -or $workAbsolute -eq $toolsAbsolute) { throw 'Build cleanup target outside its workspace refused.' }
+    if (Test-Path -LiteralPath $workAbsolute) { Remove-Item -LiteralPath $workAbsolute -Recurse -Force -ErrorAction SilentlyContinue }
+}
