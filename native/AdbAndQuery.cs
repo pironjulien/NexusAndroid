@@ -18,13 +18,17 @@ public partial class AdbClient
 {
     private static readonly Regex DeviceLineRegex = new(@"^([a-zA-Z0-9_\.\:\-]+)\s+(device|offline|unauthorized|no permissions)\b([^\r\n]*)", RegexOptions.Multiline | RegexOptions.Compiled);
 
-    public string AdbPath { get; }
+    private string? adbPath;
+    /// <summary>adb in use: the one given, NEXUS_ANDROID_ADB, else the first found (PATH, SDK, winget, the copy `setup` or
+    /// the server downloaded). Looked up again while none is found: a copy downloaded after start is used at once.</summary>
+    public string AdbPath => adbPath ?? (Environment.GetEnvironmentVariable("NEXUS_ANDROID_ADB") is { Length: > 0 } set ? adbPath = set
+        : FindAdb() is { } found ? adbPath = found : "adb.exe");
     public string? SelectedSerial { get; set; }
     public readonly string ConnectionStatePath;
 
     public AdbClient(string? customAdbPath = null,string? connectionStatePath=null)
     {
-        AdbPath = customAdbPath ?? Environment.GetEnvironmentVariable("NEXUS_ANDROID_ADB") ?? FindAdb() ?? "adb.exe";
+        adbPath = customAdbPath;
         ConnectionStatePath=connectionStatePath??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".nexus","nexus-android","wifi.json");
     }
 
@@ -64,7 +68,8 @@ public partial class AdbClient
                 var cand = Path.Combine(dir, "platform-tools", "adb.exe");
                 if (File.Exists(cand)) return cand;
             }
-        return null;
+        // 3. Google's Platform Tools downloaded by `setup` (~\.nexus\nexus-android\tools\platform-tools-<version>)
+        return Tools.Downloaded();
     }
 
     public virtual List<DeviceInfo> GetDevices()

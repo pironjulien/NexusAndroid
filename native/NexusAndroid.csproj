@@ -4,17 +4,27 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <RootNamespace>NexusAndroid</RootNamespace>
     <AssemblyName>NexusAndroid</AssemblyName>
-    <Version>0.21.0</Version>
+    <Version>0.22.0</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- Release zips (get.ps1, .mcpb): one self-contained file per architecture, no .NET to install. -->
+    <EnableCompressionInSingleFile Condition="'$(SelfContained)' == 'true'">true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="tool-contracts.json" LogicalName="tool-contracts.json" />
-    <EmbeddedResource Include="..\src\nexus_android\garde-fous.json" LogicalName="garde-fous.json" />
-    <EmbeddedResource Include="..\src\nexus_android\nexus-query.dex" LogicalName="nexus-query.dex" Condition="Exists('..\src\nexus_android\nexus-query.dex')" />
+    <!-- Shared guard policy, vendored byte for byte from the common folder (vendored.sha256). -->
+    <EmbeddedResource Include="garde-fous.json" LogicalName="garde-fous.json" />
+    <!-- Phone-side read helper, built from phone/NexusQuery.java by phone/build.ps1. -->
+    <EmbeddedResource Include="nexus-query.dex" LogicalName="nexus-query.dex" />
+    <InternalsVisibleTo Include="NexusAndroid.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Antigravity plugin (guide and logo), installed by `setup` next to the server entry. -->
+    <None Include="..\plugin\**\*" LinkBase="plugin" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

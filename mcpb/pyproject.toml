@@ -1,6 +1,0 @@
-# Claude Desktop extension (MCPB, server type "uv"): the host installs this exact server version from PyPI with uv.
-[project]
-name = "nexus-android-mcpb"
-version = "0.21.0"
-requires-python = ">=3.14,<3.15"
-dependencies = ["nexus-android==0.21.0"]

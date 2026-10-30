@@ -1,7 +1,0 @@
-<Project>
-  <PropertyGroup>
-    <BaseOutputPath>$(LOCALAPPDATA)\NexusAndroid\contract-tests\bin\</BaseOutputPath>
-    <BaseIntermediateOutputPath>$(LOCALAPPDATA)\NexusAndroid\contract-tests\obj\</BaseIntermediateOutputPath>
-    <MSBuildProjectExtensionsPath>$(LOCALAPPDATA)\NexusAndroid\contract-tests\obj\</MSBuildProjectExtensionsPath>
-  </PropertyGroup>
-</Project>

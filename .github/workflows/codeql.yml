@@ -1,4 +1,4 @@
-# CodeQL (https://codeql.github.com): static analysis of the MCP server (Python), the phone-side read helper (Java) and of these workflows (Actions), alerts in
+# CodeQL (https://codeql.github.com): static analysis of the MCP server (C#), the phone-side read helper (Java) and of these workflows (Actions), alerts in
 # Security > Code scanning. Actions pinned by commit SHA; Dependabot (github-actions) keeps them up to date.
 name: CodeQL
 
@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [python, java-kotlin, actions]
+        language: [csharp, java-kotlin, actions]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:

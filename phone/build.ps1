@@ -1,5 +1,5 @@
-# Rebuilds src\nexus_android\nexus-query.dex from NexusQuery.java (only needed after changing the Java source; the
-# dex is committed and shipped in the package). Needs a JDK 17+ (winget install Microsoft.OpenJDK.21); d8 comes from
+# Rebuilds native\nexus-query.dex from NexusQuery.java (only needed after changing the Java source; the
+# dex is committed and embedded in the engine). Needs a JDK 17+ (winget install Microsoft.OpenJDK.21); d8 comes from
 # Google's Maven repository, pinned and checked, cached under ~\.nexus\nexus-android\tools\build.
 $ErrorActionPreference = 'Stop'
 $r8Version = '9.5.26'
@@ -28,7 +28,7 @@ try {
     $classes = @(Get-ChildItem "$work\classes" -Recurse -Filter *.class | ForEach-Object FullName)  # tableau même pour une seule classe
     & "$jdk\bin\java.exe" -cp $r8 com.android.tools.r8.D8 --release --min-api 24 --lib $jdk --output "$work\dex" @classes
     if ($LASTEXITCODE) { throw 'd8 failed.' }
-    Copy-Item "$work\dex\classes.dex" (Join-Path $PSScriptRoot '..\src\nexus_android\nexus-query.dex') -Force
+    Copy-Item "$work\dex\classes.dex" (Join-Path $PSScriptRoot '..\native\nexus-query.dex') -Force
     Write-Host 'nexus-query.dex rebuilt.'
 } finally {
     $workAbsolute = [IO.Path]::GetFullPath($work)

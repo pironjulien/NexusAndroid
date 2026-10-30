@@ -4,10 +4,45 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.22.0] - 2026-10-30
+
+### Changed
+- The native C# engine (.NET 10) is now the only engine: the Python package (`src/nexus_android`, `pyproject.toml`,
+  `uv.lock`), its tests, its fuzzing harness and the Python Claude Desktop extension are removed. Installing needs
+  neither Python nor uv, and the released executable needs no .NET either (self-contained).
+- New public channel: each `vX.Y.Z` tag builds `NexusAndroid-win-x64.zip`, `NexusAndroid-win-arm64.zip` and
+  `nexus-android.mcpb` (Claude Desktop extension, now the native binary), with `SHA256SUMS.txt` and a Sigstore build
+  provenance attestation (`gh attestation verify <file> --repo pironjulien/NexusAndroid`), then publishes
+  `server.json` (an `mcpb` package with its SHA-256) to the official MCP registry by GitHub OIDC.
+- `get.ps1` installs the right zip for the PC's architecture from the latest release after checking its SHA-256,
+  then runs `setup`. `install.ps1` (from a clone) builds with `dotnet publish` and runs the same `setup`.
+- Tests: one xUnit v3 project (`tests/`, Microsoft.Testing.Platform, `global.json`) run by `dotnet test`: the
+  former native contract programs, the native tests written in Python (typed responses, utilities, ADB selection
+  reference, client registration) and the former `--selftest`. `test.ps1` and the CI run exactly that.
+- The Antigravity plugin files moved to `plugin/`, the shared guard policy and the phone read helper to `native/`.
+
+### Added
+- `NexusAndroid.exe setup`, ported from the Python `setup`: finds `adb` or downloads Google's Platform Tools (size
+  and SHA-1 checked), fetches the pinned scrcpy server (SHA-256 checked), declares the server to Claude Code, Claude
+  Desktop, Codex and Antigravity (an earlier `uvx nexus-android` entry is replaced, a foreign one kept, files backed
+  up), then waits for the phone; same options, exit codes and `NEXUS_PACK` result line.
+- The server fetches missing Platform Tools and the scrcpy server in the background at start
+  (`NEXUS_ANDROID_ADB_DOWNLOAD=0` turns this off) and uses a copy downloaded after it started.
+- The shared HTTP daemon follows its restart request (`restart_request` of the supervisor spec): after an install it
+  stops as soon as no call is in progress, and the supervisor starts the new binary.
+- CI: gitleaks (whole history) and zizmor (workflow audit) on every push and pull request.
 
 ### Removed
-- PyPI, MCP registry and Glama publishing (`publish.yml`, `server.json`, `glama.json`): installation goes through NexusSystem. Earlier PyPI packages stay available.
+- PyPI, MCP registry and Glama publishing through PyPI (`publish.yml`, `glama.json`): installation goes through
+  NexusSystem or `get.ps1`. Earlier PyPI packages stay available.
+- `--selftest` (now part of the test suite), the `mirror` command, the daily PyPI update check and its
+  `~/.nexus/status/android.json` state, Linux support and the Linux/emulator CI jobs (the engine is Windows only).
+
+### Fixed
+- Native web contract: the DevTools test page closed its WebSocket right after answering, which reset the
+  connection; on a slow runner Windows discarded the answer before the engine read it ("CDP exception hidden",
+  CI of 30/10). The fixture now keeps the connection until the reader ends it, as Chrome does.
+- `setup` refuses to edit an unreadable Codex `config.toml` (reported as failed, file untouched).
 
 ## [0.21.0] - 2026-10-30
 

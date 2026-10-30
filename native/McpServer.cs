@@ -235,6 +235,9 @@ public sealed class McpServer
         listener.Start();
         try
         {
+            using var restart = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _ = WatchRestartRequestAsync(restart, restart.Token);
+            cancellationToken = restart.Token;
             using var reg = cancellationToken.Register(() => { try { listener.Stop(); } catch { } });
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -245,13 +248,47 @@ public sealed class McpServer
                 }
                 catch (OperationCanceledException) { break; }
                 catch (SocketException) when (cancellationToken.IsCancellationRequested) { break; }
-                _ = Task.Run(() => HandleHttpClientAsync(client, expectedToken), CancellationToken.None);
+                Interlocked.Increment(ref activeConnections);
+                _ = Task.Run(async () => { try { await HandleHttpClientAsync(client, expectedToken); } finally { Interlocked.Decrement(ref activeConnections); } }, CancellationToken.None);
                 foreach(var stale in httpSessions.Where(p=>DateTimeOffset.UtcNow-p.Value>TimeSpan.FromSeconds(1618)&&!requests.Keys.Any(k=>k.StartsWith(p.Key+":",StringComparison.Ordinal))))if(httpSessions.TryRemove(stale.Key,out _))_ = Task.Run(()=>CloseSession(stale.Key));
             }
         }
         finally
         {
             try { listener.Stop(); } catch { }
+        }
+    }
+
+    private int activeConnections;
+
+    /// <summary>Restart request of the daemon spec (restart_request, written by an installer after a new build): taken at
+    /// once, then the daemon stops as soon as no call is in progress and the supervisor starts the new binary. A request
+    /// naming another process (pid:N) is left alone. Never interrupts a running tool call.</summary>
+    public static string RestartRequestPath => Environment.GetEnvironmentVariable("NEXUS_ANDROID_RESTART_REQUEST") is { Length: > 0 } path ? path : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nexus", "nexus-android", "daemon-restart.request");
+
+    private async Task WatchRestartRequestAsync(CancellationTokenSource stop, CancellationToken token)
+    {
+        var wanted = false;
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                if (!wanted && File.Exists(RestartRequestPath))
+                {
+                    var text = File.ReadAllText(RestartRequestPath, Encoding.UTF8);
+                    var target = System.Text.RegularExpressions.Regex.Match(text, @"(?:^|\s)pid:(\d+)(?:\s|$)");
+                    if (!target.Success || target.Groups[1].Value == Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                    {
+                        File.Move(RestartRequestPath, RestartRequestPath + ".lue", true);
+                        wanted = true;
+                        Console.Error.WriteLine("nexus-android: restart requested, stopping once idle");
+                    }
+                }
+                if (wanted && Volatile.Read(ref activeConnections) == 0) { stop.Cancel(); return; }
+                await Task.Delay(TimeSpan.FromSeconds(2), token);
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Console.Error.WriteLine("nexus-android: restart request: " + error.Message); await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None); }
         }
     }
 

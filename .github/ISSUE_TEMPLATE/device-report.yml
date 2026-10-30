@@ -29,4 +29,4 @@ body:
     id: details
     attributes:
       label: What you tried and what happened
-      description: NexusAndroid version (uvx nexus-android --version), PC system, tools used, error messages.
+      description: NexusAndroid version (NexusAndroid.exe --version), PC system, tools used, error messages.

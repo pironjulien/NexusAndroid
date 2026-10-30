@@ -1,0 +1,8 @@
+<Project>
+  <!-- Build and test output outside the sources (never OneDrive or AppData): ~\.nexus\build\nexus-android\<project>. -->
+  <PropertyGroup>
+    <NexusBuild>$(USERPROFILE)\.nexus\build\nexus-android\$(MSBuildProjectName)\</NexusBuild>
+    <BaseIntermediateOutputPath>$(NexusBuild)obj\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(NexusBuild)bin\</BaseOutputPath>
+  </PropertyGroup>
+</Project>

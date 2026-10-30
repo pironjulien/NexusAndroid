@@ -1,7 +1,0 @@
-<Project>
-  <PropertyGroup>
-    <BaseIntermediateOutputPath>$(LOCALAPPDATA)\NexusAndroid\advanced-contracts\obj\</BaseIntermediateOutputPath>
-    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
-    <BaseOutputPath>$(LOCALAPPDATA)\NexusAndroid\advanced-contracts\bin\</BaseOutputPath>
-  </PropertyGroup>
-</Project>

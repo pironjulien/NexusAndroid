@@ -6,11 +6,9 @@
 [![Tests](https://github.com/pironjulien/NexusAndroid/actions/workflows/tests.yml/badge.svg)](https://github.com/pironjulien/NexusAndroid/actions/workflows/tests.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pironjulien/NexusAndroid/badge)](https://scorecard.dev/viewer/?uri=github.com/pironjulien/NexusAndroid)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/pironjulien/NexusAndroid/blob/main/LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue?logo=python&logoColor=white)](https://github.com/pironjulien/NexusAndroid/blob/main/pyproject.toml)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://github.com/pironjulien/NexusAndroid/blob/main/native/NexusAndroid.csproj)
 [![MCP](https://img.shields.io/badge/MCP-server-7ee2a8)](https://modelcontextprotocol.io)
 
-[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_nexus--android-0098FF?logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%7B%22name%22%3A%22nexus-android%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22nexus-android%22%5D%7D)
-[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=nexus-android&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJuZXh1cy1hbmRyb2lkIl19)
 [![Claude Desktop extension](https://img.shields.io/badge/Claude_Desktop-Download_extension-D97757?logo=claude&logoColor=white)](https://github.com/pironjulien/NexusAndroid/releases/latest/download/nexus-android.mcpb)
 
 [![NexusAndroid: Android computer use for AI agents, over plain ADB. Works with Claude, Codex and Antigravity.](https://raw.githubusercontent.com/pironjulien/NexusAndroid/main/docs/assets/banner.webp)](https://julienpiron.fr/nexusandroid/)
@@ -33,31 +31,24 @@ Part of the Nexus family: [NexusWindows](https://julienpiron.fr/nexuswindows/)
 [NexusAndroid](https://julienpiron.fr/nexusandroid/) ([repo](https://github.com/pironjulien/NexusAndroid)).
 Project page: [julienpiron.fr/nexusandroid](https://julienpiron.fr/nexusandroid/).
 
-**Install:** ask your AI to install NexusAndroid through [NexusSystem](https://github.com/pironjulien/NexusSystem) (or use the NexusSystem app from the Microsoft Store). New versions are no longer published to PyPI; earlier packages stay available.
+**Install:** ask your AI to install NexusAndroid through [NexusSystem](https://github.com/pironjulien/NexusSystem) (or use the NexusSystem app from the Microsoft Store), or run the one-line installer below. Since 0.22.0 the server is a single native Windows executable (C#, .NET 10, self-contained): no Python, no uv, no .NET to install. New versions are no longer published to PyPI; earlier packages stay available.
 
 ## Quick start
 
-Windows, about 10 minutes, nothing to know beforehand. The server finds `adb` on the PC or downloads Google's
-official [Platform Tools](https://developer.android.com/tools/releases/platform-tools) by itself.
+Windows 10 or 11 (x64 or Arm64), about 10 minutes, nothing to know beforehand.
 
-1. **Install uv** (it runs the server and fetches Python): open PowerShell and run
-
-   ```powershell
-   winget install --id astral-sh.uv -e
-   ```
-
-   (Windows' own package manager; other ways in the
-   [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/)). Close PowerShell and open a
-   new one.
-2. **Run setup**, once per PC:
+1. **Install and run setup**: open PowerShell and run
 
    ```powershell
-   uvx nexus-android setup
+   irm https://raw.githubusercontent.com/pironjulien/NexusAndroid/main/get.ps1 | iex
    ```
 
-   It downloads what is missing, declares the server to the AI apps it finds (Claude Code, Claude Desktop, Codex,
-   Antigravity; your own entries are kept, each edited file is backed up first), then walks you through connecting
-   the phone and waits until it answers:
+   It downloads the latest release for this PC's architecture (`NexusAndroid-win-x64.zip` or
+   `NexusAndroid-win-arm64.zip`), checks its SHA-256 against the release's `SHA256SUMS.txt` before extracting anything,
+   installs it into `~\.nexus\nexus-android\releases\<version>`, then runs `NexusAndroid.exe setup`. Setup finds `adb`
+   or downloads Google's official [Platform Tools](https://developer.android.com/tools/releases/platform-tools),
+   declares the server to the AI apps it finds (Claude Code, Claude Desktop, Codex, Antigravity; your own entries are
+   kept, each edited file is backed up first), then walks you through connecting the phone and waits until it answers:
    - on the phone, Settings > About phone (Samsung: > Software information) > tap **Build number** 7 times;
    - Settings > **Developer options** > turn on **USB debugging**
      ([Android guide](https://developer.android.com/studio/debug/dev-options));
@@ -66,77 +57,65 @@ official [Platform Tools](https://developer.android.com/tools/releases/platform-
    It ends with `Ready.` once the phone is connected and every AI app is configured; otherwise it says which part
    is not. Phone plugged in but never seen: install the maker's
    [USB driver](https://developer.android.com/studio/run/oem-usb)
-   ([Samsung](https://developer.samsung.com/android-usb-driver)).
-3. **Restart your AI app.** To declare it by hand instead:
-   - **VS Code** or **Cursor**: the *Install* buttons at the top of this page;
+   ([Samsung](https://developer.samsung.com/android-usb-driver)). Run the same line again to update.
+2. **Restart your AI app.** To declare it by hand instead, point it at the installed executable with the argument
+   `--mcp` (stdio):
    - **Claude Desktop**: download [`nexus-android.mcpb`](https://github.com/pironjulien/NexusAndroid/releases/latest/download/nexus-android.mcpb) and open it (Settings > Extensions);
-   - **Claude Code**: `claude mcp add nexus-android --scope user -- uvx nexus-android`
+   - **Claude Code**: `claude mcp add nexus-android --scope user -- "<path>\NexusAndroid.exe" --mcp`
      (or, for the whole Nexus pack: `/plugin marketplace add pironjulien/nexus-plugins`, then
      `/plugin install nexus-android@nexus-plugins`);
-   - **Codex**: `codex mcp add nexus-android -- uvx nexus-android`;
+   - **Codex**: `codex mcp add nexus-android -- "<path>\NexusAndroid.exe" --mcp`;
    - **Antigravity**: agent panel **⋯** > **MCP Servers** > **Manage MCP Servers** > **View raw config**, add the
      `nexus-android` entry below inside `"mcpServers"`, save.
 
 Then ask your AI: *"Look at my phone and tell me what is on the screen."*
 
 <details>
-<summary>Manual configuration (Codex <code>~/.codex/config.toml</code>, JSON clients: Antigravity, Claude Desktop, Cursor)</summary>
+<summary>Manual configuration (Codex <code>~/.codex/config.toml</code>, JSON clients: Antigravity, Claude Desktop, Cursor, VS Code)</summary>
 
 ```toml
 [mcp_servers.nexus-android]
-command = "uvx"
-args = ["nexus-android"]
+command = 'C:\Users\<you>\.nexus\nexus-android\releases\<version>\NexusAndroid.exe'
+args = ["--mcp"]
 ```
 
 ```json
 {
   "mcpServers": {
     "nexus-android": {
-      "command": "uvx",
-      "args": ["nexus-android"]
+      "command": "C:\\Users\\<you>\\.nexus\\nexus-android\\releases\\<version>\\NexusAndroid.exe",
+      "args": ["--mcp"]
     }
   }
 }
 ```
 </details>
 
-`setup` options: `--no-wait` (declare and get `adb`, without waiting for the phone), `--no-register` (leave the AI
-apps alone), `--apps claude-code,codex` (only these AI apps: `claude-code`, `claude-desktop`, `codex`, `antigravity`;
-the pack passes its `-Only`/`-Skip` choice as `NEXUS_PACK_TARGETS`, same names; set but empty: no AI app). Exit code: 0 everything ready, 1 `adb` or the phone
-not ready, 2 an AI app not configured, 3 both. The Nexus pack runs it with `NEXUS_PACK=1`: no question, no wait, exit code 0 on success and a last line
-`NEXUS_PACK_RESULT Claude Desktop=declared; Codex=declared; Antigravity=plugin`. In Antigravity the server comes as a
-plugin (`~/.gemini/config/plugins/nexus-android`: server and agent guide), never as a global entry.
+`NexusAndroid.exe setup` options: `--no-wait` (declare and get `adb`, without waiting for the phone),
+`--no-register` (leave the AI apps alone), `--apps claude-code,codex` (only these AI apps: `claude-code`,
+`claude-desktop`, `codex`, `antigravity`; the pack passes its `-Only`/`-Skip` choice as `NEXUS_PACK_TARGETS`, same
+names). `get.ps1 -NoWait` passes `--no-wait`. Exit code: 0 everything ready, 1 `adb` or the phone not ready, 2 an AI app
+not configured, 3 both. The Nexus pack runs it with `NEXUS_PACK=1`: no question, no wait, exit code 0 on success and a
+last line `NEXUS_PACK_RESULT Claude Desktop=declared; Codex=declared; Antigravity=plugin`. In Antigravity the server
+comes as a plugin (`~/.gemini/config/plugins/nexus-android`: server and agent guide), never as a global entry. An entry
+written by an earlier version (`uvx nexus-android`) is replaced by the executable.
 
-**Updates.** The AI apps run `uvx nexus-android` without a version: offline, uv keeps the cached
-version. At start, in the background and at most once a day, the server asks PyPI for the latest version; when it is
-newer and the server was started by `uvx`, it prepares it in uv's cache (`uvx nexus-android@latest`), used from the
-next start of the AI app. Its own copy of the Platform Tools is updated the same way (an `adb` you installed is never
-touched). Installed with `setup` 0.11 to 0.12.1, the declaration still names a version: run `uvx nexus-android setup` once
-to switch it. The state goes to `~/.nexus/status/android.json` (`product`, `version`, `latest`, `state`, `checked_at`,
-`message`) for the Nexus app. The Claude Desktop extension and `install.ps1` stay on their version until installed
-again, and so does a plugin that pins a version and sets `NEXUS_ANDROID_MANAGED` (its state says who updates
-it). `NEXUS_ANDROID_UPDATE=0` turns the checks off.
+**Verify a download.** Every release file (both zips, the `.mcpb`, `get.ps1`, `SHA256SUMS.txt`) carries a Sigstore
+build provenance attestation: `gh attestation verify NexusAndroid-win-x64.zip --repo pironjulien/NexusAndroid`
+(the bundle is also attached as `NexusAndroid-<version>.intoto.jsonl`).
 
-**Watch the phone on the PC.** `uvx nexus-android mirror` opens [scrcpy](https://github.com/Genymobile/scrcpy)
-(install it once: `winget install Genymobile.scrcpy`) with the same `adb` as the server, so the agents' link is not
-cut by a second `adb` of another version. Options pass through to scrcpy (`mirror --turn-screen-off`, `mirror -s
-SERIAL` with several phones); `NEXUS_ANDROID_SCRCPY` gives its full path. No app is installed on the phone: scrcpy
-only copies its small server to `/data/local/tmp`, as the gestures already do.
-
-`adb` is looked for in this order: `NEXUS_ANDROID_ADB` (full path), the `PATH`, winget's Platform Tools, the Android
-SDK (`ANDROID_HOME`, Android Studio's default folder), then `~/.nexus/nexus-android/tools/platform-tools`. When none
-is found, the server downloads the current stable Platform Tools for this system from Google's SDK repository
-(`dl.google.com`, the manifest `sdkmanager` reads), checks the size and SHA-1 Google publishes for the archive and
-unpacks it there; by using it you accept the
+`adb` is looked for in this order: `NEXUS_ANDROID_ADB` (full path), the `PATH`, the Android SDK (Android Studio's
+default folder), winget's Platform Tools, then `~/.nexus/nexus-android/tools/platform-tools-<version>`. When none is
+found, `setup` (or the server, in the background at start) downloads the current stable Platform Tools for Windows from
+Google's SDK repository (`dl.google.com`, the manifest `sdkmanager` reads), checks the size and SHA-1 Google publishes
+for the archive and unpacks it there; by using it you accept the
 [Android SDK terms](https://developer.android.com/studio/terms). `NEXUS_ANDROID_ADB_DOWNLOAD=0` turns this off.
-Typing accents
-and emoji needs the scrcpy server (Genymobile, Apache 2.0, version 5.0.1 pinned): the first time an agent types such
-text, the server downloads it from the
+Typing accents and emoji needs the scrcpy server (Genymobile, Apache 2.0, version 5.0.1 pinned): `setup` (or the
+server at start) downloads it from the
 [official scrcpy release](https://github.com/Genymobile/scrcpy/releases/tag/v5.0.1) on GitHub, checks its SHA-256
-against the value written in the code and keeps it in `~/.nexus/nexus-android/tools`
-([`install.ps1`](https://github.com/pironjulien/NexusAndroid#full-install-windows) fetches it ahead of time). If the
-download is impossible (offline, proxy), accented text is refused with a message saying where to put the file; it is
-never replaced by other text. ASCII typing works without it.
+against the value written in the code and keeps it in `~/.nexus/nexus-android/tools`. If the download is impossible
+(offline, proxy), accented text is refused with a message; it is never replaced by other text. ASCII typing works
+without it.
 
 ### Example prompts
 
@@ -153,7 +132,7 @@ flowchart LR
     A["Claude Code"] --> S
     B["Codex"] --> S
     C["Antigravity"] --> S
-    S["nexus-android<br/>MCP server (Python)"] -->|"ADB over USB or local Wi-Fi"| P["Android phone<br/>(no app, no root)"]
+    S["nexus-android<br/>MCP server (C#, .NET 10)"] -->|"ADB over USB or local Wi-Fi"| P["Android phone<br/>(no app, no root)"]
     S -.->|"shared lock, screen-awake state"| L[("~/.nexus")]
 ```
 
@@ -351,9 +330,8 @@ listed as tested has been run here. Report your device in an
 
 | Device or system | Status |
 | --- | --- |
-| Samsung Galaxy Fold `SM-F971B`, One UI, Android 17, USB and wireless debugging | **Tested** (real-phone scenarios, `tests/scenarios.py`) |
+| Samsung Galaxy Fold `SM-F971B`, One UI, Android 17, USB and wireless debugging | **Tested** (real-phone qualification, NATIVE-QUALIFICATION.md) |
 | Windows 11 PC | **Tested** |
-| Android 14 emulator (Google APIs, x86_64) on a Linux PC | **Tested** in CI on every push (`tests/test_emulator.py`: real server and real `adb`) |
 | Other Samsung phones (One UI) | Expected: same system and apps as the tested phone |
 | Pixel, Motorola, Nothing, OnePlus, Sony, Fairphone and other near-stock Android | Expected, not tested |
 | Xiaomi, Redmi, POCO (MIUI, HyperOS) | Expected once "USB debugging (Security settings)" is on in Developer options (gestures refused before; the error says so) |
@@ -362,14 +340,14 @@ listed as tested has been run here. Report your device in an
 | Phones managed by an employer (USB debugging blocked by policy) | Not possible |
 | iPhone, iPad | Not supported (no ADB) |
 | Android emulators | Ignored unless named with `NEXUS_ANDROID_SERIAL` (for tests) |
-| Linux PC | Server tested against the emulator only (no real phone yet); no installer, run it with `uvx nexus-android`; OCR is Windows only |
-| macOS PC | Not tested; no installer; OCR is Windows only |
+| Linux PC | Not supported since 0.22.0 (the native engine is Windows only; 0.21.0 on PyPI still runs there) |
+| macOS PC | Not supported (the native engine is Windows only) |
 
 ## Known limitations
 
 - Gestures go through the real screen, on purpose: the user sees the agent working. No invisible virtual display.
 - Accented text and emoji go through the clipboard (Android's `input text` only takes ASCII): the scrcpy server
-  (Genymobile, Apache 2.0, version and SHA-256 pinned, downloaded by `install.ps1` or at the first accented text) runs
+  (Genymobile, Apache 2.0, version and SHA-256 pinned, downloaded by `setup` or at server start) runs
   only during the paste, then the previous clipboard is put back. Samsung's clipboard history may keep the pasted text.
 - Notifications: Android only keeps the app name of dismissed ones, not their text.
 - An app protected by `FLAG_SECURE` produces a black screenshot; the server says so and the `[N]` elements stay
@@ -380,7 +358,7 @@ listed as tested has been run here. Report your device in an
 - The link is USB or local Wi-Fi through wireless debugging, paired with each PC. ADB does not work over Bluetooth.
 - Xiaomi, Redmi and POCO (MIUI, HyperOS) refuse injected gestures until "USB debugging (Security settings)" is turned
   on in Developer options; the error says so.
-- The installer (`install.ps1`), `test.ps1` and OCR are Windows only. On Linux the server itself runs and is tested against an emulator in CI; macOS is not tested.
+- Windows only (x64 and Arm64): the engine is a native Windows executable (OCR included).
 
 ## Rejected options
 
@@ -389,41 +367,22 @@ listed as tested has been run here. Report your device in an
 - **Invisible screen**: seeing the agent work on the real screen is a feature.
 - **Internet relay** (tunnels, VPN): USB or local Wi-Fi only.
 
-## Full install (Windows)
+## Full install from a clone (Windows)
 
-An alternative to `uvx`: one local environment, registered in the clients found on the PC, with the scrcpy server
-fetched ahead of time.
-
-Prerequisites: Windows, PowerShell 7 and [`uv`](https://docs.astral.sh/uv/); the Android Platform Tools are optional
-(`winget install Google.PlatformTools`, otherwise downloaded on first use). On the phone: Developer options → USB
-debugging (`nexus-android setup` walks you through it).
+An alternative to `get.ps1` for contributors: builds the engine from the sources with the
+[.NET 10 SDK](https://dot.net) and runs the same `setup`.
 
 ```powershell
 git clone https://github.com/pironjulien/NexusAndroid
 cd NexusAndroid
-pwsh -NoProfile -File install.ps1          # environment, scrcpy server, Codex/Antigravity registration, tests
-pwsh -NoProfile -File install.ps1 -Live    # plus a run on the connected phone (types then clears a draft SMS, never sends)
+pwsh -NoProfile -File install.ps1          # tests, build, then setup (adb, scrcpy server, AI apps, phone)
+pwsh -NoProfile -File install.ps1 -NoWait  # same, without waiting for the phone
 ```
 
-`install.ps1 -Runtime Native` builds the C# engine with the .NET 10 SDK and registers its shared HTTP daemon.
-It uses ADB, the bundled Java phone reader and the verified scrcpy server directly; Python is not used by the
-native daemon. `-Runtime Python` selects the reference engine. Without a runtime argument, installation preserves
-the installed selection; `-CheckOnly` checks its source/resource fingerprint without changing anything.
-Native `-Live` only reads phone status. The install never restarts an active shared daemon itself.
-The native implementation, verification commands and exact limits are documented in [NATIVE-QUALIFICATION.md](NATIVE-QUALIFICATION.md).
-
-What the script does (safe to run again, for example after `git pull`):
-
-- Environment: `~\.nexus\nexus-android\venv`, with a copy of the package (not a link to the clone).
-- scrcpy server: downloaded from the official release, kept only if its SHA-256 matches.
-- Codex, when `~\.codex` exists: a `[mcp_servers.nexus-android]` table in `~\.codex\config.toml` (stdio, the
-  environment's Python), replacing an older `nexus-android` table and leaving the rest of the file alone. The previous
-  file is copied first to `~\.nexus\nexus-android\backups`.
-- Antigravity, when `~\.gemini\antigravity` or its config exists: a `nexus-android` entry in
-  `~\.gemini\config\mcp_config.json`, with the same backup.
-- Claude Code: the script prints the `claude mcp add` command to run for the same environment; it never calls the
-  Claude CLI itself.
-- Tests: `test.ps1` (offline, no phone). `-SkipTests` skips them, `-NoRegister` leaves the client configs alone.
+The executable goes to `~\.nexus\nexus-android\native\<source fingerprint>` (a new folder for new sources, never
+overwritten while an AI app runs it). `-SkipTests` skips the tests, `-NoRegister` leaves the AI apps alone. Build
+output goes to `~\.nexus\build\nexus-android`, never into the clone. The engine, its verification and its exact limits
+are documented in [NATIVE-QUALIFICATION.md](NATIVE-QUALIFICATION.md).
 
 Each client then starts its own server over stdio. They share the phone lock and the screen-awake state through
 `~\.nexus`; for a single process shared by all clients, see
@@ -459,13 +418,13 @@ server in HTTP mode:
 
 ```powershell
 $env:NEXUS_MCP_TOKEN = "<random string, 32 characters or more>"   # or NEXUS_MCP_TOKEN_FILE = path of a file holding it
-nexus-android --http 16180
+NexusAndroid.exe --http 16180
 ```
 
 It serves MCP Streamable HTTP on `127.0.0.1` only (default port 16180), at `http://127.0.0.1:16180/mcp`, and refuses
 any request without the header `Authorization: Bearer <token>` (HTTP 401); it does not start without a token. Point
 each client at that URL with that header. Each MCP session keeps its own `[N]` numbering and conversation list; the
-ADB link and the phone lock are shared. Starting the daemon (at logon, for example) is up to you: `install.ps1` does
+ADB link and the phone lock are shared. Starting the daemon (at logon, for example) is up to you: the installers do
 not set it up. The token keeps a misconfigured client or a stray session from driving the phone; it is no protection
 against malicious software running on the same PC, which can reach the phone directly through ADB (see
 [SECURITY.md](https://github.com/pironjulien/NexusAndroid/blob/main/SECURITY.md)).
@@ -474,10 +433,9 @@ against malicious software running on the same PC, which can reach the phone dir
 
 NexusAndroid runs entirely on your PC and talks to your phone over ADB (USB cable or local Wi-Fi). It has no
 account, no telemetry, no analytics and no cloud relay. Its internet requests, none of which carries data about you
-or your phone: at most once a day, the latest version number from PyPI and, when it uses its own copy of `adb`,
-Google's SDK repository manifest (off with `NEXUS_ANDROID_UPDATE=0`); Google's Platform Tools from `dl.google.com`
-when no `adb` is found on the PC or its own copy is outdated (off with `NEXUS_ANDROID_ADB_DOWNLOAD=0`); the pinned
-scrcpy server from GitHub, the first time accented text is typed (skipped when `install.ps1` already fetched it).
+or your phone: Google's SDK repository manifest and Platform Tools from `dl.google.com` when no `adb` is found on
+the PC, and the pinned scrcpy server from GitHub when it is missing (both off with `NEXUS_ANDROID_ADB_DOWNLOAD=0`);
+`get.ps1`, when you run it, fetches the latest release from GitHub. There is no automatic update check.
 
 - **What it reads**: the screen and UI tree, SMS/RCS messages, notifications, files in shared storage, location,
   recent calls, contacts and calendar, only when the agent calls the matching tool. Security codes are masked before
@@ -487,10 +445,10 @@ scrcpy server from GitHub, the first time accented text is typed (skipped when `
 - **What it stores on the PC**, under `~/.nexus/`: the phone map (`map/`: the Settings tree, the screens noted with
   `map note`, and up to 30 snapshots of settings values, apps, permissions and Bluetooth device names, with
   identifiers, tokens, addresses and numbers masked), the phone's serial number, Wi-Fi address and wireless debugging
-  port, the saved screen timeout, a lock file, the date of the last update check (`update.json`), the pinned scrcpy
+  port, the saved screen timeout, a lock file, the pinned scrcpy
   server, the downloaded Platform Tools (when no `adb`
   was found), backups of the AI client configs that `setup` or
-  `install.ps1` edits (`backups/`), and, with `install.ps1`, its environment. Files you `pull` go to `~/Downloads/Telephone`. The server writes no
+  `install.ps1` edits (`backups/`), and the installed executables (`releases/` or `native/`). Files you `pull` go to `~/Downloads/Telephone`. The server writes no
   messages or screenshots to disk.
 - **Journal**, under `%LOCALAPPDATA%\NexusJournal\android\<agent>\<YYYY-MM>.jsonl` (or `NEXUS_JOURNAL_HOME`),
   shared format of the Nexus tools: one line per gesture or tool call with the calling AI (Claude, Codex,
@@ -512,27 +470,17 @@ for private reports.
 
 ## Development
 
-Install Node.js first. With Python and the locked packages already available locally, run:
+With the [.NET 10 SDK](https://dot.net) (version pinned by `global.json`):
 
 ```powershell
-pwsh -NoProfile -File test.ps1   # ruff, pyright and the unit tests, offline, no phone needed
+pwsh -NoProfile -File test.ps1   # = dotnet test (xUnit v3, Microsoft.Testing.Platform), offline, no phone needed
 ```
 
-The check never downloads Python, packages or Pyright: `uv` is forced offline, automatic Python downloads are
-disabled, and Pyright runs from its bundled JavaScript using the installed Node.js. Missing Python or an incomplete
-dependency cache causes a clear failure. Each checkout keeps its test environment outside the source tree.
-
-On a new machine or after a lockfile change, prepare the cache separately while online (the CI does this before its
-offline check):
-
-```powershell
-$env:UV_PROJECT_ENVIRONMENT = Join-Path $env:TEMP 'nexus-android-prepare'
-uv sync --frozen --python 3.14  # explicitly online preparation, including development and build dependencies
-pwsh -NoProfile -File test.ps1 -Python 3.14
-```
-
-`-Python 3.12`, `3.13`, `3.14` or `3.15` selects an already installed interpreter and a separate test environment.
-`-Full` additionally runs the existing real-phone scenarios; the phone must be reachable and unlocked.
+The suite (`tests/`) drives the real engine and MCP server against fixture phones, adb transports and DevTools pages:
+nothing reaches a device or the network, and nothing is written into the sources (build output and test data under
+`~\.nexus\build\nexus-android`). The CI runs the same script on `windows-latest`; releases are built by
+`.github/workflows/release.yml` from a `vX.Y.Z` tag. The phone-side read helper is rebuilt from
+`phone/NexusQuery.java` by `phone/build.ps1` (JDK 17+).
 
 ## License
 

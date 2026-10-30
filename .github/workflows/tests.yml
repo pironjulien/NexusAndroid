@@ -8,7 +8,7 @@ on:
 permissions:
   contents: read
 
-# A newer push makes the running check pointless: cancel it (Windows minutes count double on private repositories).
+# A newer push makes the running check pointless: cancel it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -16,67 +16,13 @@ concurrency:
 jobs:
   test:
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # Full matrix on the public repository (free minutes); the private development copy checks 3.14 only.
-        python: ${{ github.repository == 'pironjulien/NexusAndroid' && fromJSON('["3.12", "3.13", "3.14", "3.15"]') || fromJSON('["3.14"]') }}
-    name: test (Python ${{ matrix.python }})
-    env:
-      PYTHON_VERSION: ${{ matrix.python }}  # through the environment: the matrix is computed, never expanded in a script
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
-      - name: Prepare Python and the locked dependency cache (network allowed)
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: test.ps1 (xUnit suite of the native engine; no phone needed)
         shell: pwsh
-        run: |
-          $env:UV_PROJECT_ENVIRONMENT = Join-Path $env:RUNNER_TEMP 'nexus-android-prepare'
-          uv sync --frozen --python $env:PYTHON_VERSION
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: test.ps1 (ruff, pyright, unit tests; no phone needed)
-        shell: pwsh
-        run: ./test.ps1 -Python $env:PYTHON_VERSION
-
-  startup-linux:
-    # What MCP directories (Glama) check in a Linux container: the server starts and lists its tools.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
-      - name: initialize + tools/list over stdio
-        run: |
-          uv sync --frozen --quiet
-          uv run --frozen pytest -q tests/test_startup.py
-
-  emulator:
-    # Second tested device: the real server (stdio) and the real adb against an Android emulator, Linux + KVM. Public
-    # repository only (free minutes); tests/test_emulator.py is skipped anywhere else.
-    if: github.repository == 'pironjulien/NexusAndroid'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      NEXUS_ANDROID_SERIAL: emulator-5554
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - run: uv sync --frozen --quiet
-      - name: Integration tests on the emulator (Android 14, Google APIs)
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d  # v2.38.0
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: uv run --frozen pytest -m emulator -v tests/test_emulator.py
+        run: ./test.ps1

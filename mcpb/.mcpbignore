@@ -1,2 +1,2 @@
-.venv/
-uv.lock
+# Only manifest.json, icon.png, LICENSE and server/NexusAndroid.exe are staged by the release workflow.
+*.pdb
