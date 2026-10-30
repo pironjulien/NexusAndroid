@@ -7,12 +7,45 @@ namespace NexusAndroid.Tests;
 /// anything or changing the user's environment. A barrier makes both installers enter token initialization together.</summary>
 public sealed class InstallerTokenTests
 {
-    private static string TokenFunction([CallerFilePath] string source = "")
+    private static string InstallerSource([CallerFilePath] string source = "") =>
+        File.ReadAllText(Path.Combine(Path.GetDirectoryName(source)!, "..", "get.ps1"));
+
+    private static string TokenFunction()
     {
-        var installer = File.ReadAllText(Path.Combine(Path.GetDirectoryName(source)!, "..", "get.ps1"));
+        var installer = InstallerSource();
         var start = installer.IndexOf("function Get-SharedToken(", StringComparison.Ordinal);
         var end = installer.IndexOf("function Install-Daemon(", start, StringComparison.Ordinal);
         return installer[start..end];
+    }
+
+    [Fact]
+    public async Task WindowsPowerShellPrefersItsOwnStandardModulesOverInheritedCoreModules()
+    {
+        var home = Path.Combine(TestPaths.Root, "install-modules-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(home);
+        var script = Path.Combine(home, "module-fixture.ps1");
+        var installer = InstallerSource();
+        var prefix = installer[..installer.IndexOf("$Repository =", StringComparison.Ordinal)];
+        File.WriteAllText(script, prefix + "\n(Get-FileHash -LiteralPath $env:NEXUS_TEST_READY -Algorithm SHA256).Hash | Set-Content -LiteralPath $env:NEXUS_TEST_RESULT\n");
+        var input = Path.Combine(home, "input.txt");
+        File.WriteAllText(input, "synthetic checksum input");
+        var result = Path.Combine(home, "result.txt");
+        var desktopModules = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "Modules");
+        var coreModules = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell", "7", "Modules");
+        Assert.True(Directory.Exists(coreModules), "PowerShell 7 is required for the inherited-module regression fixture.");
+        var start = new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe"))
+        { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
+        foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script }) start.ArgumentList.Add(arg);
+        start.Environment["PSModulePath"] = coreModules + ";" + desktopModules;
+        start.Environment["NEXUS_TEST_READY"] = input;
+        start.Environment["NEXUS_TEST_RESULT"] = result;
+        using var process = Process.Start(start)!;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        try { await process.WaitForExitAsync(timeout.Token); }
+        finally { if (!process.HasExited) process.Kill(true); }
+        Assert.True(process.ExitCode == 0, await process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(input))), File.ReadAllText(result).Trim());
     }
 
     private static Process Start(string script, string home, string ready, string go, string result)

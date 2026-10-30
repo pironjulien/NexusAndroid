@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.5] - 2026-10-30
+
+### Fixed
+- Windows PowerShell launched from PowerShell 7 inherits Core-only modules before its own, hiding `Get-FileHash`
+  and `Unblock-File`. The installer now puts the current host's standard module directory first, preserving other
+  module paths. A real Windows PowerShell regression starts with the conflicting order and verifies a known checksum.
+
 ## [0.22.4] - 2026-10-30
 
 ### Fixed
