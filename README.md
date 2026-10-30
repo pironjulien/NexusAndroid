@@ -31,16 +31,25 @@ Part of the Nexus family: [NexusWindows](https://julienpiron.fr/nexuswindows/)
 [NexusAndroid](https://julienpiron.fr/nexusandroid/) ([repo](https://github.com/pironjulien/NexusAndroid)).
 Project page: [julienpiron.fr/nexusandroid](https://julienpiron.fr/nexusandroid/).
 
-**Install:** ask your AI to install NexusAndroid through [NexusSystem](https://github.com/pironjulien/NexusSystem) (or use the NexusSystem app from the Microsoft Store), or run the one-line installer below. Since 0.22.0 the server is a single native Windows executable (C#, .NET 10, self-contained): no Python, no uv, no .NET to install. New versions are no longer published to PyPI; earlier packages stay available.
+**Install:** the main way is the [NexusSystem app from the Microsoft Store](https://apps.microsoft.com/detail/9NSH2P3QLWT1)
+(`winget install --id 9NSH2P3QLWT1 --source msstore`), or ask your AI to install NexusAndroid through
+[NexusSystem](https://github.com/pironjulien/NexusSystem); otherwise use the verified release files below. Since 0.22.0 the server is a single native Windows executable (C#, .NET 10, self-contained): no Python, no uv, no .NET to install. New versions are no longer published to PyPI; earlier packages stay available.
 
 ## Quick start
 
 Windows 10 or 11 (x64 or Arm64), about 10 minutes, nothing to know beforehand.
 
-1. **Install and run setup**: open PowerShell and run
+1. **Install and run setup** without NexusSystem: in PowerShell, download the installer and the release's checksums
+   as files, check the installer, then run it as a file (never piped into PowerShell from memory):
 
    ```powershell
-   irm https://raw.githubusercontent.com/pironjulien/NexusAndroid/main/get.ps1 | iex
+   $r = 'https://github.com/pironjulien/NexusAndroid/releases/latest/download'
+   Invoke-WebRequest "$r/get.ps1" -OutFile get.ps1
+   Invoke-WebRequest "$r/SHA256SUMS.txt" -OutFile SHA256SUMS.txt
+   Select-String ' get.ps1$' SHA256SUMS.txt                  # expected SHA-256
+   (Get-FileHash get.ps1 -Algorithm SHA256).Hash             # must be the same (case aside)
+   gh attestation verify get.ps1 --repo pironjulien/NexusAndroid   # optional: build provenance
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\get.ps1
    ```
 
    It downloads the latest release for this PC's architecture (`NexusAndroid-win-x64.zip` or
@@ -57,7 +66,7 @@ Windows 10 or 11 (x64 or Arm64), about 10 minutes, nothing to know beforehand.
    It ends with `Ready.` once the phone is connected and every AI app is configured; otherwise it says which part
    is not. Phone plugged in but never seen: install the maker's
    [USB driver](https://developer.android.com/studio/run/oem-usb)
-   ([Samsung](https://developer.samsung.com/android-usb-driver)). Run the same line again to update.
+   ([Samsung](https://developer.samsung.com/android-usb-driver)). Run `get.ps1` again (downloaded and checked the same way) to update.
 2. **Restart your AI app.** To declare it by hand instead, point it at the installed executable with the argument
    `--mcp` (stdio):
    - **Claude Desktop**: download [`nexus-android.mcpb`](https://github.com/pironjulien/NexusAndroid/releases/latest/download/nexus-android.mcpb) and open it (Settings > Extensions);
