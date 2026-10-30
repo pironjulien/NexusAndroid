@@ -69,7 +69,9 @@ Windows 10 or 11 (x64 or Arm64), about 10 minutes, nothing to know beforehand.
    ([Samsung](https://developer.samsung.com/android-usb-driver)). Run `get.ps1` again (downloaded and checked the same way) to update.
 2. **Restart your AI app.** To declare it by hand instead, point it at the installed executable with the argument
    `--mcp` (stdio):
-   - **Claude Desktop**: download [`nexus-android.mcpb`](https://github.com/pironjulien/NexusAndroid/releases/latest/download/nexus-android.mcpb) and open it (Settings > Extensions);
+   - **Claude Desktop**: download [`nexus-android.mcpb`](https://github.com/pironjulien/NexusAndroid/releases/latest/download/nexus-android.mcpb)
+     (x64) or [`nexus-android-arm64.mcpb`](https://github.com/pironjulien/NexusAndroid/releases/latest/download/nexus-android-arm64.mcpb)
+     (Arm64) and open it (Settings > Extensions);
    - **Claude Code**: `claude mcp add nexus-android --scope user -- "<path>\NexusAndroid.exe" --mcp`
      (or, for the whole Nexus pack: `/plugin marketplace add pironjulien/nexus-plugins`, then
      `/plugin install nexus-android@nexus-plugins`);
@@ -109,7 +111,7 @@ last line `NEXUS_PACK_RESULT Claude Desktop=declared; Codex=declared; Antigravit
 comes as a plugin (`~/.gemini/config/plugins/nexus-android`: server and agent guide), never as a global entry. An entry
 written by an earlier version (`uvx nexus-android`) is replaced by the executable.
 
-**Verify a download.** Every release file (both zips, the `.mcpb`, `get.ps1`, `SHA256SUMS.txt`) carries a Sigstore
+**Verify a download.** Every release file (both zips, both `.mcpb` extensions, `get.ps1`, `SHA256SUMS.txt`) carries a Sigstore
 build provenance attestation: `gh attestation verify NexusAndroid-win-x64.zip --repo pironjulien/NexusAndroid`
 (the bundle is also attached as `NexusAndroid-<version>.intoto.jsonl`).
 
