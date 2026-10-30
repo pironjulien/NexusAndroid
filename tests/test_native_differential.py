@@ -259,8 +259,8 @@ def test_settings_typed_read_matches_python(
 
 @pytest.mark.parametrize("dump", [
     "7200.00 1000.00\nLocation[gps 48.100000,2.100000 hAcc=5.0 et=+1h59m30s]",
-    "7200.00 1000.00\nLocation[gps 48.100000,2.100000 hAcc=5.0 et=+1h30m0s]\n"
-    "Location[network 48.200000,2.200000 hAcc=30.0 et=+1h59m30s]",
+    ("7200.00 1000.00\nLocation[gps 48.100000,2.100000 hAcc=5.0 et=+1h30m0s]\n"
+     "Location[network 48.200000,2.200000 hAcc=30.0 et=+1h59m30s]"),
     "7200.00 1000.00\n",
 ])
 def test_info_location_typed_response_matches_python(
