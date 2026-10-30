@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [0.22.3] - 2026-10-30
 
 ### Fixed
+- Shared-token initialization uses a stable sibling lock file, like Relay and Browser. Concurrent installers reuse
+  the same token, including when the file starts empty; consumers can still read the token during another install.
 - Agreement tokens from another session (or already consumed) are always masked by their fixed format, including
   low-entropy values and the `accord=` prefix. The generic entropy scan and numeric code matching made the old
   behavior depend on the token's random bytes; deterministic regressions now cover both masking entry points.

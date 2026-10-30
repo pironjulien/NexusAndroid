@@ -120,7 +120,7 @@ function Install-NexusAndroid {
 function Get-SharedToken([bool]$Workstation) {
     # Shared token of the Nexus daemons (rule common to NexusRelay, NexusAndroid, NexusBrowser): one token file is the
     # truth: NEXUS_MCP_TOKEN_FILE when set (a Nexus workstation's NexusSecure file), else %USERPROFILE%\.nexus\mcp-token.txt.
-    # Reused when present, never regenerated; created once otherwise (exclusive creation: two installers, one after the
+    # Reused when present, never regenerated; created once otherwise (stable sibling lock: two installers, one after the
     # other or at the same time, end with the same token). The user variable NEXUS_MCP_TOKEN gets its content; the AI
     # apps read ${NEXUS_MCP_TOKEN}, the token is never written into their configs. Returns the file's path.
     $file = [Environment]::GetEnvironmentVariable('NEXUS_MCP_TOKEN_FILE', 'Process')
@@ -130,22 +130,29 @@ function Get-SharedToken([bool]$Workstation) {
         if (Test-Path -LiteralPath $vault) { $file = $vault }
     }
     if (-not $file) { $file = Join-Path $UserHome '.nexus\mcp-token.txt' }
-    $token = if (Test-Path -LiteralPath $file) { ([IO.File]::ReadAllText($file)).Trim() } else { '' }
-    if (-not $token) {
-        $bytes = New-Object byte[] 32
-        [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-        $fresh = -join ($bytes | ForEach-Object { $_.ToString('x2') })
-        New-Item -ItemType Directory -Force (Split-Path $file) | Out-Null
+    New-Item -ItemType Directory -Force (Split-Path $file) | Out-Null
+    $stream = $null
+    foreach ($attempt in 1..50) {
         try {
-            $stream = [IO.File]::Open($file, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
-            try { $data = [Text.Encoding]::ASCII.GetBytes($fresh); $stream.Write($data, 0, $data.Length) } finally { $stream.Dispose() }
-            $token = $fresh
+            # Keep this sibling lock file: deleting it could split installers between different file identities.
+            # The token itself stays readable by a daemon or caller while another installer resolves it.
+            $stream = [IO.File]::Open("$file.lock", [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+            break
         } catch [IO.IOException] {
-            Start-Sleep -Milliseconds 200  # another installer created it first: its token wins
-            $token = ([IO.File]::ReadAllText($file)).Trim()
+            if ($attempt -eq 50) { throw }
+            Start-Sleep -Milliseconds 100
         }
-        if (-not $token) { throw "Shared token file $file is empty." }
     }
+    try {
+        $token = if (Test-Path -LiteralPath $file) { ([IO.File]::ReadAllText($file)).Trim() } else { '' }
+        if (-not $token) {
+            $bytes = New-Object byte[] 32
+            $random = [Security.Cryptography.RandomNumberGenerator]::Create()
+            try { $random.GetBytes($bytes) } finally { $random.Dispose() }
+            $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+            [IO.File]::WriteAllText($file, $token, [Text.UTF8Encoding]::new($false))
+        }
+    } finally { $stream.Dispose() }
     if (-not $Sandbox -and [Environment]::GetEnvironmentVariable('NEXUS_MCP_TOKEN', 'User') -cne $token) {
         [Environment]::SetEnvironmentVariable('NEXUS_MCP_TOKEN', $token, 'User')
         Say 'User variable NEXUS_MCP_TOKEN set from the shared token file (restart the AI apps to see it).'
