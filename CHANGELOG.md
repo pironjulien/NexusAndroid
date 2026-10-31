@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.22.10] - 2026-10-31
+
+### Fixed
+- Antigravity's MCP client never initializes again after a 404 (its log: "session not found" until the app
+  restarts), so after 27 minutes idle or a daemon upgrade its phone tools stayed broken. Its own expired or
+  pre-restart session id (daemon format, `?agent=antigravity`) is now opened again. Claude and Codex keep the
+  standard 404 and new initialize.
+
 ### Security
 - CodeQL (GitHub default setup) and the OpenSSF Scorecard workflow run again on every push to main.
 

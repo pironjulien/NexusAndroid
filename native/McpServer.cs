@@ -269,6 +269,12 @@ public sealed class McpServer
     /// naming another process (pid:N) is left alone. Never interrupts a running tool call.</summary>
     public static string RestartRequestPath => Environment.GetEnvironmentVariable("NEXUS_ANDROID_RESTART_REQUEST") is { Length: > 0 } path ? path : Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nexus", "nexus-android", "daemon-restart.request");
 
+    /// <summary>Antigravity's MCP client never initializes again after a 404 ("session not found" until the app restarts):
+    /// its own expired or pre-restart session id (daemon format, ?agent=antigravity) is opened again. Others get 404.</summary>
+    internal static bool ResumesStaleSession(string target,string session)=>
+        session.Length==32&&session.All(char.IsAsciiHexDigitLower)&&
+        target.Split('?',2).ElementAtOrDefault(1)?.Split('&').Contains("agent=antigravity",StringComparer.OrdinalIgnoreCase)==true;
+
     private async Task WatchRestartRequestAsync(CancellationTokenSource stop, CancellationToken token)
     {
         var wanted = false;
@@ -418,7 +424,8 @@ public sealed class McpServer
                     }
                     else
                     {
-                        if(!headers.TryGetValue("mcp-session-id",out var session)){await WriteHttpResponseAsync(stream,400,"text/plain",Encoding.UTF8.GetBytes("Initialize an MCP session first, then send its Mcp-Session-Id header"));return;}if(!httpSessions.ContainsKey(session)){await WriteHttpResponseAsync(stream,404,"text/plain",Encoding.UTF8.GetBytes("Unknown or expired MCP session; initialize again"));return;}
+                        if(!headers.TryGetValue("mcp-session-id",out var session)){await WriteHttpResponseAsync(stream,400,"text/plain",Encoding.UTF8.GetBytes("Initialize an MCP session first, then send its Mcp-Session-Id header"));return;}if(!httpSessions.ContainsKey(session)&&ResumesStaleSession(rawTarget,session)){httpSessions[session]=DateTimeOffset.UtcNow;agents[session]="antigravity";Console.Error.WriteLine("nexus-android: Antigravity session "+session[..8]+" resumed: its client never initializes again after a 404");}
+                        if(!httpSessions.ContainsKey(session)){await WriteHttpResponseAsync(stream,404,"text/plain",Encoding.UTF8.GetBytes("Unknown or expired MCP session; initialize again"));return;}
                         NativeSafety.Session.Value=session;httpSessions[session]=DateTimeOffset.UtcNow;
                     }
                     var resp = HandleRequest(reqObj);
