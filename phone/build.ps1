@@ -14,7 +14,8 @@ if (-not (Test-Path $r8) -or (Get-FileHash $r8 -Algorithm SHA256).Hash -ne $r8Sh
     if ((Get-FileHash "$r8.download" -Algorithm SHA256).Hash -ne $r8Sha) { Remove-Item "$r8.download"; throw 'r8: unexpected SHA-256.' }
     Move-Item "$r8.download" $r8 -Force
 }
-$jdk = if ($env:JAVA_HOME) { $env:JAVA_HOME } else {
+# JAVA_HOME only when it still holds a JDK: a JDK update (winget) moves it, and running apps keep the old value.
+$jdk = if ($env:JAVA_HOME -and (Test-Path -LiteralPath (Join-Path $env:JAVA_HOME 'bin\javac.exe'))) { $env:JAVA_HOME } else {
     (Get-ChildItem 'C:\Program Files\Microsoft', 'C:\Program Files\Eclipse Adoptium', 'C:\Program Files\Java' -Directory -Filter 'jdk-*' -ErrorAction SilentlyContinue |
         Sort-Object Name -Descending | Select-Object -First 1).FullName
 }
