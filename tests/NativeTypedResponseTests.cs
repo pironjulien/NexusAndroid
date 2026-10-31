@@ -83,8 +83,8 @@ public sealed class NativeTypedResponseTests
     private static JsonObject Validated(JsonObject result, string tool)
     {
         var response = result["response"]!["result"]!.AsObject();
-        Assert.True(response.ContainsKey("structuredContent"), $"{tool} omitted its advertised structuredContent");
-        var data = response["structuredContent"]!.AsObject();
+        Assert.True(response.TryGetPropertyValue("structuredContent", out var structured), $"{tool} omitted its advertised structuredContent");
+        var data = structured!.AsObject();
         var schema = Contracts.Value[tool]["outputSchema"]!.AsObject();
         var errors = new List<string>();
         SchemaValidator.Validate(schema, schema, data, "$", errors);
@@ -128,7 +128,7 @@ public sealed class NativeTypedResponseTests
         var tool = Contracts.Value[name];
         var subset = new JsonObject();
         foreach (var field in ContractFields)
-            if (tool.ContainsKey(field)) subset[field] = tool[field]!.DeepClone();
+            if (tool.TryGetPropertyValue(field, out var value)) subset[field] = value!.DeepClone();
         Assert.Equal(TypedTools.Contains(name), subset.ContainsKey("outputSchema"));
         var canonical = Canonical.Serialize(subset);
         var digest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
@@ -176,7 +176,7 @@ public sealed class NativeTypedResponseTests
             ["kept_awake_until"] = null, ["rebooted"] = false,
         };
         var actual = new JsonObject();
-        foreach (var (key, _) in expectedFields) { Assert.True(data.ContainsKey(key), "missing " + key); actual[key] = data[key]?.DeepClone(); }
+        foreach (var (key, _) in expectedFields) { Assert.True(data.TryGetPropertyValue(key, out var value), "missing " + key); actual[key] = value?.DeepClone(); }
         AssertJson(expectedFields, actual);
         AssertReadOnly(result);
     }
@@ -387,7 +387,7 @@ internal static class Canonical
                 break;
             case JsonArray array:
                 builder.Append('[');
-                for (var i = 0; i < array.Count; i++) { if (i > 0) builder.Append(','); Write(builder, array[i]); }
+                for (var i = 0; i < array.Count; i++) { if (i > 0) {builder.Append(',');} Write(builder, array[i]); }
                 builder.Append(']');
                 break;
             case JsonValue value:
@@ -476,8 +476,8 @@ internal static class SchemaValidator
             errors.Add($"{path}: {data?.ToJsonString() ?? "null"} is not one of {choices.ToJsonString()}");
         if (data is JsonObject obj)
         {
-            foreach (var required in schema["required"]?.AsArray() ?? [])
-                if (!obj.ContainsKey(required!.ToString())) errors.Add($"{path}: '{required}' is a required property");
+            foreach (var required in (schema["required"]?.AsArray() ?? []).Where(r => !obj.ContainsKey(r!.ToString())))
+                errors.Add($"{path}: '{required}' is a required property");
             var properties = schema["properties"] as JsonObject;
             foreach (var (key, value) in obj)
             {
@@ -502,7 +502,7 @@ internal static class SchemaValidator
             "string" => element.ValueKind == System.Text.Json.JsonValueKind.String,
             "boolean" => element.ValueKind is System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False,
             "number" => element.ValueKind == System.Text.Json.JsonValueKind.Number,
-            "integer" => element.ValueKind == System.Text.Json.JsonValueKind.Number && element.TryGetDouble(out var d) && d == Math.Floor(d),
+            "integer" => element.ValueKind == System.Text.Json.JsonValueKind.Number && element.TryGetDouble(out var d) && double.IsInteger(d),
             "null" => element.ValueKind == System.Text.Json.JsonValueKind.Null,
             _ => false,
         };

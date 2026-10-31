@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.8] - 2026-10-31
+
+### Changed
+- Code quality: CodeQL findings fixed at the root, behavior unchanged. Braces on single-statement bodies that shared a
+  line with the next statement; disposable `TcpListener` and `StreamReader` released with `using`; integer products
+  widened before conversion to `double`; a redundant cast, a constant condition and two unread assignments removed;
+  implicit loop filters and projections written as `Where`/`Select`; `TryGetPropertyValue` instead of
+  `ContainsKey` plus indexer; `readonly` fields; `Path.Join` where no later segment can be rooted; catch clauses
+  narrowed to the real exception types, deliberate boundaries commented; GDI+ interop moved to source-generated
+  `LibraryImport`.
+
 ## [0.22.7] - 2026-10-31
 
 ### Added

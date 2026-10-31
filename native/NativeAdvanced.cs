@@ -47,12 +47,12 @@ public sealed partial class NativeEngine
     {
         var app=Str(args,"app");var package=app.Length>0?ResolvePackage(app):"";var command=new List<string>{"cmd","app_function","list-app-functions"};if(package.Length>0)command.AddRange(["--package",package]);
         var raw=JsonNode.Parse(Shell(command.ToArray()))?.AsObject()??throw new IOException("AppFunctions catalog unreadable");var functions=new List<(string Package,string Id,string Name,bool Enabled)>();
-        foreach(var pair in raw)if(pair.Value is JsonArray entries)foreach(var entry in entries.OfType<JsonObject>())foreach(var meta in entry.Where(p=>p.Key.StartsWith("AppFunctionStaticMetadata")))if(meta.Value is JsonObject item)
+        foreach(var pair in raw.Where(p=>p.Value is JsonArray))foreach(var entry in pair.Value!.AsArray().OfType<JsonObject>())foreach(var item in entry.Where(p=>p.Key.StartsWith("AppFunctionStaticMetadata")).Select(p=>p.Value).OfType<JsonObject>())
         {
-            string Get(string key)=>item[key] is JsonArray values&&values.Count>0?values[0]?.ToString()??"":"";var id=Get("functionId");var name=Get("schemaName");if(name.Length==0)name=id.Split('#').Last().Split('_').Last();functions.Add((pair.Key,id,name,!Get("enabledByDefault").Equals("false",StringComparison.OrdinalIgnoreCase)));
+            string Get(string key)=>item[key] is JsonArray values&&values.Count>0?values[0]?.ToString()??"":"";var id=Get("functionId");var name=Get("schemaName");if(name.Length==0){name=id.Split('#').Last().Split('_').Last();}functions.Add((pair.Key,id,name,!Get("enabledByDefault").Equals("false",StringComparison.OrdinalIgnoreCase)));
         }
         if(Str(args,"action","list")=="list")return Text("Android AppFunctions (params: {\"<function>Params\": {...}}; risky requires confirm, outward also a bound agreement):\n"+string.Join('\n',functions.OrderBy(f=>f.Package).ThenBy(f=>f.Name).Select(f=>$"{f.Package} · {f.Name} · {f.Id} · {FunctionRisk(f.Name,f.Id.Split('#').Last())} · {(f.Enabled?"enabled":"disabled")}")));
-        var wanted=Str(args,"function");var matches=functions.Where(f=>f.Package==package&&(f.Id==wanted||f.Name==wanted||f.Id.EndsWith("#"+wanted,StringComparison.Ordinal))).ToList();if(matches.Count==0)matches=functions.Where(f=>f.Package==package&&f.Id.Split('#').Last().EndsWith(wanted,StringComparison.OrdinalIgnoreCase)).ToList();if(wanted.Length==0||matches.Count!=1)throw new ArgumentException("Function unknown or ambiguous; list the catalog first");var fn=matches[0];
+        var wanted=Str(args,"function");var matches=functions.Where(f=>f.Package==package&&(f.Id==wanted||f.Name==wanted||f.Id.EndsWith("#"+wanted,StringComparison.Ordinal))).ToList();if(matches.Count==0){matches=functions.Where(f=>f.Package==package&&f.Id.Split('#').Last().EndsWith(wanted,StringComparison.OrdinalIgnoreCase)).ToList();}if(wanted.Length==0||matches.Count!=1)throw new ArgumentException("Function unknown or ambiguous; list the catalog first");var fn=matches[0];
         if(!fn.Enabled)throw new InvalidOperationException("Function disabled by app");if(AndroidPolicy.IsProtectedPackage(package))throw new InvalidOperationException("Functions of protected apps refused");NativeSafety.StopGuard();
         var risk=FunctionRisk(fn.Name,fn.Id.Split('#').Last());var body=args["params"]?.ToJsonString()??"{}";
         if(!Regex.IsMatch(fn.Id,@"\A[\w.$]+#[\w$]+\z"))throw new ArgumentException("Invalid function ID");
@@ -66,7 +66,7 @@ public sealed partial class NativeEngine
         {
             var name=socket.Groups[1].Value;if(name.StartsWith("stetho",StringComparison.Ordinal))continue;var package=name=="chrome_devtools_remote"?"com.android.chrome":socket.Groups[2].Success?Shell("cat","/proc/"+socket.Groups[2].Value+"/cmdline").Split('\0')[0].Trim().Split(':')[0]:name.Replace("_devtools_remote","");if(!Regex.IsMatch(package,@"\A[A-Za-z]\w*(?:\.\w+)+\z")||AndroidPolicy.IsProtectedPackage(package))continue;var port=WebForward(name);
             try{var payload=http.GetStringAsync("http://127.0.0.1:"+port+"/json/list",NativeSafety.Cancellation.Value).GetAwaiter().GetResult();if(payload.Length>4*1024*1024)throw new IOException("DevTools tab list too large");var list=JsonNode.Parse(payload)?.AsArray();if(list is not null)foreach(var tab in list.OfType<JsonObject>().Where(t=>Str(t,"type")=="page"))tabs.Add((name,package,tab));}
-            catch(HttpRequestException){}catch(TaskCanceledException)when(!NativeSafety.Cancellation.Value.IsCancellationRequested){}catch(JsonException){}finally{WebRemoveForward(port);}
+            catch(HttpRequestException){/* socket without a DevTools endpoint: skip it */}catch(TaskCanceledException)when(!NativeSafety.Cancellation.Value.IsCancellationRequested){/* tab list timed out: skip this socket */}catch(JsonException){/* unreadable tab list: skip this socket */}finally{WebRemoveForward(port);}
         }
         if(Str(args,"action","read")=="tabs")return Text(string.Join('\n',tabs.Select((t,i)=>$"[{i+1}] {t.Package} · {CleanAdvancedText(Str(t.Tab,"title"),true)} · {NativeSafety.Mask(Str(t.Tab,"url"),true)}")));
         if(tabs.Count==0)return Text("No reachable Chrome/WebView page; Android may have frozen background Chrome. Nothing navigated.");
@@ -97,7 +97,7 @@ public sealed partial class NativeEngine
     {
         var identity=Shell("getprop","ro.serialno").Trim();if(identity.Length==0)identity=Shell("getprop","ro.boot.serialno").Trim();
         if(identity.Length==0)identity=adb.SelectedSerial??throw new IOException("Unknown device identity; map not read or written");
-        var root=Path.Combine(stateRoot,"map",Hash(identity)[..12].ToLowerInvariant());Directory.CreateDirectory(root);return root;
+        var root=Path.Join(stateRoot,"map",Hash(identity)[..12].ToLowerInvariant());Directory.CreateDirectory(root);return root;
     }
     private static void WriteMapJson(string path,JsonNode value)
     {
@@ -106,7 +106,7 @@ public sealed partial class NativeEngine
     }
     private JsonObject Map(JsonObject args)
     {
-        var action=Str(args,"action","find");var root=MapRoot();var screensPath=Path.Combine(root,"screens.json");
+        var action=Str(args,"action","find");var root=MapRoot();var screensPath=Path.Join(root,"screens.json");
         var screens=File.Exists(screensPath)?JsonNode.Parse(File.ReadAllText(screensPath))!.AsArray():new JsonArray();
         if(action is "snapshot" or "diff")return MapSnapshot(args,root);
         if(action=="note")return MapNote(args,screens,screensPath);
@@ -138,7 +138,7 @@ public sealed partial class NativeEngine
         var existing=screens.OfType<JsonObject>().FirstOrDefault(s=>Str(s,"path")==title);
         if(Bool(args,"append")&&existing?["items"] is JsonArray prior)
         {
-            var known=prior.OfType<JsonObject>().Select(i=>Str(i,"title")).ToHashSet();var combined=prior.DeepClone().AsArray();foreach(var item in items.OfType<JsonObject>())if(known.Add(Str(item,"title")))combined.Add(item.DeepClone());items=combined;
+            var known=prior.OfType<JsonObject>().Select(i=>Str(i,"title")).ToHashSet();var combined=prior.DeepClone().AsArray();foreach(var item in items.OfType<JsonObject>().Where(i=>known.Add(Str(i,"title")))){combined.Add(item.DeepClone());}items=combined;
         }
         if(existing is not null)screens.Remove(existing);
         screens.Add(new JsonObject{["path"]=title,["component"]=component,["noted"]=DateTimeOffset.Now.ToString("O"),["items"]=items});WriteMapJson(destination,screens);return Text($"Screen noted under {title}: {items.Count} lines ({component})");
@@ -146,10 +146,10 @@ public sealed partial class NativeEngine
     private static JsonArray MapScreenItems(List<UiElement> elements)
     {
         var rows=new List<(JsonObject Item,int Top,int Bottom)>();
-        foreach(var element in elements)
+        foreach(var element in elements.Where(e=>!e.IsPassword))
         {
-            if(element.IsPassword)continue;var text=CleanAdvancedText(element.Text.Trim(),true);var state=Regex.IsMatch(element.ClassName,@"(?i)Switch|CheckBox|RadioButton")?element.Checked?"on":"off":"";
-            if(text.Length is >0 and <=200){var item=new JsonObject{["title"]=text,["key"]=element.ResourceId};if(state.Length>0)item["state"]=state;rows.Add((item,element.Top,element.Bottom));}
+            var text=CleanAdvancedText(element.Text.Trim(),true);var state=Regex.IsMatch(element.ClassName,@"(?i)Switch|CheckBox|RadioButton")?element.Checked?"on":"off":"";
+            if(text.Length is >0 and <=200){var item=new JsonObject{["title"]=text,["key"]=element.ResourceId};if(state.Length>0){item["state"]=state;}rows.Add((item,element.Top,element.Bottom));}
             else if(state.Length>0)foreach(var row in rows.AsEnumerable().Reverse())if(row.Top<element.Bottom&&element.Top<row.Bottom+element.Bottom-element.Top){row.Item["state"]??=state;break;}
         }
         return new JsonArray(rows.DistinctBy(r=>Str(r.Item,"title")).Select(r=>(JsonNode?)r.Item).ToArray());
@@ -174,7 +174,7 @@ public sealed partial class NativeEngine
         {
             var header=Regex.Match(line,@"^\s*Package \[([^\]]+)\]");if(header.Success){current=header.Groups[1].Value;continue;}
             var permission=Regex.Match(line,@"android\.permission\.(\w+): granted=true");if(current.Length==0||!permission.Success||!MapPermissions.Contains(permission.Groups[1].Value))continue;
-            var key=permission.Groups[1].Value;if(permissions[key] is not JsonArray)permissions[key]=new JsonArray();var list=permissions[key]!.AsArray();if(!list.Any(v=>v?.ToString()==current))list.Add(current);
+            var key=permission.Groups[1].Value;if(permissions[key] is not JsonArray){permissions[key]=new JsonArray();}var list=permissions[key]!.AsArray();if(!list.Any(v=>v?.ToString()==current))list.Add(current);
         }
         var roles=new JsonObject();foreach(var role in new[]{"SMS","DIALER","BROWSER","HOME","ASSISTANT","WALLET"})roles[role]=NativeSafety.Mask(Shell("cmd","role","get-role-holders","android.app.role."+role).Trim(),true);
         var admins=Regex.Matches(Shell("dumpsys","device_policy"),@"ComponentInfo\{[^}]+\}").Select(m=>NativeSafety.Mask(m.Value,true)).Distinct().Order();
@@ -190,10 +190,10 @@ public sealed partial class NativeEngine
     }
     private JsonObject MapSnapshot(JsonObject args,string root)
     {
-        var folder=Path.Combine(root,"snapshots");Directory.CreateDirectory(folder);var cutoff=MapCutoff(Str(args,"since"),DateTimeOffset.Now);
+        var folder=Path.Join(root,"snapshots");Directory.CreateDirectory(folder);var cutoff=MapCutoff(Str(args,"since"),DateTimeOffset.Now);
         var previous=Directory.GetFiles(folder,"*.json").Select(p=>(Path:p,State:JsonNode.Parse(File.ReadAllText(p))!.AsObject())).OrderBy(p=>DateTimeOffset.Parse(Str(p.State,"at"),CultureInfo.InvariantCulture)).ThenBy(p=>p.Path,StringComparer.Ordinal).ToList();
         var old=previous.Where(p=>DateTimeOffset.Parse(Str(p.State,"at"),CultureInfo.InvariantCulture)<=cutoff).LastOrDefault();if(old.State is null&&previous.Count>0)old=previous[0];
-        var index=SettingsIndex(root);var state=MapState();state["settings_map"]=new JsonObject{["entries"]=index.Count(e=>Str(e,"source")!="activity")};var path=FreePath(Path.Combine(folder,DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssfffffff")+".json"));WriteMapJson(path,state);
+        var index=SettingsIndex(root);var state=MapState();state["settings_map"]=new JsonObject{["entries"]=index.Count(e=>Str(e,"source")!="activity")};var path=FreePath(Path.Join(folder,DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssfffffff")+".json"));WriteMapJson(path,state);
         foreach(var obsolete in previous.Take(Math.Max(0,previous.Count+1-30)))File.Delete(obsolete.Path);
         var head=$"Masked snapshot saved: {path} · {state["packages"]!.AsObject().Count} apps · {state["permissions"]!.AsObject().Count} sensitive permissions · settings map {index.Count} lines";
         if(Str(args,"action")=="snapshot")return Text(head);return Text(head+"\n"+(old.State is null?"First snapshot of this phone: nothing to compare yet.":MapDiff(old.State,state)));
@@ -203,11 +203,11 @@ public sealed partial class NativeEngine
         var changes=new List<string>();static JsonObject Obj(JsonNode? n)=>n as JsonObject??new JsonObject();
         foreach(var ns in new[]{"system","secure","global"})
         {
-            var old=Obj(before["settings"]?[ns]);var current=Obj(after["settings"]?[ns]);foreach(var key in old.Select(p=>p.Key).Union(current.Select(p=>p.Key)).Order())if(!JsonNode.DeepEquals(old[key],current[key]))changes.Add($"{ns}/{key}: {old[key]?.ToString()??"[absent]"} → {current[key]?.ToString()??"[removed]"}");
+            var old=Obj(before["settings"]?[ns]);var current=Obj(after["settings"]?[ns]);foreach(var key in old.Select(p=>p.Key).Union(current.Select(p=>p.Key)).Order().Where(key=>!JsonNode.DeepEquals(old[key],current[key])))changes.Add($"{ns}/{key}: {old[key]?.ToString()??"[absent]"} → {current[key]?.ToString()??"[removed]"}");
         }
         foreach(var section in new[]{"device","packages","roles"})
         {
-            var old=Obj(before[section]);var current=Obj(after[section]);foreach(var key in old.Select(p=>p.Key).Union(current.Select(p=>p.Key)).Order())if(!JsonNode.DeepEquals(old[key],current[key]))changes.Add($"{section}/{key}: {old[key]?.ToJsonString()??"[absent]"} → {current[key]?.ToJsonString()??"[removed]"}");
+            var old=Obj(before[section]);var current=Obj(after[section]);foreach(var key in old.Select(p=>p.Key).Union(current.Select(p=>p.Key)).Order().Where(key=>!JsonNode.DeepEquals(old[key],current[key])))changes.Add($"{section}/{key}: {old[key]?.ToJsonString()??"[absent]"} → {current[key]?.ToJsonString()??"[removed]"}");
         }
         var oldPermissions=Obj(before["permissions"]);var newPermissions=Obj(after["permissions"]);
         foreach(var key in oldPermissions.Select(p=>p.Key).Union(newPermissions.Select(p=>p.Key)).Order())
@@ -224,16 +224,16 @@ public sealed partial class NativeEngine
     }
     private JsonObject MapFind(JsonObject args,List<JsonObject> rows)
     {
-        var query=Str(args,"query");if(string.IsNullOrWhiteSpace(query))throw new ArgumentException("find: query required");var values=new Dictionary<string,(string Namespace,string Value)>();
+        var search=Str(args,"query");if(string.IsNullOrWhiteSpace(search))throw new ArgumentException("find: query required");var values=new Dictionary<string,(string Namespace,string Value)>();
         var live=new List<(string Namespace,string Key,string Value)>();foreach(var ns in new[]{"global","system","secure"})foreach(var entry in MapSettings(ns)){values[entry.Key]=(ns,entry.Value!.ToString());live.Add((ns,entry.Key,entry.Value!.ToString()));}
-        var all=new List<JsonObject>();foreach(var row in rows)if(row["items"] is JsonArray items)foreach(var item in items.OfType<JsonObject>()){var copy=item.DeepClone().AsObject();copy["path"]=row["path"]?.DeepClone();copy["component"]=row["component"]?.DeepClone();copy["noted"]=row["noted"]?.DeepClone();copy["source"]="screen";all.Add(copy);}else all.Add(row.DeepClone().AsObject());
+        var all=new List<JsonObject>();foreach(var row in rows)if(row["items"] is JsonArray items)foreach(var copy in items.OfType<JsonObject>().Select(item=>item.DeepClone().AsObject())){copy["path"]=row["path"]?.DeepClone();copy["component"]=row["component"]?.DeepClone();copy["noted"]=row["noted"]?.DeepClone();copy["source"]="screen";all.Add(copy);}else all.Add(row.DeepClone().AsObject());
         foreach(var value in live)all.Add(new JsonObject{["key"]=value.Key,["namespace"]=value.Namespace,["current_value"]=value.Value,["source"]="value"});
         var stop="le la les de des du un une et ou sur pour par dans en au aux a mes mon ma ses son sa ce cette the of on to in for my and or est comment se regle reglage where how set".Split(' ').ToHashSet();
         string Stem(string word)=>word.Length>3&&word[^1] is 's' or 'x'?word[..^1]:word;
-        var terms=NativeSafety.Normalize(query).Split(' ',StringSplitOptions.RemoveEmptyEntries).Where(t=>t.Length>1&&!stop.Contains(t)).Select(Stem).Distinct().ToArray();if(terms.Length==0)return Text("No searchable words in the phone-map query");
+        var terms=NativeSafety.Normalize(search).Split(' ',StringSplitOptions.RemoveEmptyEntries).Where(t=>t.Length>1&&!stop.Contains(t)).Select(Stem).Distinct().ToArray();if(terms.Length==0)return Text("No searchable words in the phone-map query");
         bool Hit(string term,string field)=>NativeSafety.Normalize(field).Split(' ',StringSplitOptions.RemoveEmptyEntries).Select(Stem).Any(w=>w==term||term.Length>=4&&w.StartsWith(term,StringComparison.Ordinal)||w.Length>=4&&term.StartsWith(w,StringComparison.Ordinal));
-        var scored=all.Select(row=>{var fields=new[]{(Str(row,"title"),3d),(Str(row,"english"),2.5),(Str(row,"path"),2d),(Str(row,"section"),1.5),(Str(row,"summary"),1d),(Str(row,"keywords"),1.5),(Str(row,"key"),.5)};var matches=terms.Count(t=>fields.Any(f=>Hit(t,f.Item1)));var score=terms.Sum(t=>fields.Where(f=>Hit(t,f.Item1)).Sum(f=>f.Item2));if(Bool(row,"orphan"))score-=2;if(Str(row,"source")=="screen")score+=.5;return(Row:row,Matches:matches,Score:score);}).Where(r=>r.Matches>0).OrderByDescending(r=>r.Matches).ThenByDescending(r=>r.Score).ToList();
-        var need=(terms.Length+1)/2;if(scored.Any(p=>p.Matches>=need))scored=scored.Where(p=>p.Matches>=need).ToList();var results=scored.DistinctBy(p=>p.Row.ToJsonString()).Take(Math.Clamp(Num(args,"limit",8),1,30)).ToList();
+        var scored=all.Select(row=>{var fields=new[]{(Str(row,"title"),3d),(Str(row,"english"),2.5),(Str(row,"path"),2d),(Str(row,"section"),1.5),(Str(row,"summary"),1d),(Str(row,"keywords"),1.5),(Str(row,"key"),.5)};var matches=terms.Count(t=>fields.Any(f=>Hit(t,f.Item1)));var score=terms.Sum(t=>fields.Where(f=>Hit(t,f.Item1)).Sum(f=>f.Item2));if(Bool(row,"orphan")){score-=2;}if(Str(row,"source")=="screen"){score+=.5;}return(Row:row,Matches:matches,Score:score);}).Where(r=>r.Matches>0).OrderByDescending(r=>r.Matches).ThenByDescending(r=>r.Score).ToList();
+        var need=(terms.Length+1)/2;if(scored.Any(p=>p.Matches>=need)){scored=scored.Where(p=>p.Matches>=need).ToList();}var results=scored.DistinctBy(p=>p.Row.ToJsonString()).Take(Math.Clamp(Num(args,"limit",8),1,30)).ToList();
         foreach(var result in results)if(Str(result.Row,"source")!="value"&&values.TryGetValue(Str(result.Row,"key"),out var value)){result.Row["namespace"]=value.Namespace;result.Row["current_value"]=value.Value;}
         return Text("Settings map from the phone's Settings APK and noted screens (read-only; [brackets] mark unknown hierarchy):\n"+string.Join('\n',results.Select(p=>MapDescribe(p.Row))));
     }
@@ -248,7 +248,7 @@ public sealed partial class NativeEngine
         if(Str(e,"english").Length>0)line+=$" (EN: {Str(e,"english")})";
         if(Str(e,"section").Length>0)line+=$"  (section « {Str(e,"section")} »)";
         if(Str(e,"summary") is {Length:>0} summary)line+=" — "+summary[..Math.Min(120,summary.Length)];
-        if(!settings){if(Str(e,"state").Length>0)line+=$"  [{Str(e,"state")}]";if(Str(e,"noted").Length>0)line+=$"  (noted on screen {Str(e,"noted")})";}
+        if(!settings){if(Str(e,"state").Length>0){line+=$"  [{Str(e,"state")}]";}if(Str(e,"noted").Length>0)line+=$"  (noted on screen {Str(e,"noted")})";}
         if(Str(e,"current_value").Length>0)line+=$"\n    now: {Str(e,"namespace")}/{Str(e,"key")}={Str(e,"current_value")}";
         string key=Str(e,"key"),target=Str(e,"target"),opener=target.Length>0?target:settings?Str(e,"open"):Str(e,"component");
         if(Str(e,"target_action").Length>0)line+=$"\n    open: launch(action=\"{Str(e,"target_action")}\")";
@@ -264,10 +264,10 @@ public sealed partial class NativeEngine
     }
     private List<JsonObject> SettingsIndex(string root)
     {
-        var version=Shell("dumpsys","package","com.android.settings");var locale=Shell("getprop","persist.sys.locale").Trim();if(locale.Length==0)locale=Shell("getprop","ro.product.locale").Trim();if(locale.Length==0)locale="fr-FR";
+        var version=Shell("dumpsys","package","com.android.settings");var locale=Shell("getprop","persist.sys.locale").Trim();if(locale.Length==0){locale=Shell("getprop","ro.product.locale").Trim();}if(locale.Length==0)locale="fr-FR";
         var remote=Shell("pm","path","com.android.settings").Split('\n').FirstOrDefault(l=>l.StartsWith("package:",StringComparison.Ordinal))?.Trim()[8..]??throw new IOException("Settings APK not found");
-        var stamp=Hash("native-index-5|"+locale+Regex.Match(version,@"versionCode=\d+").Value+Regex.Match(version,@"lastUpdateTime=[^\r\n]+").Value+"|"+remote+"|"+Shell("stat","-c","%s:%Y",remote).Trim()+"|"+Shell("getprop","ro.build.fingerprint").Trim())[..16];var cached=Path.Combine(root,"settings-"+stamp+".json");if(File.Exists(cached))return JsonNode.Parse(File.ReadAllText(cached))!.AsArray().OfType<JsonObject>().ToList();
-        var apk=Path.Combine(root,"settings.apk");adb.RunAdb($"pull -z zstd \"{remote}\" \"{apk}\"",120000);var language=locale.Replace('_','-').Split('-');var index=ApkSettingsIndex.Build(apk,language[0],language.Length>1?language[1]:"");WriteMapJson(cached,new JsonArray(index.Select(v=>(JsonNode?)v.DeepClone()).ToArray()));return index;
+        var stamp=Hash("native-index-5|"+locale+Regex.Match(version,@"versionCode=\d+").Value+Regex.Match(version,@"lastUpdateTime=[^\r\n]+").Value+"|"+remote+"|"+Shell("stat","-c","%s:%Y",remote).Trim()+"|"+Shell("getprop","ro.build.fingerprint").Trim())[..16];var cached=Path.Join(root,"settings-"+stamp+".json");if(File.Exists(cached))return JsonNode.Parse(File.ReadAllText(cached))!.AsArray().OfType<JsonObject>().ToList();
+        var apk=Path.Join(root,"settings.apk");adb.RunAdb($"pull -z zstd \"{remote}\" \"{apk}\"",120000);var language=locale.Replace('_','-').Split('-');var index=ApkSettingsIndex.Build(apk,language[0],language.Length>1?language[1]:"");WriteMapJson(cached,new JsonArray(index.Select(v=>v.DeepClone()).ToArray()));return index;
     }
     private static string MaskStateValue(string key,string value)
     {
@@ -276,7 +276,7 @@ public sealed partial class NativeEngine
         foreach(Match candidate in Regex.Matches(value,@"(?<![\d.])\d{1,3}(?:\.\d{1,3}){3}(?![\d.]*\d)|\[[0-9a-fA-F:.%\w-]{2,64}\]|[0-9A-Za-z:.%\[\]_-]{2,64}"))
         {
             var token=candidate.Value.Trim('[',']').Split('%')[0].TrimEnd('.');if((token.Contains(':')||token.Count(c=>c=='.')==3)&&IPAddress.TryParse(token,out _))sensitive=true;
-            foreach(Match ipv4 in Regex.Matches(token,@"\d{1,3}(?:\.\d{1,3}){3}"))if(IPAddress.TryParse(ipv4.Value,out _))sensitive=true;
+            if(Regex.Matches(token,@"\d{1,3}(?:\.\d{1,3}){3}").Any(ipv4=>IPAddress.TryParse(ipv4.Value,out _)))sensitive=true;
         }
         return sensitive?"[masked]#"+Hash(value)[..8].ToLowerInvariant():CleanAdvancedText(value,true);
     }

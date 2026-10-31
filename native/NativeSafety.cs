@@ -16,7 +16,8 @@ public static class NativeSafety
     private static readonly byte[] SealKey=RandomNumberGenerator.GetBytes(32);
     public static void ForgetSession(string session){foreach(var item in Accords.Where(p=>p.Value.Session==session))Accords.TryRemove(item.Key,out _);}
     public static string Seal(string text)=>Convert.ToHexString(HMACSHA256.HashData(SealKey,Encoding.UTF8.GetBytes(text)))[..20];
-    private static readonly JsonObject Policy = JsonNode.Parse(new StreamReader(Assembly.GetExecutingAssembly().GetManifestResourceStream("garde-fous.json")!).ReadToEnd())!.AsObject();
+    private static readonly JsonObject Policy = LoadPolicy();
+    private static JsonObject LoadPolicy(){using var reader=new StreamReader(Assembly.GetExecutingAssembly().GetManifestResourceStream("garde-fous.json")!);return JsonNode.Parse(reader.ReadToEnd())!.AsObject();}
     public static string Comparable(string value) => Regex.Replace(string.Concat(value.Normalize(NormalizationForm.FormD).Where(c => CharUnicodeInfo.GetUnicodeCategory(c) is not (UnicodeCategory.NonSpacingMark or UnicodeCategory.Format))).ToLowerInvariant(), @"[^\p{L}\p{N}]+", " ").Trim();
     public static string Normalize(string value)
     {
@@ -43,14 +44,14 @@ public static class NativeSafety
     }
     public static JsonNode? MaskJson(JsonNode? node)
     {
-        if(node is JsonObject obj){var result=new JsonObject();foreach(var pair in obj)result[pair.Key]=Regex.IsMatch(pair.Key,@"(?i)^(?:(?:access|refresh|id|auth|session|csrf|api|client)?[_-]?(?:token|secret|password|passwd|pwd|cookie|authorization|api[_-]?key|session[_-]?id|sid))$")?JsonValue.Create("[masked]"):MaskJson(pair.Value);return result;}
+        if(node is JsonObject obj){var result=new JsonObject();foreach(var pair in obj){result[pair.Key]=Regex.IsMatch(pair.Key,@"(?i)^(?:(?:access|refresh|id|auth|session|csrf|api|client)?[_-]?(?:token|secret|password|passwd|pwd|cookie|authorization|api[_-]?key|session[_-]?id|sid))$")?JsonValue.Create("[masked]"):MaskJson(pair.Value);}return result;}
         if(node is JsonArray array)return new JsonArray(array.Select(MaskJson).ToArray());
         if(node is JsonValue value&&value.TryGetValue<string>(out var text))return JsonValue.Create(Mask(text));return node?.DeepClone();
     }
     public static void StopGuard()
     {
         Cancellation.Value.ThrowIfCancellationRequested();
-        var stop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nexus", "stop");
+        var stop = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nexus", "stop");
         if (File.Exists(stop) && DateTime.UtcNow - File.GetLastWriteTimeUtc(stop) < TimeSpan.FromSeconds(120))
             throw new InvalidOperationException("Arrêt d'urgence demandé par Julien : plus aucune action pendant 120 secondes ; ne pas contourner.");
     }
@@ -65,9 +66,9 @@ public static class NativeSafety
     {
         text=MaskForeignAccords(text);
         var protectedTokens=new Dictionary<string,string>();text=Regex.Replace(text,@"\b[a-f0-9]{48}\b",m=>{if(!OwnAccord(m.Value))return m.Value;var placeholder=char.ConvertFromUtf32(0xF0000+protectedTokens.Count);protectedTokens[placeholder]=m.Value;return placeholder;});
-        var words=CodeWords.Matches(CodePlain(text));if(!context&&words.Count==0){foreach(var token in protectedTokens)text=text.Replace(token.Key,token.Value,StringComparison.Ordinal);return text;}
+        var words=CodeWords.Matches(CodePlain(text));if(!context&&words.Count==0){foreach(var token in protectedTokens){text=text.Replace(token.Key,token.Value,StringComparison.Ordinal);}return text;}
         text=Regex.Replace(text,@"(?<![\w-])(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{4,10}(?![\w-])",m=>context||words.Any(k=>m.Index-60<=k.Index+k.Length&&k.Index<=m.Index+m.Length+60)?"[masked code]":m.Value);
-        text=Regex.Replace(text,@"(?<![\d,./$€£+-])(?<!\d[ -])(?!\d{1,2}-\d{1,2}-\d{2,4}(?!\d)|\d{4}-\d{1,2}-\d{1,2}(?!\d))(?:[A-Z]-)?\d(?:[ -]?\d){3,8}(?![ -]?\d|[.,/]\d|\s?(?:€|\$|£|eur\b|EUR\b|%))","[masked code]");foreach(var token in protectedTokens)text=text.Replace(token.Key,token.Value,StringComparison.Ordinal);return text;
+        text=Regex.Replace(text,@"(?<![\d,./$€£+-])(?<!\d[ -])(?!\d{1,2}-\d{1,2}-\d{2,4}(?!\d)|\d{4}-\d{1,2}-\d{1,2}(?!\d))(?:[A-Z]-)?\d(?:[ -]?\d){3,8}(?![ -]?\d|[.,/]\d|\s?(?:€|\$|£|eur\b|EUR\b|%))","[masked code]");foreach(var token in protectedTokens){text=text.Replace(token.Key,token.Value,StringComparison.Ordinal);}return text;
     }
     public static string Mask(string text, bool personal = false,bool codes=true)
     {
@@ -85,7 +86,7 @@ public static class NativeSafety
         text = Regex.Replace(text, @"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}\b", "[masked]");
         text = Regex.Replace(text, @"\b(?:\d[ -]?){13,19}\b", m=>
         {
-            var digits=string.Concat(m.Value.Where(char.IsDigit));var total=0;for(var i=0;i<digits.Length;i++){var n=digits[digits.Length-1-i]-'0';if((i&1)==1)n*=2;total+=n>9?n-9:n;}return digits.Length is >=15 and <=19&&digits[0] is >= '2' and <= '6'&&digits.Distinct().Count()>1&&total%10==0?"[masked card]":m.Value;
+            var digits=string.Concat(m.Value.Where(char.IsDigit));var total=0;for(var i=0;i<digits.Length;i++){var n=digits[digits.Length-1-i]-'0';if((i&1)==1){n*=2;}total+=n>9?n-9:n;}return digits.Length is >=15 and <=19&&digits[0] is >= '2' and <= '6'&&digits.Distinct().Count()>1&&total%10==0?"[masked card]":m.Value;
         });
         if(codes)text=MaskCodes(text);
         if (personal)
@@ -103,12 +104,12 @@ public static class NativeSafety
     }
     public static string PcPath(string path, bool confirm)
     {
-        if(path=="~"||path.StartsWith("~/")||path.StartsWith("~\\"))path=Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)+path[1..];var real = Path.GetFullPath(path);
+        if(path=="~"||path.StartsWith("~/")||path.StartsWith("~\\")){path=Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)+path[1..];}var real = Path.GetFullPath(path);
         // Resolve every existing link before testing boundaries (also covers links in a parent directory).
         var current = Path.GetPathRoot(real)!;var parts=Path.GetRelativePath(current,real).Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
         foreach (var part in parts)
         {
-            current = Path.Combine(current, part);
+            current = Path.Join(current, part);
             FileSystemInfo info = Directory.Exists(current) ? new DirectoryInfo(current) : new FileInfo(current);
             if (info.Exists && info.LinkTarget != null) current = info.ResolveLinkTarget(true)!.FullName;
         }
@@ -116,7 +117,7 @@ public static class NativeSafety
         var lower = real.ToLowerInvariant();
         if (Regex.IsMatch(lower, @"(^|[\\/])(?:nexussecure|administratif|\.ssh|\.gnupg|\.aws|\.azure|\.nexus|\.codex|\.claude|\.gemini|\.env(?:\.[^\\/]+)?)([\\/]|$)") || lower.Contains("\\start menu\\programs\\startup")) throw new InvalidOperationException("Sensitive path refused (secrets, identity, agent configuration or Windows startup)");
         var roots = new[] { Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Environment.GetEnvironmentVariable("OneDrive") }.Where(p => !string.IsNullOrEmpty(p));
-        if (!confirm && !roots.Any(r => new[] { "Downloads", "Documents", "Desktop", "Pictures", "Videos" }.Any(d => real.StartsWith(Path.Combine(r!, d) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || real.Equals(Path.Combine(r!, d), StringComparison.OrdinalIgnoreCase)))) throw new InvalidOperationException("Path outside usual folders: confirm=true required");
+        if (!confirm && !roots.Any(r => new[] { "Downloads", "Documents", "Desktop", "Pictures", "Videos" }.Any(d => real.StartsWith(Path.Join(r!, d) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || real.Equals(Path.Join(r!, d), StringComparison.OrdinalIgnoreCase)))) throw new InvalidOperationException("Path outside usual folders: confirm=true required");
         return real;
     }
     public static string PhonePath(string? path)

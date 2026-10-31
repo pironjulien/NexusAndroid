@@ -44,13 +44,13 @@ public sealed class ApkSettingsIndex
                     else{off=U32(b,at+i*4);if(off==uint.MaxValue)continue;}
                     var e=checked(pos+entries+(int)off);var esize=U16(b,e);var ef=U16(b,e+2);uint key;byte vt;uint vd;
                     if((ef&8)!=0){key=esize;vt=(byte)(ef>>8);vd=U32(b,e+4);}else{if((ef&1)!=0)continue;key=U32(b,e+4);vt=b[e+esize+3];vd=U32(b,e+esize+4);}
-                    var id=(package<<24)|((uint)tid<<16)|(uint)index;if(key<keyPool.Length)names.TryAdd(id,keyPool[key]);if(!values.TryGetValue(id,out var old)||rank>old.Rank)values[id]=(rank,vt,vd);
+                    var id=(package<<24)|((uint)tid<<16)|(uint)index;if(key<keyPool.Length){names.TryAdd(id,keyPool[key]);}if(!values.TryGetValue(id,out var old)||rank>old.Rank)values[id]=(rank,vt,vd);
                 }
             });
         });
     }
     private string Resolve(uint id,int depth=0){if(depth>8||!values.TryGetValue(id,out var value))return "";return value.Type==3&&value.Data<global.Length?global[value.Data]:value.Type==1?Resolve(value.Data,depth+1):"";}
-    private sealed class Element(string tag){public string Tag=tag;public Element? Parent;public Dictionary<string,string> Attr=[];public List<Element> Children=[];public string Get(string name)=>Attr.GetValueOrDefault(name,"").Trim();public IEnumerable<Element> All()=>new[]{this}.Concat(Children.SelectMany(c=>c.All()));}
+    private sealed class Element(string tag){public readonly string Tag=tag;public Element? Parent;public readonly Dictionary<string,string> Attr=[];public readonly List<Element> Children=[];public string Get(string name)=>Attr.GetValueOrDefault(name,"").Trim();public IEnumerable<Element> All()=>new[]{this}.Concat(Children.SelectMany(c=>c.All()));}
     private static bool PreferenceRow(Element row)=>row.Get("title").Length>0&&!row.Tag.Contains("Category",StringComparison.OrdinalIgnoreCase)&&System.Text.RegularExpressions.Regex.IsMatch(row.Tag,@"(?i)preference|switch|checkbox|seekbar|list|radio|dropdown|slider|button")&&!System.Text.RegularExpressions.Regex.IsMatch(row.Tag,@"(?i)footer|description|caption|illustration|layoutpreference|divider|banner|tips?pref|summarypref|animation|lottie|preview|inset|blank|space|relativelink|contextualcard")&&(row.Get("fragment").Length>0||!System.Text.RegularExpressions.Regex.IsMatch(row.Get("key"),@"(?i)description|caption(?!ing)|footer|_desc$|_guide|_notice|_info_text|disclaimer"));
     private Element Xml(byte[] b)
     {
@@ -73,9 +73,9 @@ public sealed class ApkSettingsIndex
     {
         using var zip=ZipFile.OpenRead(apk);var resources=Bytes(zip.GetEntry("resources.arsc")??throw new IOException("Settings APK missing resource table"));var parser=new ApkSettingsIndex(language,country);parser.Resources(resources);var english=new ApkSettingsIndex("en","US");english.Resources(resources);var manifest=parser.Xml(Bytes(zip.GetEntry("AndroidManifest.xml")!));
         var activities=new Dictionary<string,(string Component,string Action,string Label)>();var byName=new Dictionary<string,(string Action,string Label)>();var package=manifest.All().First(e=>e.Tag=="manifest").Get("package");
-        foreach(var activity in manifest.All().Where(e=>e.Tag is "activity" or "activity-alias"))
+        foreach(var activity in manifest.All().Where(e=>e.Tag is "activity" or "activity-alias").Where(a=>!(a.Get("exported")=="false"||a.Get("exported").Length==0&&!a.Children.Any(c=>c.Tag=="intent-filter"))))
         {
-            if(activity.Get("exported")=="false"||activity.Get("exported").Length==0&&!activity.Children.Any(c=>c.Tag=="intent-filter"))continue;var name=activity.Get("name");if(name.StartsWith('.'))name=package+name;var component=package+"/"+name;var action=activity.All().FirstOrDefault(e=>e.Tag=="action"&&e.Get("name")!="android.intent.action.MAIN")?.Get("name")??"";
+            var name=activity.Get("name");if(name.StartsWith('.')){name=package+name;}var component=package+"/"+name;var action=activity.All().FirstOrDefault(e=>e.Tag=="action"&&e.Get("name")!="android.intent.action.MAIN")?.Get("name")??"";
             var fragment=activity.All().FirstOrDefault(e=>e.Tag=="meta-data"&&e.Get("name")=="com.android.settings.FRAGMENT_CLASS")?.Get("value")??"";
             byName[name]=(action,activity.Get("label"));
             if(fragment.Length>0&&(!activities.TryGetValue(fragment,out var current)||action.Length>0&&current.Action.Length==0))activities[fragment]=(component,action,activity.Get("label"));
@@ -90,7 +90,7 @@ public sealed class ApkSettingsIndex
         var paths=new Dictionary<string,(string Path,string Component,string Action)>();var root=xmls.Keys.FirstOrDefault(x=>x.EndsWith("sec_top_level_settings.xml"))??xmls.Keys.FirstOrDefault(x=>x.EndsWith("top_level_settings.xml"));if(root is not null)paths[root]=("Paramètres","com.android.settings/.Settings","android.settings.SETTINGS");
         var parents=new Dictionary<string,(string Xml,string Title)>();var queue=new Queue<string>();
         void Expand(){while(queue.TryDequeue(out var parent))foreach(var row in xmls[parent].All().Skip(2).Where(PreferenceRow))if(fragmentXml.TryGetValue(row.Get("fragment"),out var child)&&!paths.ContainsKey(child)){var meta=activities.GetValueOrDefault(row.Get("fragment"));paths[child]=(paths[parent].Path+" > "+row.Get("title"),meta.Component??"",meta.Action??"");parents[child]=(parent,row.Get("title"));queue.Enqueue(child);}}
-        if(root is not null)queue.Enqueue(root);Expand();foreach(var activity in activities.OrderBy(p=>p.Key,StringComparer.Ordinal))if(fragmentXml.TryGetValue(activity.Key,out var xml)&&!paths.ContainsKey(xml)){var direct=activity.Value;paths[xml]=(direct.Label.Length>0?direct.Label:Path.GetFileNameWithoutExtension(xml),direct.Component,direct.Action);queue.Enqueue(xml);Expand();}
+        if(root is not null){queue.Enqueue(root);}Expand();foreach(var activity in activities.OrderBy(p=>p.Key,StringComparer.Ordinal))if(fragmentXml.TryGetValue(activity.Key,out var xml)&&!paths.ContainsKey(xml)){var direct=activity.Value;paths[xml]=(direct.Label.Length>0?direct.Label:Path.GetFileNameWithoutExtension(xml),direct.Component,direct.Action);queue.Enqueue(xml);Expand();}
         var output=new List<JsonObject>();foreach(var pair in xmls)
         {
             var route=paths.GetValueOrDefault(pair.Key,(Path:"["+Path.GetFileNameWithoutExtension(pair.Key)+"]",Component:"",Action:""));
@@ -100,12 +100,12 @@ public sealed class ApkSettingsIndex
                 var component=route.Component;var action=route.Action;
                 var intent=row.Children.FirstOrDefault(e=>e.Tag=="intent");var intentAction=intent?.Get("action")??"";var intentTarget=intent is not null&&intent.Get("targetPackage").Length>0&&intent.Get("targetClass").Length>0?intent.Get("targetPackage")+"/"+intent.Get("targetClass"):"";var targetAction="";
                 if(intentTarget.Length==0&&fragmentXml.TryGetValue(row.Get("fragment"),out var child)&&paths.TryGetValue(child,out var childRoute)){if(childRoute.Action.Length>0)targetAction=childRoute.Action;else intentTarget=childRoute.Component;}
-                var section="";for(var ancestor=row.Parent;ancestor is not null;ancestor=ancestor.Parent)if(ancestor.Tag.Contains("Category",StringComparison.OrdinalIgnoreCase)&&ancestor.Get("title").Length>0){section=ancestor.Get("title");break;}var englishTitle=position<translated.Count?translated[position].Get("title"):"";
+                var section="";for(var ancestor=row.Parent;ancestor is not null;ancestor=ancestor.Parent){if(ancestor.Tag.Contains("Category",StringComparison.OrdinalIgnoreCase)&&ancestor.Get("title").Length>0){section=ancestor.Get("title");break;}}var englishTitle=position<translated.Count?translated[position].Get("title"):"";
                 var entry=new JsonObject{["title"]=title,["english"]=englishTitle==title?"":englishTitle,["path"]=route.Path+" > "+title,["section"]=section,["fragment"]=row.Get("fragment"),["intent_action"]=intentAction,["target"]=intentTarget,["target_action"]=targetAction,["keywords"]=row.Get("keywords"),["key"]=row.Get("key"),["summary"]=row.Get("summary"),["open"]=component,["component"]=component,["action"]=action,["xml"]=pair.Key,["orphan"]=!paths.ContainsKey(pair.Key),["kind"]=System.Text.RegularExpressions.Regex.IsMatch(row.Tag,@"(?i)switch|checkbox")?"switch":"",["tag"]=row.Tag};
                 if(component.Length==0&&action.Length==0){var here=pair.Key;var taps=new List<string>();var seen=new HashSet<string>();while(parents.TryGetValue(here,out var parent)&&seen.Add(here)){taps.Insert(0,parent.Title);here=parent.Xml;if(paths.TryGetValue(here,out var via)&&(via.Component.Length>0||via.Action.Length>0)){entry["via"]=new JsonObject{["component"]=via.Component,["action"]=via.Action};entry["taps"]=new JsonArray(taps.Select(v=>(JsonNode?)JsonValue.Create(v)).ToArray());break;}}}
                 output.Add(entry);
             }
         }
-        if(output.Count==0)throw new IOException("No Settings preferences decoded from APK");foreach(var activity in byName.OrderBy(p=>p.Key,StringComparer.Ordinal).Where(p=>p.Value.Label.Length>0))output.Add(new JsonObject{["title"]=activity.Value.Label,["path"]=activity.Value.Label,["source"]="activity",["component"]=package+"/"+activity.Key,["open"]=package+"/"+activity.Key,["action"]=activity.Value.Action,["orphan"]=false,["direct"]=true,["xml"]=""});return output;
+        if(output.Count==0)throw new IOException("No Settings preferences decoded from APK");foreach(var activity in byName.OrderBy(p=>p.Key,StringComparer.Ordinal).Where(p=>p.Value.Label.Length>0)){output.Add(new JsonObject{["title"]=activity.Value.Label,["path"]=activity.Value.Label,["source"]="activity",["component"]=package+"/"+activity.Key,["open"]=package+"/"+activity.Key,["action"]=activity.Value.Action,["orphan"]=false,["direct"]=true,["xml"]=""});}return output;
     }
 }

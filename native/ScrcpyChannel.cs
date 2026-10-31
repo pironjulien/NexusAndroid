@@ -15,7 +15,7 @@ public sealed class ScrcpyChannel : IPhoneControl
     private readonly AdbClient adb; private readonly Process server; private readonly TcpClient client; private readonly NetworkStream stream; private readonly string port;private long sequence=1;
     public ScrcpyChannel(AdbClient adb)
     {
-        this.adb=adb;NativeSafety.StopGuard();var jar=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".nexus","nexus-android","tools","scrcpy-server-v5.0.1");
+        this.adb=adb;NativeSafety.StopGuard();var jar=Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".nexus","nexus-android","tools","scrcpy-server-v5.0.1");
         if(!File.Exists(jar)||Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(jar)))!="764EB6F79811D5211FE9DF341120882BA9994C7A61B897D7BF3FB662E53BC536")throw new IOException("Verified scrcpy-server v5.0.1 missing; run native install.ps1 to install the pinned dependency");
         adb.PickDevice();adb.RunAdb($"push \"{jar}\" /data/local/tmp/nexus-scrcpy.jar");var scid=RandomNumberGenerator.GetInt32(1,int.MaxValue).ToString("x8");port=adb.RunAdb("forward tcp:0 localabstract:scrcpy_"+scid).Stdout.Trim();
         var psi=new ProcessStartInfo(adb.AdbPath){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
@@ -59,5 +59,5 @@ public sealed class ScrcpyChannel : IPhoneControl
         try{Touch(0,1,geometry.First.X,geometry.First.Y,w,h);first=true;Touch(0,2,geometry.Second.X,geometry.Second.Y,w,h);second=true;for(var i=1;i<=50;i++){NativeSafety.StopGuard();gap=from+(to-from)*i/50;Touch(2,1,horizontal?x-gap/2:x,horizontal?y:y-gap/2,w,h);Touch(2,2,horizontal?x+gap/2:x,horizontal?y:y+gap/2,w,h);Thread.Sleep(8);}}
         finally{try{if(second)Touch(1,2,horizontal?x+gap/2:x,horizontal?y:y+gap/2,w,h);}finally{if(first)Touch(1,1,horizontal?x-gap/2:x,horizontal?y:y-gap/2,w,h);}}
     }
-    public void Dispose(){stream.Dispose();client.Dispose();if(!server.WaitForExit(1000))server.Kill(true);server.Dispose();try{adb.RunAdb("forward --remove tcp:"+port);}catch(IOException){}catch(InvalidOperationException){} }
+    public void Dispose(){stream.Dispose();client.Dispose();if(!server.WaitForExit(1000)){server.Kill(true);}server.Dispose();try{adb.RunAdb("forward --remove tcp:"+port);}catch(IOException){/* best-effort: forward already gone */}catch(InvalidOperationException){/* best-effort: device already gone */} }
 }

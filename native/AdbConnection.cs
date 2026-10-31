@@ -138,9 +138,8 @@ public partial class AdbClient
     private List<(DeviceInfo Device, string Identity)> Mine(IEnumerable<DeviceInfo> devices, string known)
     {
         var accepted = new List<(DeviceInfo, string)>();
-        foreach (var device in devices.Where(d => d.State == "device" && !d.Serial.StartsWith("emulator-", StringComparison.Ordinal)))
+        foreach (var device in devices.Where(d => d.State == "device" && !d.Serial.StartsWith("emulator-", StringComparison.Ordinal) && !(known.Length == 0 && IsWirelessSerial(d.Serial))))
         {
-            if (known.Length == 0 && IsWirelessSerial(device.Serial)) continue;
             var identity = DeviceIdentity(device.Serial);
             if (identity.Length > 0 && (known.Length == 0 || identity == known)) accepted.Add((device, identity));
         }
@@ -169,7 +168,7 @@ public partial class AdbClient
     private void DisconnectQuietly(string serial)
     {
         try { RunHost("disconnect " + SafeSerial(serial), 5000); }
-        catch (Exception error) when (error is IOException or InvalidOperationException or TimeoutException) { }
+        catch (Exception error) when (error is IOException or InvalidOperationException or TimeoutException) { /* best-effort: the device may already be disconnected */ }
     }
 
     public void ConnectionLost(string? serial = null)

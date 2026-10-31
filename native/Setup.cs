@@ -20,8 +20,8 @@ public static class Tools
     private const long ManifestMax = 8L * 1024 * 1024, ArchiveMax = 64L * 1024 * 1024;
 
     public static string Home => Environment.GetEnvironmentVariable("USERPROFILE") is { Length: > 0 } home ? home : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    public static string Folder => Path.Combine(Home, ".nexus", "nexus-android", "tools");
-    public static string Scrcpy => Path.Combine(Folder, "scrcpy-server-v" + ScrcpyVersion);
+    public static string Folder => Path.Join(Home, ".nexus", "nexus-android", "tools");
+    public static string Scrcpy => Path.Join(Folder, "scrcpy-server-v" + ScrcpyVersion);
 
     /// <summary>adb downloaded by this tool earlier (tools\platform-tools-&lt;version&gt;), newest version first.</summary>
     public static string? Downloaded()
@@ -30,7 +30,7 @@ public static class Tools
         return Directory.EnumerateDirectories(Folder, "platform-tools*")
             .Select(d => (Dir: d, Version: VersionOf(Path.GetFileName(d))))
             .OrderByDescending(d => d.Version)
-            .Select(d => Path.Combine(d.Dir, "adb.exe")).FirstOrDefault(File.Exists);
+            .Select(d => Path.Join(d.Dir, "adb.exe")).FirstOrDefault(File.Exists);
     }
 
     private static Version VersionOf(string name) =>
@@ -47,9 +47,8 @@ public static class Tools
             var revision = package.Elements().FirstOrDefault(e => e.Name.LocalName == "revision");
             string Part(string name) => revision?.Elements().FirstOrDefault(e => e.Name.LocalName == name)?.Value.Trim() is { Length: > 0 } v ? v : "0";
             var version = revision is null ? "0" : $"{Part("major")}.{Part("minor")}.{Part("micro")}";
-            foreach (var archive in package.Descendants().Where(e => e.Name.LocalName == "archive"))
+            foreach (var archive in package.Descendants().Where(e => e.Name.LocalName == "archive" && e.Elements().FirstOrDefault(h => h.Name.LocalName == "host-os")?.Value.Trim() == "windows"))
             {
-                if (archive.Elements().FirstOrDefault(e => e.Name.LocalName == "host-os")?.Value.Trim() != "windows") continue;
                 var complete = archive.Elements().FirstOrDefault(e => e.Name.LocalName == "complete");
                 string? Field(string name) => complete?.Elements().FirstOrDefault(e => e.Name.LocalName == name)?.Value.Trim();
                 var (url, sha1, size) = (Field("url"), Field("checksum"), Field("size"));
@@ -89,30 +88,30 @@ public static class Tools
         try { (url, sha1, size, version) = Latest(Encoding.UTF8.GetString(Get(http, Manifest, ManifestMax))); }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidDataException or System.Xml.XmlException or TaskCanceledException)
         { throw new IOException($"adb not found and the automatic download failed ({e.Message}): install Google's Platform Tools (winget install Google.PlatformTools), then run setup again."); }
-        var target = Path.Combine(Folder, "platform-tools-" + version);
-        if (File.Exists(Path.Combine(target, "adb.exe"))) return Path.Combine(target, "adb.exe");
+        var target = Path.Join(Folder, "platform-tools-" + version);
+        if (File.Exists(Path.Join(target, "adb.exe"))) return Path.Join(target, "adb.exe");
         say($"Downloading Google's Android Platform Tools {version} ({size / 1_000_000} MB) from {url} ...");
         var data = Get(http, url, ArchiveMax);
         if (data.LongLength != size || Convert.ToHexStringLower(SHA1.HashData(data)) != sha1)
             throw new IOException("The downloaded Platform Tools archive does not match the size and SHA-1 published by Google; it was rejected.");
-        var part = Path.Combine(Folder, $"platform-tools.{Environment.ProcessId}.part");
+        var part = Path.Join(Folder, $"platform-tools.{Environment.ProcessId}.part");
         try
         {
             if (Directory.Exists(part)) Directory.Delete(part, true);
             Directory.CreateDirectory(part);
             using (var archive = new ZipArchive(new MemoryStream(data)))
                 archive.ExtractToDirectory(part);  // rejects entries outside the folder
-            var inner = Path.Combine(part, "platform-tools");
-            if (!File.Exists(Path.Combine(inner, "adb.exe"))) throw new InvalidDataException("adb.exe missing from the archive");
-            if (!File.Exists(Path.Combine(target, "adb.exe")))
+            var inner = Path.Join(part, "platform-tools");
+            if (!File.Exists(Path.Join(inner, "adb.exe"))) throw new InvalidDataException("adb.exe missing from the archive");
+            if (!File.Exists(Path.Join(target, "adb.exe")))
             {
                 if (Directory.Exists(target)) Directory.Delete(target, true);
                 Directory.Move(inner, target);
             }
         }
-        finally { try { if (Directory.Exists(part)) Directory.Delete(part, true); } catch (IOException) { } }
+        finally { try { if (Directory.Exists(part)) Directory.Delete(part, true); } catch (IOException) { /* best-effort cleanup of the partial download */ } }
         say($"Platform Tools {version} installed in {target}.");
-        return Path.Combine(target, "adb.exe");
+        return Path.Join(target, "adb.exe");
     }
 
     /// <summary>Pinned scrcpy server (Genymobile, Apache 2.0): kept only when its SHA-256 is the published one.</summary>
@@ -156,7 +155,7 @@ public static class Register
     public static string Home { get; set; } = Tools.Home;  // settable for tests
     public static string Executable { get; set; } = Environment.ProcessPath ?? "NexusAndroid.exe";
     /// <summary>Antigravity plugin files (plugin.json, logo, skill), shipped next to the executable.</summary>
-    public static string PluginSource { get; set; } = Path.Combine(AppContext.BaseDirectory, "plugin");
+    public static string PluginSource { get; set; } = Path.Join(AppContext.BaseDirectory, "plugin");
 
     public static JsonObject Entry() => new() { ["command"] = Executable, ["args"] = new JsonArray("--mcp") };
 
@@ -181,9 +180,9 @@ public static class Register
     private static void Backup(string path)
     {
         if (!File.Exists(path)) return;
-        var folder = Path.Combine(Home, ".nexus", "nexus-android", "backups");
+        var folder = Path.Join(Home, ".nexus", "nexus-android", "backups");
         Directory.CreateDirectory(folder);
-        File.Copy(path, Path.Combine(folder, $"{Path.GetFileName(Path.GetDirectoryName(path))}-{Path.GetFileName(path)}-{DateTime.Now:yyyyMMdd-HHmmss}"), true);
+        File.Copy(path, Path.Join(folder, $"{Path.GetFileName(Path.GetDirectoryName(path))}-{Path.GetFileName(path)}-{DateTime.Now:yyyyMMdd-HHmmss}"), true);
     }
 
     private static void Write(string path, string text)
@@ -218,7 +217,7 @@ public static class Register
     {
         foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
             foreach (var ext in new[] { ".exe", ".cmd", "" })
-                try { var candidate = Path.Combine(dir.Trim(), name + ext); if (File.Exists(candidate)) return candidate; } catch (ArgumentException) { }
+                try { var candidate = Path.Join(dir.Trim(), name + ext); if (File.Exists(candidate)) return candidate; } catch (ArgumentException) { /* PATH entry with invalid characters: skip it */ }
         return null;
     }
 
@@ -226,7 +225,7 @@ public static class Register
     {
         try
         {
-            return ReadJson(Path.Combine(Home, ".claude", "settings.json"))["enabledPlugins"] is JsonObject enabled
+            return ReadJson(Path.Join(Home, ".claude", "settings.json"))["enabledPlugins"] is JsonObject enabled
                 && enabled.Any(p => p.Key.Split('@')[0] == Name && p.Value is JsonValue v && v.TryGetValue<bool>(out var on) && on);
         }
         catch (Exception e) when (e is IOException or JsonException or InvalidDataException) { return false; }
@@ -235,7 +234,7 @@ public static class Register
     public static string? ClaudeCode()
     {
         if (ClaudePluginEnabled()) return Plugin;
-        var config = Path.Combine(Home, ".claude.json");
+        var config = Path.Join(Home, ".claude.json");
         var cli = OnPath("claude");
         if (cli is not null)
         {
@@ -264,18 +263,18 @@ public static class Register
 
     public static List<string> ClaudeDesktop()
     {
-        var roaming = Environment.GetEnvironmentVariable("APPDATA") is { Length: > 0 } r ? r : Path.Combine(Home, "AppData", "Roaming");
-        var local = Environment.GetEnvironmentVariable("LOCALAPPDATA") is { Length: > 0 } l ? l : Path.Combine(Home, "AppData", "Local");
+        var roaming = Environment.GetEnvironmentVariable("APPDATA") is { Length: > 0 } r ? r : Path.Join(Home, "AppData", "Roaming");
+        var local = Environment.GetEnvironmentVariable("LOCALAPPDATA") is { Length: > 0 } l ? l : Path.Join(Home, "AppData", "Local");
         // Classic install; Store (MSIX): former AppData redirected into the package, then %LOCALAPPDATA%\Claude-Data\<package>.
         // A folder Claude left keeps only a `.user-data-left.<package>` marker: skipped.
-        var folders = new List<string> { Path.Combine(roaming, "Claude") };
-        var packages = Path.Combine(local, "Packages");
+        var folders = new List<string> { Path.Join(roaming, "Claude") };
+        var packages = Path.Join(local, "Packages");
         if (Directory.Exists(packages))
-            folders.AddRange(Directory.EnumerateDirectories(packages, "*Claude_*").Select(p => Path.Combine(p, "LocalCache", "Roaming", "Claude")).Order(StringComparer.Ordinal));
-        var data = Path.Combine(local, "Claude-Data");
+            folders.AddRange(Directory.EnumerateDirectories(packages, "*Claude_*").Select(p => Path.Join(p, "LocalCache", "Roaming", "Claude")).Order(StringComparer.Ordinal));
+        var data = Path.Join(local, "Claude-Data");
         if (Directory.Exists(data)) folders.AddRange(Directory.EnumerateDirectories(data).Order(StringComparer.Ordinal));
         return folders.Where(f => Directory.Exists(f) && !Directory.EnumerateFiles(f, ".user-data-left.*").Any())
-            .Select(f => SetJsonServer(Path.Combine(f, "claude_desktop_config.json"), Entry())).ToList();
+            .Select(f => SetJsonServer(Path.Join(f, "claude_desktop_config.json"), Entry())).ToList();
     }
 
     private static readonly Regex TableHeader = new(@"^\s*\[(?<name>[^\[\]]+)\]\s*(#.*)?$", RegexOptions.Multiline);
@@ -314,9 +313,9 @@ public static class Register
 
     public static string? Codex()
     {
-        var folder = Path.Combine(Home, ".codex");
+        var folder = Path.Join(Home, ".codex");
         if (!Directory.Exists(folder) && OnPath("codex") is null) return null;
-        var config = Path.Combine(folder, "config.toml");
+        var config = Path.Join(folder, "config.toml");
         var text = File.Exists(config) ? File.ReadAllText(config, Encoding.UTF8).TrimStart('﻿').ReplaceLineEndings("\n") : "";
         // A table header never closed (`[broken`): the file is not TOML Codex can read; reported, never rewritten.
         if (text.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith('[') && !l.Contains(']')) is { } broken)
@@ -353,11 +352,11 @@ public static class Register
 
     public static string? Antigravity()
     {
-        var gemini = Path.Combine(Home, ".gemini");
-        if (!Directory.Exists(Path.Combine(gemini, "antigravity")) && !Directory.Exists(Path.Combine(gemini, "config"))) return null;
-        var root = Path.Combine(gemini, "config");
-        var target = Path.Combine(root, "plugins", Name);
-        var mcpFile = Path.Combine(target, "mcp_config.json");
+        var gemini = Path.Join(Home, ".gemini");
+        if (!Directory.Exists(Path.Join(gemini, "antigravity")) && !Directory.Exists(Path.Join(gemini, "config"))) return null;
+        var root = Path.Join(gemini, "config");
+        var target = Path.Join(root, "plugins", Name);
+        var mcpFile = Path.Join(target, "mcp_config.json");
         var current = File.Exists(mcpFile) ? ReadJson(mcpFile)["mcpServers"]?[Name] : null;
         if (File.Exists(mcpFile) && !Ours(current)) return "kept (a nexus-android plugin of yours already exists)";
         if (!Directory.Exists(PluginSource)) return $"failed: plugin files missing next to the executable ({PluginSource})";
@@ -377,11 +376,11 @@ public static class Register
             Write(mcpFile, new JsonObject { ["mcpServers"] = new JsonObject { [Name] = Entry() } }.ToJsonString(Indented) + "\n");
             changed = true;
         }
-        var global = Path.Combine(root, "mcp_config.json");  // old global entry of ours: duplicated tools with the plugin
+        var global = Path.Join(root, "mcp_config.json");  // old global entry of ours: duplicated tools with the plugin
         if (File.Exists(global))
         {
             var data = ReadJson(global);
-            if (data["mcpServers"] is JsonObject servers && servers.ContainsKey(Name) && Ours(servers[Name]))
+            if (data["mcpServers"] is JsonObject servers && servers.TryGetPropertyValue(Name, out var entry) && Ours(entry))
             {
                 Backup(global);
                 servers.Remove(Name);
@@ -389,7 +388,7 @@ public static class Register
             }
         }
         bool disabled;
-        try { disabled = ReadJson(Path.Combine(root, "config.json"))["plugins"]?[Name]?["enabled"] is JsonValue v && v.TryGetValue<bool>(out var on) && !on; }
+        try { disabled = ReadJson(Path.Join(root, "config.json"))["plugins"]?[Name]?["enabled"] is JsonValue v && v.TryGetValue<bool>(out var on) && !on; }
         catch (Exception e) when (e is IOException or JsonException or InvalidDataException or InvalidOperationException) { disabled = false; }
         return (changed ? "plugin" : "plugin (already installed)") + (disabled ? ", turned off in Antigravity's settings" : "");
     }

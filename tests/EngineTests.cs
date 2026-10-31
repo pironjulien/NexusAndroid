@@ -96,20 +96,20 @@ public sealed class SelfTests
 /// the supervisor runs (health, token, sessions). Ephemeral port, synthetic token, no phone query or gesture.</summary>
 public sealed class ExecutableTests
 {
-    private static readonly string Exe = Path.Combine(AppContext.BaseDirectory, "NexusAndroid.exe");
+    private static readonly string Exe = Path.Join(AppContext.BaseDirectory, "NexusAndroid.exe");
     private static readonly string[] Expected = ["act", "apps", "capture", "checkup", "clipboard", "draft", "files", "functions", "info",
         "launch", "logs", "look", "map", "messages", "notifications", "phone", "settings", "web"];
 
     private static string TokenFile(string token)
     {
-        var path = Path.Combine(TestPaths.Root, "token-" + Guid.NewGuid().ToString("N") + ".txt");
+        var path = Path.Join(TestPaths.Root, "token-" + Guid.NewGuid().ToString("N") + ".txt");
         File.WriteAllText(path, token);
         return path;
     }
 
     private static int FreePort()
     {
-        var allocation = new TcpListener(IPAddress.Loopback, 0);
+        using var allocation = new TcpListener(IPAddress.Loopback, 0);
         allocation.Start();
         var port = ((IPEndPoint)allocation.LocalEndpoint).Port;
         allocation.Stop();
@@ -139,9 +139,9 @@ public sealed class ExecutableTests
     [InlineData(false)]
     public async Task DaemonTokenFileWinsOverTheVariable(bool declaredFile)
     {
-        var home = Path.Combine(TestPaths.Root, "home-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Path.Combine(home, ".nexus"));
-        File.WriteAllText(Path.Combine(home, ".nexus", "mcp-token.txt"), "shared-file-token\n");
+        var home = Path.Join(TestPaths.Root, "home-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Join(home, ".nexus"));
+        File.WriteAllText(Path.Join(home, ".nexus", "mcp-token.txt"), "shared-file-token\n");
         var port = FreePort();
         using var process = Start(s =>
         {
@@ -172,7 +172,7 @@ public sealed class ExecutableTests
         start.Environment["NEXUS_ANDROID_KEEP_AWAKE"] = "0";
         start.Environment["NEXUS_JOURNAL"] = "0";
         start.Environment["NEXUS_ANDROID_ADB_DOWNLOAD"] = "0";  // never a download from a test
-        start.Environment["NEXUS_ANDROID_RESTART_REQUEST"] = Path.Combine(TestPaths.Root, "restart-" + Guid.NewGuid().ToString("N") + ".request");
+        start.Environment["NEXUS_ANDROID_RESTART_REQUEST"] = Path.Join(TestPaths.Root, "restart-" + Guid.NewGuid().ToString("N") + ".request");
         configure?.Invoke(start);
         return Process.Start(start)!;
     }
@@ -217,11 +217,11 @@ public sealed class ExecutableTests
     [Fact]
     public async Task HttpDaemonStopsWhenIdleOnItsRestartRequest()
     {
-        var allocation = new TcpListener(IPAddress.Loopback, 0);
+        using var allocation = new TcpListener(IPAddress.Loopback, 0);
         allocation.Start();
         var port = ((IPEndPoint)allocation.LocalEndpoint).Port;
         allocation.Stop();
-        var request = Path.Combine(TestPaths.Root, "restart-own-" + Guid.NewGuid().ToString("N") + ".request");
+        var request = Path.Join(TestPaths.Root, "restart-own-" + Guid.NewGuid().ToString("N") + ".request");
         using var process = Start(s => { s.Environment["NEXUS_MCP_TOKEN_FILE"] = TokenFile("synthetic-restart-token"); s.Environment["NEXUS_ANDROID_RESTART_REQUEST"] = request; }, "--http", port.ToString());
         try
         {
@@ -246,7 +246,7 @@ public sealed class ExecutableTests
     [Fact]
     public async Task HttpDaemonChecksTokenSessionsAndSchemas()
     {
-        var allocation = new TcpListener(IPAddress.Loopback, 0);
+        using var allocation = new TcpListener(IPAddress.Loopback, 0);
         allocation.Start();
         var port = ((IPEndPoint)allocation.LocalEndpoint).Port;
         allocation.Stop();

@@ -241,8 +241,8 @@ Test("Forced foreign phone cannot contaminate stored boot state", () =>
 });
 Test("Real state writer preserves fields and fails closed on damaged state", () =>
 {
-    var folder = Path.Combine(TestPaths.Root, "connection-tests", "state-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
-    var path = Path.Combine(folder, "wifi.json");
+    var folder = Path.Join(TestPaths.Root, "connection-tests", "state-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
+    var path = Path.Join(folder, "wifi.json");
     try
     {
         File.WriteAllText(path, "{\"serialno\":\"MY-HARDWARE\",\"usb\":\"MY-USB\",\"custom\":\"preserved\"}");
@@ -269,13 +269,13 @@ Test("Lost warm proof reconnects before the operation without replaying input",(
 }
 
 
-sealed class FakeAdb(string? statePath = null) : AdbClient("never-run-real-adb.exe", statePath ?? Path.Combine(TestPaths.Root, "connection-tests", "unused-fixture-state.json"))
+sealed class FakeAdb(string? statePath = null) : AdbClient("never-run-real-adb.exe", statePath ?? Path.Join(TestPaths.Root, "connection-tests", "unused-fixture-state.json"))
 {
     public List<DeviceInfo> Devices = [];
-    public Dictionary<string, string> Ids = [], ShellOutputs = [];
-    public List<string> Commands = [], Scans = [];
-    public List<string?> SelectionDuringHost = [];
-    public HashSet<string> Answers = [], ThrowConnect = [];
+    public readonly Dictionary<string, string> Ids = [], ShellOutputs = [];
+    public readonly List<string> Commands = [], Scans = [];
+    public readonly List<string?> SelectionDuringHost = [];
+    public readonly HashSet<string> Answers = [], ThrowConnect = [];
     public JsonObject State = new();
     public string? Forced;
     public string Mdns = "";
@@ -302,11 +302,11 @@ sealed class FakeAdb(string? statePath = null) : AdbClient("never-run-real-adb.e
         Commands.Add(arguments); SelectionDuringHost.Add(SelectedSerial);
         if (arguments == "devices -l") return ("List of devices attached\n" + string.Join('\n', Devices.Select(d => $"{d.Serial}\t{d.State} model:Fixture_Phone")) + "\n", "");
         if (arguments == "mdns services") return (Mdns, "");
-        if (arguments == "reconnect offline") { if (RestoreOffline) Devices = Devices.Select(d => d.State == "offline" ? d with { State = "device" } : d).ToList(); return ("reconnecting", ""); }
+        if (arguments == "reconnect offline") { if (RestoreOffline) {Devices = Devices.Select(d => d.State == "offline" ? d with { State = "device" } : d).ToList();} return ("reconnecting", ""); }
         if (arguments.StartsWith("connect ", StringComparison.Ordinal))
         {
             var address = arguments[8..]; if (ThrowConnect.Contains(address)) throw new TimeoutException("fixture stale port");
-            if (Answers.Contains(address)) { if (Devices.All(d => d.Serial != address)) Devices.Add(new(address, "device", "Fixture", false)); return ("connected to " + address, ""); }
+            if (Answers.Contains(address)) { if (Devices.All(d => d.Serial != address)) {Devices.Add(new(address, "device", "Fixture", false));} return ("connected to " + address, ""); }
             return ("failed to connect", "");
         }
         if (arguments.StartsWith("disconnect ", StringComparison.Ordinal)) { Devices.RemoveAll(d => d.Serial == arguments[11..]); return ("disconnected", ""); }

@@ -114,9 +114,9 @@ public static class ScreenParser
                 }
             }
         }
-        catch
+        catch (Exception e) when (e is System.Xml.XmlException or FormatException or OverflowException)
         {
-            // Fallback: return empty on unparseable xml
+            // Fallback: return empty on unparseable xml or bounds
         }
 
         var context=NativeSafety.HasCodeKeyword(string.Join(' ',elements.Select(e=>e.RawText+" "+e.RawDescription)));

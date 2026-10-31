@@ -8,7 +8,7 @@ namespace NexusAndroid.Tests;
 public sealed class InstallerTokenTests
 {
     private static string InstallerSource([CallerFilePath] string source = "") =>
-        File.ReadAllText(Path.Combine(Path.GetDirectoryName(source)!, "..", "get.ps1"));
+        File.ReadAllText(Path.Join(Path.GetDirectoryName(source)!, "..", "get.ps1"));
 
     private static string TokenFunction()
     {
@@ -21,19 +21,19 @@ public sealed class InstallerTokenTests
     [Fact]
     public async Task WindowsPowerShellPrefersItsOwnStandardModulesOverInheritedCoreModules()
     {
-        var home = Path.Combine(TestPaths.Root, "install-modules-" + Guid.NewGuid().ToString("N"));
+        var home = Path.Join(TestPaths.Root, "install-modules-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(home);
-        var script = Path.Combine(home, "module-fixture.ps1");
+        var script = Path.Join(home, "module-fixture.ps1");
         var installer = InstallerSource();
         var prefix = installer[..installer.IndexOf("$Repository =", StringComparison.Ordinal)];
         File.WriteAllText(script, prefix + "\n(Get-FileHash -LiteralPath $env:NEXUS_TEST_READY -Algorithm SHA256).Hash | Set-Content -LiteralPath $env:NEXUS_TEST_RESULT\n");
-        var input = Path.Combine(home, "input.txt");
+        var input = Path.Join(home, "input.txt");
         File.WriteAllText(input, "synthetic checksum input");
-        var result = Path.Combine(home, "result.txt");
-        var desktopModules = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "Modules");
-        var coreModules = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell", "7", "Modules");
+        var result = Path.Join(home, "result.txt");
+        var desktopModules = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "Modules");
+        var coreModules = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell", "7", "Modules");
         Assert.True(Directory.Exists(coreModules), "PowerShell 7 is required for the inherited-module regression fixture.");
-        var start = new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe"))
+        var start = new ProcessStartInfo(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe"))
         { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
         foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script }) start.ArgumentList.Add(arg);
         start.Environment["PSModulePath"] = coreModules + ";" + desktopModules;
@@ -50,14 +50,14 @@ public sealed class InstallerTokenTests
 
     private static Process Start(string script, string home, string ready, string go, string result)
     {
-        var executable = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
+        var executable = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script }) start.ArgumentList.Add(arg);
         start.Environment["NEXUS_TEST_HOME"] = home;
         start.Environment["NEXUS_TEST_READY"] = ready;
         start.Environment["NEXUS_TEST_GO"] = go;
         start.Environment["NEXUS_TEST_RESULT"] = result;
-        start.Environment["NEXUS_MCP_TOKEN_FILE"] = Path.Combine(home, ".nexus", "mcp-token.txt");
+        start.Environment["NEXUS_MCP_TOKEN_FILE"] = Path.Join(home, ".nexus", "mcp-token.txt");
         return Process.Start(start)!;
     }
 
@@ -75,13 +75,13 @@ public sealed class InstallerTokenTests
     [InlineData("preexisting-shared-token", true)]
     public async Task SimultaneousInstallersKeepOneSharedToken(string? existing, bool daemonReading)
     {
-        var home = Path.Combine(TestPaths.Root, "install-token-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Path.Combine(home, ".nexus"));
-        var file = Path.Combine(home, ".nexus", "mcp-token.txt");
+        var home = Path.Join(TestPaths.Root, "install-token-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Join(home, ".nexus"));
+        var file = Path.Join(home, ".nexus", "mcp-token.txt");
         if (existing is not null) File.WriteAllText(file, existing);
         // A daemon or caller may read the existing token while another installer resolves that same path.
         using var daemonRead = daemonReading ? File.Open(file, FileMode.Open, FileAccess.Read, FileShare.Read) : null;
-        var script = Path.Combine(home, "token-fixture.ps1");
+        var script = Path.Join(home, "token-fixture.ps1");
         File.WriteAllText(script, """
             $ErrorActionPreference = 'Stop'
             $Sandbox = $true
@@ -96,9 +96,9 @@ public sealed class InstallerTokenTests
             $file = Get-SharedToken $false
             [IO.File]::WriteAllText($env:NEXUS_TEST_RESULT, [IO.File]::ReadAllText($file))
             """);
-        var go = Path.Combine(home, "go");
-        var ready = new[] { Path.Combine(home, "ready-1"), Path.Combine(home, "ready-2") };
-        var results = new[] { Path.Combine(home, "result-1"), Path.Combine(home, "result-2") };
+        var go = Path.Join(home, "go");
+        var ready = new[] { Path.Join(home, "ready-1"), Path.Join(home, "ready-2") };
+        var results = new[] { Path.Join(home, "result-1"), Path.Join(home, "result-2") };
         using var first = Start(script, home, ready[0], go, results[0]);
         using var second = Start(script, home, ready[1], go, results[1]);
         try
@@ -117,7 +117,7 @@ public sealed class InstallerTokenTests
         }
         finally
         {
-            foreach (var process in new[] { first, second }) if (!process.HasExited) process.Kill(true);
+            foreach (var process in new[] { first, second }.Where(p => !p.HasExited)) process.Kill(true);
         }
     }
 }
