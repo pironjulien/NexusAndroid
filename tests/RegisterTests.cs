@@ -153,7 +153,7 @@ public sealed class RegisterTests : IDisposable
         var results = Register.DeclareAll();
         Assert.Equal(Register.Plugin, results["Claude Code"]);
         Assert.Equal(Register.Kept, results["Codex"]);
-        Assert.StartsWith("kept", results["Antigravity"]);
+        Assert.StartsWith("plugin", results["Antigravity"]);  // the shared daemon route is kept, the guide refreshed
         Assert.Equal(toml, ReadText(At(".codex", "config.toml")));
         Assert.Equal(daemon, ReadText(Path.Join(plugin, "mcp_config.json")));
     }
