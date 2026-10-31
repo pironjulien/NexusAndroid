@@ -17,7 +17,7 @@ if (-not $SkipTests) {
     & (Join-Path $project 'test.ps1')
     if ($LASTEXITCODE) { throw 'Tests failed: nothing installed.' }
 }
-$sources = @(Get-ChildItem -LiteralPath (Join-Path $project 'native'), (Join-Path $project 'plugin') -File -Recurse)
+$sources = @(Get-ChildItem -LiteralPath (Join-Path $project 'native'), (Join-Path $project 'phone'), (Join-Path $project 'plugin') -File -Recurse)
 $sourceHash = ($sources | Sort-Object FullName | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }) -join ''
 $revision = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($sourceHash))).Substring(0, 16).ToLowerInvariant()
 $target = Join-Path $state "native\$revision"

@@ -23,7 +23,7 @@ public sealed partial class NativeEngine
     private double imageScale{get=>Current.Scale;set=>Current.Scale=value;}
     private readonly string stateRoot;
     private static readonly HashSet<string> Gestures=["tap","long_press","double_tap","type","clear","key","swipe","scroll","wait","open_url","zoom","drag"];
-    public NativeEngine(AdbClient client,IAndroidQuery? queryClient=null,string? localState=null,Func<IPhoneControl>? controller=null,Func<string,int,NativeScreen,IVideoRecorder>? videoRecorder=null){adb=client;query=queryClient??new AndroidQuery(client);control=controller??(()=>new ScrcpyChannel(adb));recorder=videoRecorder??((remote,seconds,screen)=>new AdbVideoRecorder(adb,remote,seconds,screen.Width,screen.Height));stateRoot=localState??Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"NexusAndroid","state");phoneLockPath=localState is null?Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".nexus","android.lock"):Path.Join(localState,"android.lock");awakePath=localState is null?Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".nexus","nexus-android","awake.json"):Path.Join(localState,"awake.json");Directory.CreateDirectory(stateRoot);}
+    public NativeEngine(AdbClient client,IAndroidQuery? queryClient=null,string? localState=null,Func<IPhoneControl>? controller=null,Func<string,int,NativeScreen,IVideoRecorder>? videoRecorder=null){adb=client;query=queryClient??new AndroidQuery(client);control=controller??(()=>new PhoneControl(adb,query));recorder=videoRecorder??((remote,seconds,screen)=>new AdbVideoRecorder(adb,remote,seconds,screen.Width,screen.Height));stateRoot=localState??Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"NexusAndroid","state");phoneLockPath=localState is null?Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".nexus","android.lock"):Path.Join(localState,"android.lock");awakePath=localState is null?Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".nexus","nexus-android","awake.json"):Path.Join(localState,"awake.json");Directory.CreateDirectory(stateRoot);}
     private static string Str(JsonObject a,string key,string fallback="")=>a[key]?.ToString()??fallback;
     private static bool Bool(JsonObject a,string key)=>a[key]?.GetValue<bool>()==true;
     private static int Num(JsonObject a,string key,int fallback)=>a[key] is null?fallback:a[key]!.GetValue<int>();
@@ -186,7 +186,7 @@ public sealed partial class NativeEngine
         if(steps is null||steps.Count==0)throw new ArgumentException("steps required");
         var templates=steps.DeepClone().AsArray();var parameters=args["params"]?.AsObject();foreach(var step in steps.OfType<JsonObject>().Where(s=>s["text"] is not null)){var text=Str(step,"text");var substitutions=Regex.Matches(text,@"\{\{(\w+)\}\}");if(substitutions.Count>0){if(Str(step,"do")=="type"&&Regex.Replace(text,@"\{\{\w+\}\}","").Trim().Length>0)throw new ArgumentException("Parameterized typed text must contain only parameters");foreach(Match parameter in substitutions){if(parameters?[parameter.Groups[1].Value] is null)throw new ArgumentException("Missing routine parameter: "+parameter.Groups[1].Value);text=text.Replace(parameter.Value,parameters[parameter.Groups[1].Value]!.ToString());}step["text"]=text;}}
         foreach(var node in steps){if(node is not JsonObject s||!Gestures.Contains(Str(s,"do")))throw new ArgumentException("Unknown gesture or missing do; no input sent");}
-        var reports=new List<string>();var savedSteps=new JsonArray();var allVerified=true;var routinePackage=Foreground(Read());var stepIndex=-1;
+        var reports=new List<string>();var savedSteps=new JsonArray();var allVerified=true;var routinePackage=Foreground(Read());var stepIndex=-1;var toastMark=ToastMark();
         foreach(var node in steps)
         {
             stepIndex++;var stepBegan=System.Diagnostics.Stopwatch.StartNew();var step=node!.AsObject();var action=Str(step,"do");var screen=Read();if(action is not ("wait" or "open_url")){WaitForOwner(screen);screen=LiftTrustedLock(screen);if(!Awake(screen)&&!Locked(screen)){Shell("input","keyevent","KEYCODE_WAKEUP");lastInput=DateTimeOffset.UtcNow;screen=Read();}}
@@ -246,7 +246,22 @@ public sealed partial class NativeEngine
             catch(Exception ex)when(NativeSafety.Recoverable(ex)){/* Step boundary: any failure is reported as ✗ and stops the batch, never crashes the host. */reports.Add("✗ "+action+": "+ex.Message);allVerified=false;break;}
         }
         if(Str(args,"remember") is {Length:>0} remember && allVerified){foreach(var saved in savedSteps.OfType<JsonObject>()){saved.Remove("confirm");saved.Remove("accord");}File.WriteAllText(RoutinePath(remember),new JsonObject{["package"]=routinePackage,["saved"]=DateTimeOffset.Now.ToString("O"),["steps"]=savedSteps}.ToJsonString());reports.Add("Routine saved using stable targets; no authorizations stored");}
-        if(presenceWarning.Length>0){reports.Add("⚠ "+presenceWarning);presenceWarning="";}var view=Look(new JsonObject{["show"]=Str(args,"then","auto")});view["content"]!.AsArray().Insert(0,new JsonObject{["type"]="text",["text"]=NativeSafety.Mask(string.Join('\n',reports))});view["structuredContent"]=new JsonObject{["verified"]=allVerified,["reports"]=new JsonArray(reports.Select(v=>(JsonNode?)JsonValue.Create(NativeSafety.Mask(v))).ToArray())};return view;
+        if(presenceWarning.Length>0){reports.Add("⚠ "+presenceWarning);presenceWarning="";}var view=Look(new JsonObject{["show"]=Str(args,"then","auto")});var toasts=ToastsSince(toastMark);reports.AddRange(toasts.Select(t=>$"Toast {t.Package}: {t.Text}"));
+        view["content"]!.AsArray().Insert(0,new JsonObject{["type"]="text",["text"]=NativeSafety.Mask(string.Join('\n',reports))});view["structuredContent"]=new JsonObject{["verified"]=allVerified,["reports"]=new JsonArray(reports.Select(v=>(JsonNode?)JsonValue.Create(NativeSafety.Mask(v))).ToArray()),["toasts"]=new JsonArray(toasts.Select(t=>(JsonNode?)new JsonObject{["package"]=t.Package,["text"]=t.Text}).ToArray())};return view;
+    }
+    // Toasts shown during the gestures ("Copied", "Saved", "Network error"), read by the phone helper's accessibility link.
+    // Never decisive: an unavailable helper only leaves them out.
+    private long ToastMark()
+    {
+        try{return query.Toasts(0).Select(t=>long.TryParse(t.GetValueOrDefault("seq"),out var n)?n:0).DefaultIfEmpty(0).Max();}
+        catch(Exception e)when(e is IOException or System.Net.Sockets.SocketException or AggregateException or NotSupportedException){return -1;}
+    }
+    private List<(string Package,string Text)> ToastsSince(long mark)
+    {
+        if(mark<0)return [];List<Dictionary<string,string>> rows;
+        try{rows=query.Toasts(mark);}catch(Exception e)when(e is IOException or System.Net.Sockets.SocketException or AggregateException or NotSupportedException){return [];}
+        return rows.Select(r=>(Package:r.GetValueOrDefault("package")??"",Raw:r.GetValueOrDefault("text")??"")).Where(r=>!AndroidPolicy.IsProtectedPackage(r.Package)&&r.Raw.Trim().Length>0)
+            .Select(r=>{var text=NativeSafety.Mask(NativeSafety.MaskCodes(r.Raw,NativeSafety.HasCodeKeyword(r.Raw))).Replace('\n',' ').Replace('\r',' ');return(r.Package.Length>0?r.Package:"?",text.Length>200?text[..200]:text);}).Distinct().ToList();
     }
     private string RoutinePath(string name){if(!Regex.IsMatch(name,@"^[\w-]{1,80}$"))throw new ArgumentException("Invalid routine name");return Path.Join(stateRoot,"routine-"+name+".json");}
     private static readonly HashSet<string> NavigationKeyCodes=["3","4","19","20","21","22","24","25","61","82","111","187","224"];

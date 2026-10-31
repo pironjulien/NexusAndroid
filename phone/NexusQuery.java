@@ -8,8 +8,12 @@
 // Joint par adb forward tcp:0 localabstract:<socket>. Le socket porte le jeton aléatoire tiré par le PC à chaque
 // lancement (nom imprévisible) et le serveur le renvoie en tête de chaque réponse : le PC refuse tout autre serveur.
 // Garde-fous : seules les connexions de l'utilisateur shell (adbd) ou root sont servies (identité donnée par le noyau,
-// SO_PEERCRED : une application du téléphone ne peut pas l'avoir) ; seule la lecture (`query`) est acceptée ; arrêt
-// après le délai d'inactivité.
+// SO_PEERCRED : une application du téléphone ne peut pas l'avoir) ; seule la lecture (`query`) est acceptée, plus le
+// presse-papiers (`clip`) ; arrêt après le délai d'inactivité.
+//
+// Presse-papiers (`clip get`, `clip set <texte>`) : posé sous l'identité shell avec l'extra que SystemUI reconnaît pour
+// cette source (SUPPRESS_CLIPBOARD_OVERLAY) : ni aperçu flottant (Android 13+) ni toast « Copié » (One UI) quand le PC
+// colle un texte puis rend l'ancien. Le geste de collage reste au PC (KEYCODE_PASTE), comme ses autres gestes.
 //
 // Lecteur d'écran (requête `screen`) : une seule connexion UiAutomation, ouverte à la première lecture et gardée
 // (`uiautomator dump` en ouvre une à chaque commande, puis attend une seconde de calme ; screencap s'y ajoute). Android
@@ -17,7 +21,8 @@
 // autres processus), il la rend sur demande (`release`, avant tout repli vers `uiautomator dump`) et seul après
 // UI_IDLE_MS sans lecture d'écran, pour laisser la place aux autres outils. Lecture seule : ni geste, ni action
 // globale, ni saisie ; les services d'accessibilité de l'utilisateur ne sont pas suspendus
-// (FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES).
+// (FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES). Tant qu'elle est ouverte, les toasts annoncés par Android sont gardés
+// (TOAST_KEEP derniers, TOAST_KEEP_MS au plus) : `toasts [--after n]` rend ceux venus après le numéro n.
 //
 // Protocole (entiers sur 4 octets, gros-boutiens ; textes en UTF-8 précédés de leur longueur, -1 pour NULL) :
 //   PC → téléphone : "NXQ2", nombre de requêtes, puis pour chacune : nombre d'arguments, arguments
@@ -25,6 +30,8 @@
 //     0, nombre de colonnes, noms des colonnes, nombre de lignes, valeurs (ligne par ligne)   lecture réussie
 //     1, message                                                                             erreur
 //     2, taille, octets                                                                      lecture d'écran
+//   `clip get` rend la colonne text (aucune ligne : vide ou pas du texte) ; `toasts` les colonnes seq, package, text,
+//   age_ms (âge en millisecondes à l'horloge du téléphone).
 //   Lecture d'écran (screen [--image none|scaled|full] [--max côté] [--format jpeg|lossless] [--quality q] [--quiet ms]),
 //   dans les octets :
 //     état (sortie de STATUS_SH), rotation, largeur, hauteur de l'affichage 0,
@@ -35,7 +42,9 @@
 //             Android 11, PNG avant ; --quality est alors l'effort de compression) ; 1, message ; 2 (non demandée)
 
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.app.Notification;
 import android.app.UiAutomation;
+import android.content.ClipData;
 import android.graphics.Bitmap;
 import android.graphics.Point;
 import android.graphics.Rect;
@@ -44,7 +53,9 @@ import android.os.Build;
 import android.net.LocalSocket;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.os.PersistableBundle;
 import android.view.Display;
+import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
 import java.io.ByteArrayOutputStream;
@@ -56,6 +67,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -69,7 +81,7 @@ public final class NexusQuery {
     private static final byte[] MAGIC = "NXQ2".getBytes(StandardCharsets.US_ASCII);
     private static final int MAX_QUERIES = 512;
     private static final int MAX_ARGS = 32;
-    private static final int MAX_ARG_BYTES = 64 * 1024;
+    private static final int MAX_ARG_BYTES = 256 * 1024;  // texte du presse-papiers compris
     private static final long QUERY_WAIT_MS = 8_000;  // sous les 10 s du PC : un fournisseur figé rend une erreur, pas une coupure
     private static final int SHELL_UID = 2000;
     private static final int USER_SYSTEM = 0;
@@ -96,6 +108,16 @@ public final class NexusQuery {
     private static HandlerThread uiThread;
     private static volatile UiAutomation automation;
     private static volatile long lastScreen;
+
+    // Toasts vus par la connexion UiAutomation : numéro, heure, paquet, texte.
+    private static final int TOAST_KEEP = 32;
+    private static final long TOAST_KEEP_MS = 120_000;
+    private static final ArrayDeque<Object[]> TOASTS = new ArrayDeque<>();
+    private static long toastSeq;
+
+    // Presse-papiers (IClipboard, comme le serveur de scrcpy) ; extra lu par SystemUI pour une source shell.
+    private static final String SUPPRESS_OVERLAY = "com.android.systemui.SUPPRESS_CLIPBOARD_OVERLAY";
+    private static Object clipboard;
 
     // API cachées, résolues une fois au démarrage (mêmes appels que com.android.commands.content.Content).
     private static Object activityManager;
@@ -316,8 +338,14 @@ public final class NexusQuery {
             release();
             return empty();
         }
+        if ("toasts".equals(argv[0])) {
+            return toasts(argv);
+        }
+        if ("clip".equals(argv[0])) {
+            return clip(argv);
+        }
         if (!"query".equals(argv[0])) { // lecture seule : ni insert, ni update, ni delete, ni call
-            return failure("Error: only `query`, `screen` and `release` are served");
+            return failure("Error: only `query`, `screen`, `toasts`, `clip` and `release` are served");
         }
         String uri = null, where = null, sort = null;
         String[] projection = null;
@@ -448,6 +476,7 @@ public final class NexusQuery {
             // Déjà prise (autre outil : Appium, uiautomator2, `uiautomator dump` en cours) : message d'Android.
             throw new IllegalStateException(String.valueOf(e.getCause()));
         }
+        ua.setOnAccessibilityEventListener(NexusQuery::observe);
         AccessibilityServiceInfo info = ua.getServiceInfo();
         if (info != null) {
             info.flags |= FLAG_INCLUDE_NOT_IMPORTANT_VIEWS;
@@ -470,6 +499,166 @@ public final class NexusQuery {
             }
             automation = null;
         }
+    }
+
+    /** Écouteur du fil d'accessibilité : une erreur ici arrêterait le serveur, elle ne fait que perdre ce toast. */
+    private static void observe(AccessibilityEvent event) {
+        try {
+            keepToast(event);
+        } catch (Throwable e) {
+            // événement illisible : ignoré
+        }
+    }
+
+    /** Un toast annoncé (TYPE_NOTIFICATION_STATE_CHANGED sans Notification attachée), gardé pour `toasts`. */
+    private static void keepToast(AccessibilityEvent event) {
+        if (event.getEventType() != AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED
+                || event.getParcelableData() instanceof Notification) {
+            return;
+        }
+        StringBuilder text = new StringBuilder();
+        for (CharSequence part : event.getText()) {
+            if (part != null && part.length() > 0) {
+                text.append(text.length() > 0 ? " " : "").append(part);
+            }
+        }
+        if (text.length() == 0) {
+            return;
+        }
+        CharSequence pkg = event.getPackageName();
+        synchronized (TOASTS) {
+            TOASTS.addLast(new Object[] {++toastSeq, System.currentTimeMillis(), pkg == null ? "" : pkg.toString(),
+                    text.toString()});
+            while (TOASTS.size() > TOAST_KEEP) {
+                TOASTS.removeFirst();
+            }
+        }
+    }
+
+    /** Toasts venus après --after (tous sans) ; ouvre la connexion au besoin pour écouter les suivants. */
+    private static byte[] toasts(String[] argv) {
+        long after = 0;
+        if (argv.length == 3 && "--after".equals(argv[1])) {
+            try {
+                after = Long.parseLong(argv[2]);
+            } catch (NumberFormatException e) {
+                return failure("Error: bad number for --after");
+            }
+        } else if (argv.length != 1) {
+            return failure("Error: toasts [--after n]");
+        }
+        synchronized (SCREEN_LOCK) {
+            try {
+                connect();
+            } catch (Throwable e) {
+                return failure("Error: toasts unavailable (" + e + ")");
+            }
+            lastScreen = System.currentTimeMillis();
+        }
+        List<String[]> rows = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        synchronized (TOASTS) {
+            TOASTS.removeIf(t -> now - (long) t[1] > TOAST_KEEP_MS);
+            for (Object[] t : TOASTS) {
+                if ((long) t[0] > after) {
+                    rows.add(new String[] {String.valueOf(t[0]), (String) t[2], (String) t[3],
+                            String.valueOf(now - (long) t[1])});
+                }
+            }
+        }
+        return table(new String[] {"seq", "package", "text", "age_ms"}, rows);
+    }
+
+    private static byte[] table(String[] names, List<String[]> rows) {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        try (DataOutputStream out = new DataOutputStream(buffer)) {
+            out.writeInt(0);
+            out.writeInt(names.length);
+            for (String n : names) {
+                text(out, n);
+            }
+            out.writeInt(rows.size());
+            for (String[] row : rows) {
+                for (String value : row) {
+                    text(out, value);
+                }
+            }
+        } catch (IOException e) {
+            // tampon en mémoire : n'arrive pas
+        }
+        return buffer.toByteArray();
+    }
+
+    // ---------------------------------------------------------------- presse-papiers
+
+    private static byte[] clip(String[] argv) {
+        try {
+            if (argv.length == 2 && "get".equals(argv[1])) {
+                ClipData clip = (ClipData) clipboardCall("getPrimaryClip", null);
+                CharSequence value = clip == null || clip.getItemCount() == 0 ? null : clip.getItemAt(0).getText();
+                List<String[]> rows = new ArrayList<>();
+                if (value != null) {
+                    rows.add(new String[] {value.toString()});
+                }
+                return table(new String[] {"text"}, rows);
+            }
+            if (argv.length == 3 && "set".equals(argv[1])) {
+                ClipData clip = ClipData.newPlainText(null, argv[2]);
+                PersistableBundle extras = new PersistableBundle();
+                extras.putBoolean(SUPPRESS_OVERLAY, true);
+                clip.getDescription().setExtras(extras);
+                clipboardCall("setPrimaryClip", clip);
+                return empty();
+            }
+            return failure("Error: clip get | clip set <text>");
+        } catch (InvocationTargetException e) {
+            return failure("Error: clipboard (" + e.getCause() + ")");
+        } catch (Throwable e) {
+            return failure("Error: clipboard (" + e + ")");
+        }
+    }
+
+    /**
+     * Appel d'IClipboard quelle que soit sa forme (selon la version : paquet, attribution, utilisateur, écran) : le
+     * presse-papiers, puis le paquet appelant, null pour l'attribution, 0 pour l'utilisateur et l'écran par défaut.
+     */
+    private static synchronized Object clipboardCall(String name, ClipData clip) throws Exception {
+        if (clipboard == null) {
+            Object service = Class.forName("android.os.ServiceManager").getMethod("getService", String.class)
+                    .invoke(null, "clipboard");
+            clipboard = Class.forName("android.content.IClipboard$Stub")
+                    .getMethod("asInterface", Class.forName("android.os.IBinder")).invoke(null, service);
+        }
+        Method best = null;
+        for (Method m : clipboard.getClass().getMethods()) {
+            if (!m.getName().equals(name)) {
+                continue;
+            }
+            boolean usable = true;
+            for (Class<?> p : m.getParameterTypes()) {
+                usable &= p == ClipData.class || p == String.class || p == int.class;
+            }
+            if (usable && (best == null || m.getParameterCount() > best.getParameterCount())) {
+                best = m;
+            }
+        }
+        if (best == null) {
+            throw new NoSuchMethodException("IClipboard." + name);
+        }
+        Class<?>[] types = best.getParameterTypes();
+        Object[] values = new Object[types.length];
+        boolean packageGiven = false;
+        for (int i = 0; i < types.length; i++) {
+            if (types[i] == ClipData.class) {
+                values[i] = clip;
+            } else if (types[i] == String.class) {
+                values[i] = packageGiven ? null : callingPackage;
+                packageGiven = true;
+            } else {
+                values[i] = USER_SYSTEM;
+            }
+        }
+        return best.invoke(clipboard, values);
     }
 
     private static byte[] screen(String[] argv) {

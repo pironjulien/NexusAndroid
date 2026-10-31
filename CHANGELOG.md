@@ -6,7 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-31
+
+### Added
+- `act` reports the toasts shown during its gestures ("Copied", "Saved", "Network error"), in its text and in
+  `structuredContent.toasts`. The phone helper reads them on the accessibility link it already keeps (nothing
+  installed); codes are masked as in notifications and toasts of protected apps are left out.
+
 ### Fixed
+- Typing no longer flashes a "Copied" toast (One UI) or the floating clipboard preview (Android 13+) twice per paste.
+  The clipboard is now set by the phone helper with SystemUI's overlay suppression for the shell source, then pasted
+  with `KEYCODE_PASTE`; the `clipboard` tool writes the same way. Checked on a Galaxy Fold (Android 17).
+- `install.ps1` fingerprints the phone helper's sources too: a change limited to `phone/` was never reinstalled.
 - Local build: `JAVA_HOME` is used only while it still holds a JDK. After a JDK update (winget moves the folder),
   apps started earlier keep the old value and the phone helper failed to compile; the installed JDK is found instead.
 
@@ -1399,7 +1410,9 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.22.9...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.22.10...v0.23.0
+[0.22.10]: https://github.com/pironjulien/NexusAndroid/compare/v0.22.9...v0.22.10
 [0.22.9]: https://github.com/pironjulien/NexusAndroid/compare/v0.22.8...v0.22.9
 [0.20.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.20.2
 [0.20.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.20.1

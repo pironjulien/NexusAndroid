@@ -10,9 +10,18 @@ public interface IPhoneControl:IDisposable
 {
     string Get();void Set(string text,bool paste);void Zoom(int x,int y,int width,int height,bool inward,int amount);
 }
-public sealed class ScrcpyChannel : IPhoneControl
+/// <summary>Clipboard through the phone helper (no floating preview nor "Copied" toast), paste and zoom as gestures.</summary>
+public sealed class PhoneControl(AdbClient adb,IAndroidQuery query):IPhoneControl
 {
-    private readonly AdbClient adb; private readonly Process server; private readonly TcpClient client; private readonly NetworkStream stream; private readonly string port;private long sequence=1;
+    private ScrcpyChannel? channel;
+    public string Get()=>query.ClipboardGet();
+    public void Set(string text,bool paste){query.ClipboardSet(text);if(paste)adb.Shell("input keyevent 279");}
+    public void Zoom(int x,int y,int width,int height,bool inward,int amount)=>(channel??=new ScrcpyChannel(adb)).Zoom(x,y,width,height,inward,amount);
+    public void Dispose()=>channel?.Dispose();
+}
+public sealed class ScrcpyChannel : IDisposable
+{
+    private readonly AdbClient adb; private readonly Process server; private readonly TcpClient client; private readonly NetworkStream stream; private readonly string port;
     public ScrcpyChannel(AdbClient adb)
     {
         this.adb=adb;NativeSafety.StopGuard();var jar=Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".nexus","nexus-android","tools","scrcpy-server-v5.0.1");
@@ -26,23 +35,6 @@ public sealed class ScrcpyChannel : IPhoneControl
             try{client.Connect("127.0.0.1",int.Parse(port));client.ReceiveTimeout=3000;client.SendTimeout=5000;stream=client.GetStream();if(stream.ReadByte()!=0)throw new IOException("Wrong scrcpy handshake");break;}
             catch(Exception e)when(e is SocketException or IOException){client.Dispose();client=new TcpClient();if(server.HasExited||DateTime.UtcNow>deadline){server.Kill(true);throw new IOException("scrcpy channel unavailable before input",e);}Thread.Sleep(80);}
         }
-    }
-    private byte[] Read(int n){if(n<0||n>256*1024)throw new IOException("Invalid scrcpy reply size");var b=new byte[n];stream.ReadExactly(b);return b;}
-    public string Get()
-    {
-        stream.Write([8,0]);client.ReceiveTimeout=1500;
-        int type;
-        // scrcpy sends no packet for a null/non-text clipboard. Only absence of the FIRST
-        // byte has this protocol meaning; a timeout in a started packet is a transport error.
-        try{type=stream.ReadByte();}
-        catch(IOException e)when(e.InnerException is SocketException {SocketErrorCode:SocketError.TimedOut}){if(server.HasExited)throw new IOException("Clipboard server stopped before replying",e);return "";}
-        finally{client.ReceiveTimeout=5000;}
-        if(type!=0)throw new IOException("Wrong or closed clipboard reply");var n=BinaryPrimitives.ReadInt32BigEndian(Read(4));return Encoding.UTF8.GetString(Read(n));
-    }
-    public void Set(string text,bool paste)
-    {
-        var data=Encoding.UTF8.GetBytes(text);if(data.Length>256*1024-14)throw new ArgumentException("Clipboard text exceeds 256KB");var message=new byte[14+data.Length];message[0]=9;var seq=sequence++;BinaryPrimitives.WriteInt64BigEndian(message.AsSpan(1,8),seq);message[9]=paste?(byte)1:(byte)0;BinaryPrimitives.WriteInt32BigEndian(message.AsSpan(10,4),data.Length);data.CopyTo(message,14);stream.Write(message);
-        while(true){var type=stream.ReadByte();if(type==1){if(BinaryPrimitives.ReadInt64BigEndian(Read(8))==seq)return;}else if(type==0)Read(BinaryPrimitives.ReadInt32BigEndian(Read(4)));else throw new IOException("Clipboard acknowledgement missing; effect unknown, never replay input");}
     }
     private void Touch(byte action,long pointer,int x,int y,int w,int h)
     {

@@ -358,9 +358,9 @@ listed as tested has been run here. Report your device in an
 ## Known limitations
 
 - Gestures go through the real screen, on purpose: the user sees the agent working. No invisible virtual display.
-- Accented text and emoji go through the clipboard (Android's `input text` only takes ASCII): the scrcpy server
-  (Genymobile, Apache 2.0, version and SHA-256 pinned, downloaded by `setup` or at server start) runs
-  only during the paste, then the previous clipboard is put back. Samsung's clipboard history may keep the pasted text.
+- Text is typed through the clipboard (Android's `input text` only takes ASCII): the phone helper sets it as the
+  shell with SystemUI's overlay suppression (no floating preview, no "Copied" toast), `KEYCODE_PASTE` pastes it, then
+  the previous clipboard text is put back. Samsung's clipboard history may keep the pasted text.
 - Notifications: Android only keeps the app name of dismissed ones, not their text.
 - An app protected by `FLAG_SECURE` produces a black screenshot; the server says so and the `[N]` elements stay
   readable.

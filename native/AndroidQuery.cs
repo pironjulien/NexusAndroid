@@ -22,6 +22,11 @@ public interface IAndroidQuery
 {
     NativeScreen Screen(bool image);
     List<Dictionary<string,string>> Query(string uri,string projection="",string where="",string sort="");
+    /// <summary>Toasts seen by the phone helper after sequence number <paramref name="after"/> (seq, package, text, age_ms).</summary>
+    List<Dictionary<string,string>> Toasts(long after)=>[];
+    string ClipboardGet()=>throw new NotSupportedException("Clipboard needs the phone helper");
+    /// <summary>Sets the clipboard as the shell with SystemUI's overlay suppression: no floating preview, no "Copied" toast.</summary>
+    void ClipboardSet(string text)=>throw new NotSupportedException("Clipboard needs the phone helper");
 }
 public sealed class AndroidQuery(AdbClient adb) : IAndroidQuery
 {
@@ -85,8 +90,15 @@ public sealed class AndroidQuery(AdbClient adb) : IAndroidQuery
     }
     public List<Dictionary<string,string>> Query(string uri,string projection="",string where="",string sort="")
     {
-        Ensure();var args=new List<string>{"query","--uri",uri};if(projection!=""){args.AddRange(["--projection",projection]);}if(where!=""){args.AddRange(["--where",where]);}if(sort!="")args.AddRange(["--sort",sort]);
-        var reader=new NetworkReader(Request(args.ToArray()));var status=reader.Number();if(status!=0)throw new IOException("Phone content provider: "+NativeSafety.Mask(reader.Text()));
+        var args=new List<string>{"query","--uri",uri};if(projection!=""){args.AddRange(["--projection",projection]);}if(where!=""){args.AddRange(["--where",where]);}if(sort!="")args.AddRange(["--sort",sort]);
+        return Table("Phone content provider: ",args.ToArray());
+    }
+    public List<Dictionary<string,string>> Toasts(long after)=>Table("Phone toasts: ","toasts","--after",after.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    public string ClipboardGet()=>Table("Phone clipboard: ","clip","get").FirstOrDefault()?.GetValueOrDefault("text")??"";
+    public void ClipboardSet(string text){if(Encoding.UTF8.GetByteCount(text)>256*1024-14)throw new ArgumentException("Clipboard text exceeds 256KB");Table("Phone clipboard: ","clip","set",text);}
+    private List<Dictionary<string,string>> Table(string failure,params string[] args)
+    {
+        Ensure();var reader=new NetworkReader(Request(args));var status=reader.Number();if(status!=0)throw new IOException(failure+NativeSafety.Mask(reader.Text()));
         var width=reader.Number();if(width<0||width>512)throw new IOException("Invalid table width");var names=Enumerable.Range(0,width).Select(_=>reader.Text()).ToArray();var count=reader.Number();if(count<0||count>1000000)throw new IOException("Invalid table height");var rows=new List<Dictionary<string,string>>();
         for(var i=0;i<count;i++){var row=new Dictionary<string,string>();foreach(var name in names){row[name]=reader.Text();}rows.Add(row);}return rows;
     }
