@@ -10,6 +10,9 @@ namespace NexusAndroid;
 
 public static class NativeSafety
 {
+    // Boundary filter (host, connection, step, timer): every failure is reported or contained, except the fatal ones
+    // the process cannot recover from, which must still bring it down.
+    public static bool Recoverable(Exception error)=>error is not (OutOfMemoryException or InsufficientExecutionStackException);
     public static readonly AsyncLocal<string?> Session = new();
     public static readonly AsyncLocal<CancellationToken> Cancellation = new();
     private static readonly ConcurrentDictionary<string, (string Session, string Action, DateTimeOffset Until)> Accords = new();

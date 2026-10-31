@@ -6,9 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.22.9] - 2026-10-31
+
 ### Changed
 - Release: a push whose version is not released yet becomes the stable release right after its development build
   (same files); "Run workflow" still promotes by hand. CodeQL and OpenSSF Scorecard workflows removed.
+- No binary in the repository: `nexus-query.dex` is built from `phone/NexusQuery.java` by every engine build
+  (`phone/build.ps1`, pinned d8 checked by SHA-256) and embedded, byte for byte identical to the former committed file.
+- Code quality, behavior unchanged (remaining CodeQL notes): boundaries (MCP host, HTTP connection, gesture step,
+  video watch, timer) contain every failure except fatal ones (`OutOfMemoryException`,
+  `InsufficientExecutionStackException`), which now end the process; listener stops catch `SocketException` only;
+  resources disposed in `finally` blocks use `using`; long conditions split into named helpers (`Mutating`, schema
+  `Bounds`, `LengthAllowed`); implicit loop filters written as `Where`; `Path.Join` for a plugin file copy.
 
 ## [0.22.8] - 2026-10-31
 
@@ -1371,7 +1380,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.22.9...HEAD
+[0.22.9]: https://github.com/pironjulien/NexusAndroid/compare/v0.22.8...v0.22.9
 [0.20.2]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.20.2
 [0.20.1]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.20.1
 [0.19.0]: https://github.com/pironjulien/NexusAndroid/releases/tag/v0.19.0

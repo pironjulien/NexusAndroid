@@ -39,7 +39,7 @@ internal sealed class ContractSuite(Action<Action<string, Action>> run)
         run((name, body) =>
         {
             try { body(); found[name] = null; }
-            catch (Exception error) { found[name] = error; } // suite boundary: every failure is recorded against its own test case
+            catch (Exception error) when (NativeSafety.Recoverable(error)) { found[name] = error; } // suite boundary: every failure is recorded against its own test case
         });
         return found;
     });

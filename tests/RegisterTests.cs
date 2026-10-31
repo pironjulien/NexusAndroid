@@ -10,7 +10,6 @@ namespace NexusAndroid.Tests.Registration;
 /// CLI: the real user profile and the real CLIs are never touched.</summary>
 public sealed class RegisterTests : IDisposable
 {
-    private static int number;
     private readonly string home;
     private readonly string executable;
     private readonly (string Home, string Executable, string PluginSource) saved = (Register.Home, Register.Executable, Register.PluginSource);
@@ -18,7 +17,7 @@ public sealed class RegisterTests : IDisposable
 
     public RegisterTests()
     {
-        home = Path.Join(TestPaths.Root, "register", Interlocked.Increment(ref number).ToString());
+        home = Path.Join(TestPaths.Root, "register", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(home);
         var noTools = Path.Join(home, "empty-path");
         Directory.CreateDirectory(noTools);
@@ -217,6 +216,18 @@ public sealed class RegisterTests : IDisposable
         WriteText(Path.Join(root, "config.json"), """{"plugins": {"nexus-android": {"enabled": false}}}""");
         Assert.Equal("plugin, turned off in Antigravity's settings", Register.Antigravity());
         AssertJson("""{"x": {"command": "y"}}""", ReadJson(Path.Join(root, "mcp_config.json"))["mcpServers"]);
+    }
+
+    [Fact]
+    public void SharedDaemonRouteKeptAndGuideRefreshed()
+    {
+        var target = At(".gemini", "config", "plugins", "nexus-android");
+        var route = """{"mcpServers": {"nexus-android": {"serverUrl": "http://127.0.0.1:16180/mcp"}}}""";
+        WriteText(Path.Join(target, "mcp_config.json"), route);
+        WriteText(Path.Join(target, "plugin.json"), """{"name": "nexus-android", "version": "0.0.1"}""");
+        Assert.Equal("plugin", Register.Antigravity());
+        Assert.Equal(route, ReadText(Path.Join(target, "mcp_config.json")));
+        Assert.DoesNotContain("0.0.1", ReadText(Path.Join(target, "plugin.json")));
     }
 
     [Fact]

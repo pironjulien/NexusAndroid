@@ -4,7 +4,7 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <RootNamespace>NexusAndroid</RootNamespace>
     <AssemblyName>NexusAndroid</AssemblyName>
-    <Version>0.22.8</Version>
+    <Version>0.22.9</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -18,8 +18,6 @@
     <EmbeddedResource Include="tool-contracts.json" LogicalName="tool-contracts.json" />
     <!-- Shared guard policy, vendored byte for byte from the common folder (vendored.sha256). -->
     <EmbeddedResource Include="garde-fous.json" LogicalName="garde-fous.json" />
-    <!-- Phone-side read helper, built from phone/NexusQuery.java by phone/build.ps1. -->
-    <EmbeddedResource Include="nexus-query.dex" LogicalName="nexus-query.dex" />
     <InternalsVisibleTo Include="NexusAndroid.Tests" />
   </ItemGroup>
 
@@ -30,4 +28,16 @@
     <None Include="..\plugin\plugin.json;..\plugin\logo.png" LinkBase="plugin" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\plugin\skills\**\*" LinkBase="plugin\skills" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!-- Phone-side read helper: built from phone/NexusQuery.java by phone/build.ps1 (pinned, checksum-verified d8) and
+       embedded, so the repository holds its source only. Rebuilt when the Java source, its stubs or the script change. -->
+  <ItemGroup>
+    <NexusQuerySource Include="..\phone\NexusQuery.java;..\phone\build.ps1;..\phone\stubs\**\*.java" />
+  </ItemGroup>
+  <Target Name="BuildNexusQueryDex" BeforeTargets="AssignTargetPaths" Inputs="@(NexusQuerySource)" Outputs="$(IntermediateOutputPath)nexus-query.dex">
+    <Exec Command="pwsh -NoProfile -NonInteractive -File &quot;$(MSBuildProjectDirectory)\..\phone\build.ps1&quot; -Output &quot;$(IntermediateOutputPath)nexus-query.dex&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <ItemGroup>
+      <EmbeddedResource Include="$(IntermediateOutputPath)nexus-query.dex" LogicalName="nexus-query.dex" />
+    </ItemGroup>
+  </Target>
 </Project>

@@ -29,9 +29,10 @@ public sealed partial class NativeEngine
     private static int Num(JsonObject a,string key,int fallback)=>a[key] is null?fallback:a[key]!.GetValue<int>();
     private static JsonObject Text(string text,JsonObject? structured=null,bool codes=false)=>new(){["content"]=new JsonArray(new JsonObject{["type"]="text",["text"]=NativeSafety.Mask(text,codes:codes)}),["structuredContent"]=NativeSafety.MaskJson(structured)};
     private static string Hash(string value)=>Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+    private static bool Mutating(string[] args)=>args.Length>0&&args[0] switch{"input" or "wm" or "svc"=>true,"am"=>args.Skip(1).Any(a=>a is "start" or "force-stop" or "broadcast"),"settings"=>args.Length>1&&args[1]=="put","cmd"=>args.Any(a=>a is "execute-app-function" or "set-location-enabled" or "set_dnd" or "--set"),"pm"=>args.Any(a=>a is "clear" or "uninstall"),_=>false};
     private string Shell(params string[] args)
     {
-        if(args.Length>0&&(args[0] is "input" or "wm" or "svc"||args[0]=="am"&&args.Skip(1).Any(a=>a is "start" or "force-stop" or "broadcast")||args[0]=="settings"&&args.Length>1&&args[1]=="put"||args[0]=="cmd"&&args.Any(a=>a is "execute-app-function" or "set-location-enabled" or "set_dnd" or "--set")||args[0]=="pm"&&args.Any(a=>a is "clear" or "uninstall")))NativeSafety.StopGuard();
+        if(Mutating(args))NativeSafety.StopGuard();
         return adb.Shell(string.Join(' ',args.Select(NativeSafety.Quote)));
     }
     public JsonObject Execute(string name,JsonObject args)
@@ -74,7 +75,7 @@ public sealed partial class NativeEngine
     public void Shutdown()
     {
         string? owner;lock(gate)owner=video is null?null:videoOwner;if(owner is not null)DiscardVideo(owner);
-        lock(gate){using var cleanup=new CancellationTokenSource(TimeSpan.FromSeconds(10));var previous=NativeSafety.Cancellation.Value;NativeSafety.Cancellation.Value=cleanup.Token;try{using var lease=new PhoneLease(phoneLockPath);RestoreExpiredAwake(forceOwn:true);}finally{NativeSafety.Cancellation.Value=previous;awakeTimer?.Dispose();}}
+        lock(gate){using var cleanup=new CancellationTokenSource(TimeSpan.FromSeconds(10));var previous=NativeSafety.Cancellation.Value;NativeSafety.Cancellation.Value=cleanup.Token;using(awakeTimer){try{using var lease=new PhoneLease(phoneLockPath);RestoreExpiredAwake(forceOwn:true);}finally{NativeSafety.Cancellation.Value=previous;}}}
     }
     private List<UiElement> Elements(NativeScreen screen)
     {
@@ -157,7 +158,7 @@ public sealed partial class NativeEngine
         var label=(target?.RawText??"")+" "+(target?.ContentDesc??"")+" "+(destination?.RawText??"")+" "+(destination?.ContentDesc??"");var judgedPackages=new HashSet<string>{pkg,target?.PackageName??"",destination?.PackageName??""};var context=string.Join(' ',elements.Where(e=>judgedPackages.Contains(e.PackageName)).Select(e=>e.RawText+" "+e.RawDescription));
         var safeKey=gesture is "back" or "home" or "recent";
         if(!LockKnown(screen)&&!safeKey)throw new InvalidOperationException("Lock state unreadable; no input sent");
-        if((AndroidPolicy.IsProtectedPackage(pkg)||target is not null&&AndroidPolicy.IsProtectedPackage(target.PackageName)||destination is not null&&AndroidPolicy.IsProtectedPackage(destination.PackageName))&&!safeKey)
+        if(!safeKey&&new[]{pkg,target?.PackageName,destination?.PackageName}.Any(AndroidPolicy.IsProtectedPackage))
         {
             var irreversible=NativeSafety.Risky(label)||NativeSafety.ContextRisk(label,context);var slider=new[]{target,destination}.Any(e=>e is not null&&Regex.IsMatch(e.ClassName+" "+e.ResourceId+" "+e.RawDescription,@"(?i)slider|seekbar|glisser|slide to"));
             if(irreversible&&(gesture!="scroll"||slider))throw new InvalidOperationException("Irreversible, money and send gestures in protected apps are refused");
@@ -242,7 +243,7 @@ public sealed partial class NativeEngine
                 var saved=templates[stepIndex]!.DeepClone().AsObject();saved.Remove("confirm");saved.Remove("accord");if(step["target"] is not null&&aim.Element is not null){saved["target"]=aim.Element.ResourceId.Length>0?"id:"+aim.Element.ResourceId:aim.Element.RawText;}if(step["to"] is not null&&endElement is not null)saved["to"]=endElement.ResourceId.Length>0?"id:"+endElement.ResourceId:endElement.RawText;
                 if(saved["target"]?.ToString() is {Length:0})throw new InvalidOperationException("No stable target to remember");savedSteps.Add(saved);
             }
-            catch(Exception ex){/* Step boundary: any failure is reported as ✗ and stops the batch, never crashes the host. */reports.Add("✗ "+action+": "+ex.Message);allVerified=false;break;}
+            catch(Exception ex)when(NativeSafety.Recoverable(ex)){/* Step boundary: any failure is reported as ✗ and stops the batch, never crashes the host. */reports.Add("✗ "+action+": "+ex.Message);allVerified=false;break;}
         }
         if(Str(args,"remember") is {Length:>0} remember && allVerified){foreach(var saved in savedSteps.OfType<JsonObject>()){saved.Remove("confirm");saved.Remove("accord");}File.WriteAllText(RoutinePath(remember),new JsonObject{["package"]=routinePackage,["saved"]=DateTimeOffset.Now.ToString("O"),["steps"]=savedSteps}.ToJsonString());reports.Add("Routine saved using stable targets; no authorizations stored");}
         if(presenceWarning.Length>0){reports.Add("⚠ "+presenceWarning);presenceWarning="";}var view=Look(new JsonObject{["show"]=Str(args,"then","auto")});view["content"]!.AsArray().Insert(0,new JsonObject{["type"]="text",["text"]=NativeSafety.Mask(string.Join('\n',reports))});view["structuredContent"]=new JsonObject{["verified"]=allVerified,["reports"]=new JsonArray(reports.Select(v=>(JsonNode?)JsonValue.Create(NativeSafety.Mask(v))).ToArray())};return view;

@@ -7,6 +7,8 @@ namespace NexusAndroid;
 /// <summary>Wire contracts exported from the reference server, independently checked by differential tests.</summary>
 public static class NativeSchemas
 {
+    private static readonly (string Key,Func<double,double,bool> Outside)[] Bounds=[("minimum",(n,b)=>n<b),("maximum",(n,b)=>n>b),("exclusiveMinimum",(n,b)=>n<=b),("exclusiveMaximum",(n,b)=>n>=b)];
+    private static bool LengthAllowed(JsonObject schema,int length)=>!(schema["minLength"] is JsonNode min&&length<min.GetValue<int>())&&!(schema["maxLength"] is JsonNode max&&length>max.GetValue<int>());
     public static JsonArray Tools()
     {
         using var stream=Assembly.GetExecutingAssembly().GetManifestResourceStream("tool-contracts.json")!;
@@ -41,9 +43,9 @@ public static class NativeSchemas
             if(kind==JsonValueKind.Number)
             {
                 var number=double.Parse(value!.ToJsonString(),System.Globalization.CultureInfo.InvariantCulture);if(!double.IsFinite(number))throw new ArgumentException(path+": non-finite number");
-                if(schema["minimum"] is JsonNode minimum&&number<minimum.GetValue<double>()||schema["maximum"] is JsonNode maximum&&number>maximum.GetValue<double>()||schema["exclusiveMinimum"] is JsonNode lower&&number<=lower.GetValue<double>()||schema["exclusiveMaximum"] is JsonNode upper&&number>=upper.GetValue<double>())throw new ArgumentException(path+": outside allowed range");
+                if(Bounds.Any(b=>schema[b.Key] is JsonNode bound&&b.Outside(number,bound.GetValue<double>())))throw new ArgumentException(path+": outside allowed range");
             }
-            if(value is JsonValue scalar&&scalar.TryGetValue<string>(out var text)&&(schema["minLength"] is JsonNode minLength&&text.Length<minLength.GetValue<int>()||schema["maxLength"] is JsonNode maxLength&&text.Length>maxLength.GetValue<int>()))throw new ArgumentException(path+": invalid text length");
+            if(value is JsonValue scalar&&scalar.TryGetValue<string>(out var text)&&!LengthAllowed(schema,text.Length))throw new ArgumentException(path+": invalid text length");
             if(value is JsonObject obj)
             {
                 var fields=schema["properties"] as JsonObject;if(schema["required"] is JsonArray required)foreach(var key in required)if(!obj.ContainsKey(key!.ToString()))throw new ArgumentException(path+": required "+key);

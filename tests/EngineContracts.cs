@@ -10,7 +10,7 @@ internal static class EngineContracts
     public static void Run(Action<string, Action> Test)
     {
 void Assert(bool condition,string message){if(!condition)throw new Exception(message);}
-bool Throws(Action run,string contains){try{run();return false;}catch(Exception e){/* assertion helper: observes whatever the engine throws */return e.Message.Contains(contains,StringComparison.OrdinalIgnoreCase);}}
+bool Throws(Action run,string contains){try{run();return false;}catch(Exception e)when(NativeSafety.Recoverable(e)){/* assertion helper: observes whatever the engine throws */return e.Message.Contains(contains,StringComparison.OrdinalIgnoreCase);}}
 string Text(JsonObject r)=>string.Join('\n',r["content"]!.AsArray().OfType<JsonObject>().Select(c=>c["text"]?.ToString()??""));
 JsonObject Obj(string json)=>JsonNode.Parse(json)!.AsObject();
 var fixture=new FakePhone();var adb=new FakeAdb(fixture);var dir=Path.Join(TestPaths.Transfers,"fixture-"+Guid.NewGuid().ToString("N"));var engine=new NativeEngine(adb,fixture,dir,()=>new FakeControl(fixture));

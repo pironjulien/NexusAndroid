@@ -127,8 +127,7 @@ public sealed class NativeTypedResponseTests
     {
         var tool = Contracts.Value[name];
         var subset = new JsonObject();
-        foreach (var field in ContractFields)
-            if (tool.TryGetPropertyValue(field, out var value)) subset[field] = value!.DeepClone();
+        foreach (var field in ContractFields.Where(tool.ContainsKey)) subset[field] = tool[field]!.DeepClone();
         Assert.Equal(TypedTools.Contains(name), subset.ContainsKey("outputSchema"));
         var canonical = Canonical.Serialize(subset);
         var digest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));

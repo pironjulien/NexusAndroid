@@ -11,7 +11,7 @@ public sealed class PhoneLease:IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);file=new FileStream(path,FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.ReadWrite);var until=DateTime.UtcNow.AddSeconds(30);
         while(true){NativeSafety.Cancellation.Value.ThrowIfCancellationRequested();try{file.Lock(0,1);break;}catch(IOException){if(DateTime.UtcNow>=until){file.Dispose();throw new IOException("Phone busy with another process; no action sent");}Thread.Sleep(80);}}
     }
-    public void Dispose(){try{file.Unlock(0,1);}finally{file.Dispose();}}
+    public void Dispose(){using(file){file.Unlock(0,1);}}
 }
 
 public sealed partial class NativeEngine
@@ -66,7 +66,7 @@ public sealed partial class NativeEngine
         {
             using var lease=new PhoneLease(phoneLockPath);RestoreExpiredAwake();
         }
-        catch(Exception){/* Timer callback boundary: never crash the host. Timer is read on the next call; transport failure must not fabricate a restored state. */}
+        catch(Exception error)when(NativeSafety.Recoverable(error)){/* Timer callback boundary: never crash the host. Timer is read on the next call; transport failure must not fabricate a restored state. */}
         finally{Monitor.Exit(gate);}
     }
     // Caller holds both the in-process and shared phone leases. A restarted daemon

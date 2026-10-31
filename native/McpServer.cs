@@ -136,7 +136,7 @@ public sealed class McpServer
                     ["result"] = result
                 };
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NativeSafety.Recoverable(ex))
             {
                 // Host boundary: any tool failure becomes an MCP error result, never a crashed server.
                 return new JsonObject
@@ -240,7 +240,7 @@ public sealed class McpServer
             using var restart = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _ = WatchRestartRequestAsync(restart, restart.Token);
             cancellationToken = restart.Token;
-            using var reg = cancellationToken.Register(() => { try { listener.Stop(); } catch { /* best-effort stop inside a cancellation callback: must never throw */ } });
+            using var reg = cancellationToken.Register(() => { try { listener.Stop(); } catch (SocketException) { /* best-effort stop inside a cancellation callback: must never throw */ } });
             while (!cancellationToken.IsCancellationRequested)
             {
                 TcpClient client;
@@ -252,12 +252,13 @@ public sealed class McpServer
                 catch (SocketException) when (cancellationToken.IsCancellationRequested) { break; }
                 Interlocked.Increment(ref activeConnections);
                 _ = Task.Run(async () => { try { await HandleHttpClientAsync(client, expectedToken); } finally { Interlocked.Decrement(ref activeConnections); } }, CancellationToken.None);
-                foreach(var stale in httpSessions.Where(p=>DateTimeOffset.UtcNow-p.Value>TimeSpan.FromSeconds(1618)&&!requests.Keys.Any(k=>k.StartsWith(p.Key+":",StringComparison.Ordinal))))if(httpSessions.TryRemove(stale.Key,out _))_ = Task.Run(()=>CloseSession(stale.Key));
+                var stale=httpSessions.Where(p=>DateTimeOffset.UtcNow-p.Value>TimeSpan.FromSeconds(1618)&&!requests.Keys.Any(k=>k.StartsWith(p.Key+":",StringComparison.Ordinal))).Select(p=>p.Key).ToList();
+                foreach(var key in stale)_ = httpSessions.TryRemove(key,out _)?Task.Run(()=>CloseSession(key)):Task.CompletedTask;
             }
         }
         finally
         {
-            try { listener.Stop(); } catch { /* best-effort cleanup: listener may already be stopped */ }
+            try { listener.Stop(); } catch (SocketException) { /* best-effort cleanup: listener may already be stopped */ }
         }
     }
 
@@ -310,10 +311,8 @@ public sealed class McpServer
                     if (n == 0) return;
                     byte b = buf[0];
                     headerBytes.Add(b);
-                    if ((matchState == 0 && b == '\r') ||
-                        (matchState == 1 && b == '\n') ||
-                        (matchState == 2 && b == '\r') ||
-                        (matchState == 3 && b == '\n'))
+                    // Looking for \r\n\r\n: even states expect \r, odd states \n.
+                    if (b == (matchState % 2 == 0 ? '\r' : '\n'))
                     {
                         matchState++;
                         if (matchState == 4) break;
@@ -437,7 +436,7 @@ public sealed class McpServer
                     await WriteHttpResponseAsync(stream, 400, "application/json", Encoding.UTF8.GetBytes("""{"error":"Bad request"}"""));
                 }
             }
-            catch
+            catch (Exception error) when (NativeSafety.Recoverable(error))
             {
                 // Per-connection boundary: a disconnected or broken client must never take the daemon down.
             }

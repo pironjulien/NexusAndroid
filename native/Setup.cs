@@ -282,7 +282,7 @@ public static class Register
     private static string Unquote(string key)
     {
         key = key.Trim();
-        return key.Length >= 2 && (key[0] == '"' && key[^1] == '"' || key[0] == '\'' && key[^1] == '\'') ? key[1..^1] : key;
+        return key.Length >= 2 && key[0] is '"' or '\'' && key[^1] == key[0] ? key[1..^1] : key;
     }
 
     /// <summary>Dotted TOML table name split into keys (quoted keys may contain dots).</summary>
@@ -358,12 +358,15 @@ public static class Register
         var target = Path.Join(root, "plugins", Name);
         var mcpFile = Path.Join(target, "mcp_config.json");
         var current = File.Exists(mcpFile) ? ReadJson(mcpFile)["mcpServers"]?[Name] : null;
-        if (File.Exists(mcpFile) && !Ours(current)) return "kept (a nexus-android plugin of yours already exists)";
+        // A route to a local HTTP server (the shared daemon) is kept as it is; the plugin's guide is still refreshed.
+        var shared = current is JsonObject route && Uri.TryCreate(route["serverUrl"]?.ToString(), UriKind.Absolute, out var url) && url.IsLoopback;
+        if (File.Exists(mcpFile) && !Ours(current) && !shared) return "kept (a nexus-android plugin of yours already exists)";
         if (!Directory.Exists(PluginSource)) return $"failed: plugin files missing next to the executable ({PluginSource})";
         var changed = false;
         foreach (var file in Directory.EnumerateFiles(PluginSource, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
         {
-            var destination = Path.Combine(target, Path.GetRelativePath(PluginSource, file));
+            var destination = Path.Join(target, Path.GetRelativePath(PluginSource, file));
+            if (shared && Path.GetFullPath(destination) == Path.GetFullPath(mcpFile)) continue;
             if (!File.Exists(destination) || !File.ReadAllBytes(destination).AsSpan().SequenceEqual(File.ReadAllBytes(file)))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
@@ -371,7 +374,7 @@ public static class Register
                 changed = true;
             }
         }
-        if (!JsonNode.DeepEquals(current, Entry()))
+        if (!shared && !JsonNode.DeepEquals(current, Entry()))
         {
             Write(mcpFile, new JsonObject { ["mcpServers"] = new JsonObject { [Name] = Entry() } }.ToJsonString(Indented) + "\n");
             changed = true;

@@ -18,9 +18,9 @@ within a few days.
 - **Phone-side read helper** (`nexus-query.dex`, started under the shell identity): it is read-only, accepts
   connections only from the shell or root identity (peer credentials checked by the kernel, which no app on the
   phone can have), and each launch draws a random token that is part of its socket name and must come back in every
-  answer, so the PC never trusts another server listening on that name. It is the only binary in the repository,
-  committed on purpose (the package pushes it to the phone, so users need no Java toolchain): its source is
-  `phone/NexusQuery.java`, and `phone/build.ps1` rebuilds it with Google's d8, pinned by SHA-256.
+  answer, so the PC never trusts another server listening on that name. The repository holds its source only
+  (`phone/NexusQuery.java`): every engine build runs `phone/build.ps1`, which compiles it with Google's d8, pinned
+  by SHA-256, and embeds the result, so users still need no Java toolchain.
 - **Hotspot / `adb tcpip 5555` mode**: classic ADB over TCP is not encrypted (only Android's wireless debugging
   uses TLS). Use it only on a network you control, and turn it off with `adb usb` or a reboot.
 

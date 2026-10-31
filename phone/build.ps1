@@ -1,6 +1,8 @@
-# Rebuilds native\nexus-query.dex from NexusQuery.java (only needed after changing the Java source; the
-# dex is committed and embedded in the engine). Needs a JDK 17+ (winget install Microsoft.OpenJDK.21); d8 comes from
-# Google's Maven repository, pinned and checked, cached under ~\.nexus\nexus-android\tools\build.
+# Builds nexus-query.dex from NexusQuery.java into -Output. Run by the engine build (native\NexusAndroid.csproj),
+# which embeds the result: the repository holds the source only. Needs a JDK 17+ (winget install
+# Microsoft.OpenJDK.21); d8 comes from Google's Maven repository, pinned and checked, cached under
+# ~\.nexus\nexus-android\tools\build.
+param([Parameter(Mandatory)][string]$Output)
 $ErrorActionPreference = 'Stop'
 $r8Version = '9.5.26'
 $r8Sha = '3502F087388CE95BBF5254555927F09385DC2636873964D0BD53F3EAF4FB49AD'
@@ -28,8 +30,9 @@ try {
     $classes = @(Get-ChildItem "$work\classes" -Recurse -Filter *.class | ForEach-Object FullName)  # tableau même pour une seule classe
     & "$jdk\bin\java.exe" -cp $r8 com.android.tools.r8.D8 --release --min-api 24 --lib $jdk --output "$work\dex" @classes
     if ($LASTEXITCODE) { throw 'd8 failed.' }
-    Copy-Item "$work\dex\classes.dex" (Join-Path $PSScriptRoot '..\native\nexus-query.dex') -Force
-    Write-Host 'nexus-query.dex rebuilt.'
+    New-Item -ItemType Directory -Force (Split-Path -Parent ([IO.Path]::GetFullPath($Output))) | Out-Null
+    Copy-Item "$work\dex\classes.dex" $Output -Force
+    Write-Host "nexus-query.dex built: $Output"
 } finally {
     $workAbsolute = [IO.Path]::GetFullPath($work)
     $toolsAbsolute = [IO.Path]::GetFullPath($tools).TrimEnd('\')

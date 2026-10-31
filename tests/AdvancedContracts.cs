@@ -17,7 +17,7 @@ internal static class AdvancedContracts
     {
 void Check(bool condition,string why){if(!condition)throw new Exception(why);}
 string Text(JsonObject value)=>string.Join('\n',value["content"]!.AsArray().OfType<JsonObject>().Select(c=>c["text"]?.ToString()??""));
-bool Refused(Action action,string word){try{action();return false;}catch(Exception e){/* assertion helper: observes whatever the engine throws */return e.Message.Contains(word,StringComparison.OrdinalIgnoreCase);}}
+bool Refused(Action action,string word){try{action();return false;}catch(Exception e)when(NativeSafety.Recoverable(e)){/* assertion helper: observes whatever the engine throws */return e.Message.Contains(word,StringComparison.OrdinalIgnoreCase);}}
 object? Private(string name,params object[] arguments)=>typeof(NativeEngine).GetMethod(name,BindingFlags.NonPublic|BindingFlags.Static)!.Invoke(null,arguments);
 JsonObject Args(string action)=>new(){["action"]=action};
 var phone=new FixturePhone();var adb=new FixtureAdb(phone);
