@@ -560,13 +560,13 @@ public sealed class NativeUtilitiesTests
     [Fact]
     public void RepeatedCrashesGroupWithoutLosingCount()
     {
-        var raw = "";
+        var raw = new StringBuilder();
         foreach (var time in new[] { "13:00:00.000", "13:05:00.000" })
         {
-            raw += LogLine("FATAL EXCEPTION: main", time: time) + LogLine("Process: com.example.app, PID: 321", time: time);
-            raw += LogLine("java.lang.IllegalStateException: broken", time: time);
+            raw.Append(LogLine("FATAL EXCEPTION: main", time: time)).Append(LogLine("Process: com.example.app, PID: 321", time: time));
+            raw.Append(LogLine("java.lang.IllegalStateException: broken", time: time));
         }
-        var body = Success(Call("logs", new JsonObject(), Logcat(raw)));
+        var body = Success(Call("logs", new JsonObject(), Logcat(raw.ToString())));
         Assert.Contains("Repeated 2 time(s)", body);
         Assert.Equal(1, Count(body, "IllegalStateException"));
     }

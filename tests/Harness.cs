@@ -8,10 +8,10 @@ namespace NexusAndroid.Tests;
 /// refuses as agent configuration: those go to a temporary folder of this run, removed at exit as well.</summary>
 internal static class TestPaths
 {
-    public static readonly string Root = Path.Combine(
+    public static readonly string Root = Path.Join(
         Environment.GetEnvironmentVariable("USERPROFILE") is { Length: > 0 } home ? home : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".nexus", "build", "nexus-android", "test-data", Environment.ProcessId.ToString());
-    public static readonly string Transfers = Path.Combine(Path.GetTempPath(), "nexus-android-tests", Environment.ProcessId.ToString());
+    public static readonly string Transfers = Path.Join(Path.GetTempPath(), "nexus-android-tests", Environment.ProcessId.ToString());
 
     [ModuleInitializer]
     internal static void Offline()
@@ -24,7 +24,7 @@ internal static class TestPaths
         AppDomain.CurrentDomain.ProcessExit += (_, _) =>
         {
             foreach (var folder in new[] { Root, Transfers })
-                try { Directory.Delete(folder, true); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+                try { Directory.Delete(folder, true); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* best-effort cleanup at process exit */ }
         };
     }
 }
@@ -39,7 +39,7 @@ internal sealed class ContractSuite(Action<Action<string, Action>> run)
         run((name, body) =>
         {
             try { body(); found[name] = null; }
-            catch (Exception error) { found[name] = error; }
+            catch (Exception error) { found[name] = error; } // suite boundary: every failure is recorded against its own test case
         });
         return found;
     });

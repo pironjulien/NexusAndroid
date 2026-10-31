@@ -29,7 +29,7 @@ public partial class AdbClient
     public AdbClient(string? customAdbPath = null,string? connectionStatePath=null)
     {
         adbPath = customAdbPath;
-        ConnectionStatePath=connectionStatePath??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".nexus","nexus-android","wifi.json");
+        ConnectionStatePath=connectionStatePath??Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".nexus","nexus-android","wifi.json");
     }
 
     public static string? FindAdb()
@@ -40,17 +40,17 @@ public partial class AdbClient
         {
             try
             {
-                string cand = Path.Combine(p.Trim(), OperatingSystem.IsWindows() ? "adb.exe" : "adb");
+                string cand = Path.Join(p.Trim(), OperatingSystem.IsWindows() ? "adb.exe" : "adb");
                 if (File.Exists(cand)) return cand;
             }
-            catch { }
+            catch (ArgumentException) { /* PATH entry with invalid characters: skip it */ }
         }
 
         // 2. Standard Android SDK locations
         string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         string[] candidates =
         {
-            Path.Combine(localAppData, "Android", "Sdk", "platform-tools", "adb.exe"),
+            Path.Join(localAppData, "Android", "Sdk", "platform-tools", "adb.exe"),
             @"C:\Android\platform-tools\adb.exe",
             @"C:\platform-tools\adb.exe",
             @"D:\Android\Sdk\platform-tools\adb.exe",
@@ -61,13 +61,9 @@ public partial class AdbClient
             if (File.Exists(c)) return c;
         }
 
-        var winget = Path.Combine(localAppData, "Microsoft", "WinGet", "Packages");
-        if (Directory.Exists(winget))
-            foreach (var dir in Directory.EnumerateDirectories(winget, "Google.PlatformTools*"))
-            {
-                var cand = Path.Combine(dir, "platform-tools", "adb.exe");
-                if (File.Exists(cand)) return cand;
-            }
+        var winget = Path.Join(localAppData, "Microsoft", "WinGet", "Packages");
+        if (Directory.Exists(winget) && Directory.EnumerateDirectories(winget, "Google.PlatformTools*").Select(dir => Path.Join(dir, "platform-tools", "adb.exe")).FirstOrDefault(File.Exists) is { } wingetAdb)
+            return wingetAdb;
         // 3. Google's Platform Tools downloaded by `setup` (~\.nexus\nexus-android\tools\platform-tools-<version>)
         return Tools.Downloaded();
     }
@@ -121,7 +117,7 @@ public partial class AdbClient
         try { proc.WaitForExitAsync(cancellation.Token).GetAwaiter().GetResult(); }
         catch(OperationCanceledException)
         {
-            try { proc.Kill(); } catch { }
+            try { proc.Kill(); } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { /* best-effort: the process may already be gone */ }
             if(NativeSafety.Cancellation.Value.IsCancellationRequested)throw new IOException("ADB call cancelled during transport; input outcome may be unknown, observe before any new decision");
             throw new TimeoutException($"ADB command timed out after {timeoutMs}ms; input outcome may be unknown");
         }
@@ -140,7 +136,7 @@ public partial class AdbClient
     public string? CaptureDisplayId(){var displays=Shell("dumpsys SurfaceFlinger --display-id");if(System.Text.RegularExpressions.Regex.Matches(displays,@"(?m)^Display \d+").Count<=1)return null;return ParseLogicalDisplay(Shell("dumpsys display"))??throw new IOException("Multiple displays exist but the active logical display cannot be identified; no arbitrary display captured");}
     public static string? ParseLogicalDisplay(string dump)
     {
-        var match=System.Text.RegularExpressions.Regex.Match(dump,@"mDisplayId=0\s*\n\s*mPrimaryDisplayDevice=[^\n]*\(local:(\d+)\)");if(!match.Success)match=System.Text.RegularExpressions.Regex.Match(dump,"mDisplayId=0\\s*\\n\\s*mBaseDisplayInfo=DisplayInfo\\{[^\\r\\n]*?uniqueId \\\"local:(\\d+)\\\"");return match.Success?match.Groups[1].Value:null;
+        var match=System.Text.RegularExpressions.Regex.Match(dump,@"mDisplayId=0\s*\n\s*mPrimaryDisplayDevice=[^\n]*\(local:(\d+)\)");if(!match.Success){match=System.Text.RegularExpressions.Regex.Match(dump,"mDisplayId=0\\s*\\n\\s*mBaseDisplayInfo=DisplayInfo\\{[^\\r\\n]*?uniqueId \\\"local:(\\d+)\\\"");}return match.Success?match.Groups[1].Value:null;
     }
 
     public virtual byte[] ExecOut(string command,int timeoutMs=15000)
@@ -165,7 +161,7 @@ public partial class AdbClient
 
         if (!proc.WaitForExit(timeoutMs))
         {
-            try { proc.Kill(); } catch { }
+            try { proc.Kill(); } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { /* best-effort: the process may already be gone */ }
             ConnectionLost(SelectedSerial);
             throw new TimeoutException($"ADB screencap timed out after {timeoutMs}ms");
         }

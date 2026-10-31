@@ -50,7 +50,7 @@ public sealed class McpServer
             {
                 request = JsonNode.Parse(line) as JsonObject;
             }
-            catch
+            catch (JsonException)
             {
                 continue;
             }
@@ -99,7 +99,7 @@ public sealed class McpServer
         if(method=="ping")return new JsonObject{["jsonrpc"]="2.0",["id"]=id?.DeepClone(),["result"]=new JsonObject()};
         if(method=="notifications/cancelled")
         {
-            var requestKey=(NativeSafety.Session.Value??stdioSession)+":"+req["params"]?["requestId"]?.ToJsonString();if(requests.TryGetValue(requestKey,out var pending))pending.Cancel();else cancelledRequests[requestKey]=true;return null;
+            var requestKey=(NativeSafety.Session.Value??stdioSession)+":"+req["params"]?["requestId"]?.ToJsonString();if(requests.TryGetValue(requestKey,out var pending)){pending.Cancel();}else {cancelledRequests[requestKey]=true;}return null;
         }
 
         if (method == "tools/list")
@@ -124,7 +124,7 @@ public sealed class McpServer
             try
             {
                 NativeJournal.Agent.Value=agents.GetValueOrDefault(NativeSafety.Session.Value??stdioSession)??(NativeSafety.Session.Value==stdioSession?NativeJournal.Identify(Environment.GetEnvironmentVariable("NEXUS_AGENT")):null);
-                var requestKey=(NativeSafety.Session.Value??stdioSession)+":"+id?.ToJsonString();using var cancellation=new CancellationTokenSource();requests[requestKey]=cancellation;if(cancelledRequests.TryRemove(requestKey,out _))cancellation.Cancel();NativeSafety.Cancellation.Value=cancellation.Token;
+                var requestKey=(NativeSafety.Session.Value??stdioSession)+":"+id?.ToJsonString();using var cancellation=new CancellationTokenSource();requests[requestKey]=cancellation;if(cancelledRequests.TryRemove(requestKey,out _)){cancellation.Cancel();}NativeSafety.Cancellation.Value=cancellation.Token;
                 JsonObject toolResult;try{toolResult=_engine.Execute(toolName,args);}finally{requests.TryRemove(requestKey,out _);NativeSafety.Cancellation.Value=default;if(httpSessions.ContainsKey(NativeSafety.Session.Value!))httpSessions[NativeSafety.Session.Value!]=DateTimeOffset.UtcNow;}
                 var result = new JsonObject { ["content"] = toolResult["content"]?.DeepClone() };
                 // MCP: structuredContent is an object or absent; null is rejected by clients (map, apps... without one).
@@ -138,6 +138,7 @@ public sealed class McpServer
             }
             catch (Exception ex)
             {
+                // Host boundary: any tool failure becomes an MCP error result, never a crashed server.
                 return new JsonObject
                 {
                     ["jsonrpc"] = "2.0",
@@ -185,10 +186,10 @@ public sealed class McpServer
         }
         var declared = Environment.GetEnvironmentVariable("NEXUS_MCP_TOKEN_FILE");
         if (!string.IsNullOrWhiteSpace(declared)) return Read(declared);
-        if (Read(Path.Combine(Tools.Home, ".nexus", "mcp-token.txt")) is { } shared) return shared;
+        if (Read(Path.Join(Tools.Home, ".nexus", "mcp-token.txt")) is { } shared) return shared;
         var env = Environment.GetEnvironmentVariable("NEXUS_MCP_TOKEN");
         if (!string.IsNullOrWhiteSpace(env)) return env.Trim();
-        return Read(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "NexusSecure", "agents", "nexus-mcp-token.txt"));
+        return Read(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "NexusSecure", "agents", "nexus-mcp-token.txt"));
     }
 
     private static bool CheckAuth(Dictionary<string, string> headers, string? expectedToken)
@@ -232,14 +233,14 @@ public sealed class McpServer
     {
         var expectedToken = ConfiguredToken();
         if(string.IsNullOrWhiteSpace(expectedToken))throw new InvalidOperationException("NEXUS_MCP_TOKEN or NEXUS_MCP_TOKEN_FILE required: HTTP daemon refuses unauthenticated startup");
-        var listener = new TcpListener(IPAddress.Loopback, port);
+        using var listener = new TcpListener(IPAddress.Loopback, port);
         listener.Start();
         try
         {
             using var restart = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _ = WatchRestartRequestAsync(restart, restart.Token);
             cancellationToken = restart.Token;
-            using var reg = cancellationToken.Register(() => { try { listener.Stop(); } catch { } });
+            using var reg = cancellationToken.Register(() => { try { listener.Stop(); } catch { /* best-effort stop inside a cancellation callback: must never throw */ } });
             while (!cancellationToken.IsCancellationRequested)
             {
                 TcpClient client;
@@ -256,7 +257,7 @@ public sealed class McpServer
         }
         finally
         {
-            try { listener.Stop(); } catch { }
+            try { listener.Stop(); } catch { /* best-effort cleanup: listener may already be stopped */ }
         }
     }
 
@@ -265,7 +266,7 @@ public sealed class McpServer
     /// <summary>Restart request of the daemon spec (restart_request, written by an installer after a new build): taken at
     /// once, then the daemon stops as soon as no call is in progress and the supervisor starts the new binary. A request
     /// naming another process (pid:N) is left alone. Never interrupts a running tool call.</summary>
-    public static string RestartRequestPath => Environment.GetEnvironmentVariable("NEXUS_ANDROID_RESTART_REQUEST") is { Length: > 0 } path ? path : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nexus", "nexus-android", "daemon-restart.request");
+    public static string RestartRequestPath => Environment.GetEnvironmentVariable("NEXUS_ANDROID_RESTART_REQUEST") is { Length: > 0 } path ? path : Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nexus", "nexus-android", "daemon-restart.request");
 
     private async Task WatchRestartRequestAsync(CancellationTokenSource stop, CancellationToken token)
     {
@@ -438,7 +439,7 @@ public sealed class McpServer
             }
             catch
             {
-                // Ignore client disconnect
+                // Per-connection boundary: a disconnected or broken client must never take the daemon down.
             }
         }
     }

@@ -530,7 +530,7 @@ public static class ImageChain
     }
 }
 
-internal static class GdiPlusInterop
+internal static partial class GdiPlusInterop
 {
     private static IntPtr _gdiplusToken;
     private static readonly object InitLock = new();
@@ -586,11 +586,11 @@ internal static class GdiPlusInterop
         public EncoderParameter Parameter;
     }
 
-    [DllImport("gdiplus.dll", ExactSpelling = true)]
-    private static extern int GdiplusStartup(out IntPtr token, ref GdiplusStartupInput input, out IntPtr output);
+    [LibraryImport("gdiplus.dll")]
+    private static partial int GdiplusStartup(out IntPtr token, ref GdiplusStartupInput input, out IntPtr output);
 
-    [DllImport("gdiplus.dll", ExactSpelling = true)]
-    private static extern int GdipCreateBitmapFromScan0(
+    [LibraryImport("gdiplus.dll")]
+    private static partial int GdipCreateBitmapFromScan0(
         int width,
         int height,
         int stride,
@@ -598,61 +598,62 @@ internal static class GdiPlusInterop
         IntPtr scan0,
         out IntPtr bitmap);
 
-    [DllImport("gdiplus.dll", ExactSpelling = true)]
-    private static extern int GdipCreateBitmapFromStream(IntPtr stream, out IntPtr bitmap);
-    [DllImport("gdiplus.dll", ExactSpelling=true)]
-    private static extern int GdipGetPropertyItemSize(IntPtr image,int property,out uint size);
-    [DllImport("gdiplus.dll", ExactSpelling=true)]
-    private static extern int GdipGetPropertyItem(IntPtr image,int property,uint size,IntPtr item);
-    [DllImport("gdiplus.dll", ExactSpelling=true)]
-    private static extern int GdipImageRotateFlip(IntPtr image,int rotateFlipType);
+    [LibraryImport("gdiplus.dll")]
+    private static partial int GdipCreateBitmapFromStream(IntPtr stream, out IntPtr bitmap);
+    [LibraryImport("gdiplus.dll")]
+    private static partial int GdipGetPropertyItemSize(IntPtr image,int property,out uint size);
+    [LibraryImport("gdiplus.dll")]
+    private static partial int GdipGetPropertyItem(IntPtr image,int property,uint size,IntPtr item);
+    [LibraryImport("gdiplus.dll")]
+    private static partial int GdipImageRotateFlip(IntPtr image,int rotateFlipType);
     [StructLayout(LayoutKind.Sequential)]
     private struct PropertyItem{public int Id;public uint Length;public short Type;public IntPtr Value;}
 
-    [DllImport("gdiplus.dll", ExactSpelling = true)]
-    private static extern int GdipGetImageWidth(IntPtr image, out uint width);
+    [LibraryImport("gdiplus.dll")]
+    private static partial int GdipGetImageWidth(IntPtr image, out uint width);
 
-    [DllImport("gdiplus.dll", ExactSpelling = true)]
-    private static extern int GdipGetImageHeight(IntPtr image, out uint height);
+    [LibraryImport("gdiplus.dll")]
+    private static partial int GdipGetImageHeight(IntPtr image, out uint height);
 
-    [DllImport("gdiplus.dll", ExactSpelling = true)]
-    private static extern int GdipBitmapLockBits(
+    [LibraryImport("gdiplus.dll")]
+    private static partial int GdipBitmapLockBits(
         IntPtr bitmap,
         ref GdiRect rect,
         uint flags,
         int format,
         out BitmapData lockedBitmapData);
 
-    [DllImport("gdiplus.dll", ExactSpelling = true)]
-    private static extern int GdipBitmapUnlockBits(IntPtr bitmap, ref BitmapData lockedBitmapData);
+    [LibraryImport("gdiplus.dll")]
+    private static partial int GdipBitmapUnlockBits(IntPtr bitmap, ref BitmapData lockedBitmapData);
 
-    [DllImport("gdiplus.dll", ExactSpelling = true)]
-    private static extern int GdipSaveImageToStream(
+    [LibraryImport("gdiplus.dll")]
+    private static partial int GdipSaveImageToStream(
         IntPtr image,
         IntPtr stream,
         ref Guid clsidEncoder,
         ref EncoderParametersOne encoderParams);
 
-    [DllImport("gdiplus.dll", ExactSpelling = true)]
-    private static extern int GdipDisposeImage(IntPtr image);
+    [LibraryImport("gdiplus.dll")]
+    private static partial int GdipDisposeImage(IntPtr image);
 
-    [DllImport("ole32.dll", ExactSpelling = true)]
-    private static extern int CreateStreamOnHGlobal(IntPtr hGlobal, bool fDeleteOnRelease, out IntPtr ppstm);
+    [LibraryImport("ole32.dll")]
+    private static partial int CreateStreamOnHGlobal(IntPtr hGlobal, [MarshalAs(UnmanagedType.Bool)] bool fDeleteOnRelease, out IntPtr ppstm);
 
-    [DllImport("ole32.dll", ExactSpelling = true)]
-    private static extern int GetHGlobalFromStream(IntPtr pstm, out IntPtr phglobal);
+    [LibraryImport("ole32.dll")]
+    private static partial int GetHGlobalFromStream(IntPtr pstm, out IntPtr phglobal);
 
-    [DllImport("kernel32.dll", ExactSpelling = true)]
-    private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
+    [LibraryImport("kernel32.dll")]
+    private static partial IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
 
-    [DllImport("kernel32.dll", ExactSpelling = true)]
-    private static extern IntPtr GlobalLock(IntPtr hMem);
+    [LibraryImport("kernel32.dll")]
+    private static partial IntPtr GlobalLock(IntPtr hMem);
 
-    [DllImport("kernel32.dll", ExactSpelling = true)]
-    private static extern bool GlobalUnlock(IntPtr hMem);
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GlobalUnlock(IntPtr hMem);
 
-    [DllImport("kernel32.dll", ExactSpelling = true)]
-    private static extern UIntPtr GlobalSize(IntPtr hMem);
+    [LibraryImport("kernel32.dll")]
+    private static partial UIntPtr GlobalSize(IntPtr hMem);
 
     public static void EnsureInitialized()
     {

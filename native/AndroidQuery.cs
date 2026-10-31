@@ -49,8 +49,8 @@ public sealed class AndroidQuery(AdbClient adb) : IAndroidQuery
         serial=device.Serial;
         var listing=adb.RunAdb("forward --list").Stdout;
         var forwards=Regex.Matches(listing,Regex.Escape(serial)+@" tcp:(\d+) localabstract:"+Prefix+@"-([0-9a-f]{32})").Reverse();
-        foreach(var found in forwards){port=int.Parse(found.Groups[1].Value);token=found.Groups[2].Value;try{Request();return;}catch(IOException){}catch(SocketException){} }
-        var local=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"NexusAndroid","tools",Prefix+".dex");Directory.CreateDirectory(Path.GetDirectoryName(local)!);if(!File.Exists(local))File.WriteAllBytes(local,dex);
+        foreach(var found in forwards){port=int.Parse(found.Groups[1].Value);token=found.Groups[2].Value;try{Request();return;}catch(IOException){/* stale forward: try the next one */}catch(SocketException){/* stale forward: try the next one */} }
+        var local=Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"NexusAndroid","tools",Prefix+".dex");Directory.CreateDirectory(Path.GetDirectoryName(local)!);if(!File.Exists(local))File.WriteAllBytes(local,dex);
         var remote="/data/local/tmp/"+Prefix+".dex";adb.RunAdb($"push \"{local}\" {remote}");
         token=Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();var name=Prefix+"-"+token;
         adb.Shell("sh -c "+NativeSafety.Quote($"CLASSPATH={remote} setsid nohup app_process / NexusQuery {name} 600 {token} </dev/null >/dev/null 2>&1 &"));
@@ -72,7 +72,7 @@ public sealed class AndroidQuery(AdbClient adb) : IAndroidQuery
             {
                 var node=new XElement("node",new XAttribute("text",s.Text()),new XAttribute("resource-id",s.Text()),new XAttribute("class",s.Text()),new XAttribute("package",s.Text()),new XAttribute("content-desc",s.Text()));
                 var bits=s.Number();var x1=s.Number();var y1=s.Number();var x2=s.Number();var y2=s.Number();var depth=s.Number();var order=s.Number();node.SetAttributeValue("bounds",$"[{x1},{y1}][{x2},{y2}]");node.SetAttributeValue("drawing-order",order);
-                for(var f=0;f<flags.Length;f++)node.SetAttributeValue(flags[f],(bits&(1<<f))!=0?"true":"false");while(ancestry.Peek().Depth>=depth)ancestry.Pop();ancestry.Peek().Element.Add(node);ancestry.Push((node,depth));
+                for(var f=0;f<flags.Length;f++){node.SetAttributeValue(flags[f],(bits&(1<<f))!=0?"true":"false");}while(ancestry.Peek().Depth>=depth){ancestry.Pop();}ancestry.Peek().Element.Add(node);ancestry.Push((node,depth));
             }
         }
         else error=s.Text();
@@ -85,9 +85,9 @@ public sealed class AndroidQuery(AdbClient adb) : IAndroidQuery
     }
     public List<Dictionary<string,string>> Query(string uri,string projection="",string where="",string sort="")
     {
-        Ensure();var args=new List<string>{"query","--uri",uri};if(projection!="")args.AddRange(["--projection",projection]);if(where!="")args.AddRange(["--where",where]);if(sort!="")args.AddRange(["--sort",sort]);
+        Ensure();var args=new List<string>{"query","--uri",uri};if(projection!=""){args.AddRange(["--projection",projection]);}if(where!=""){args.AddRange(["--where",where]);}if(sort!="")args.AddRange(["--sort",sort]);
         var reader=new NetworkReader(Request(args.ToArray()));var status=reader.Number();if(status!=0)throw new IOException("Phone content provider: "+NativeSafety.Mask(reader.Text()));
         var width=reader.Number();if(width<0||width>512)throw new IOException("Invalid table width");var names=Enumerable.Range(0,width).Select(_=>reader.Text()).ToArray();var count=reader.Number();if(count<0||count>1000000)throw new IOException("Invalid table height");var rows=new List<Dictionary<string,string>>();
-        for(var i=0;i<count;i++){var row=new Dictionary<string,string>();foreach(var name in names)row[name]=reader.Text();rows.Add(row);}return rows;
+        for(var i=0;i<count;i++){var row=new Dictionary<string,string>();foreach(var name in names){row[name]=reader.Text();}rows.Add(row);}return rows;
     }
 }

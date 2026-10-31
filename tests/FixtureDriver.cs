@@ -14,7 +14,7 @@ internal static class FixtureDriver
         var number = Interlocked.Increment(ref caseNumber);
         var phone = new ConfiguredPhone(command["fixture"]?.DeepClone().AsObject() ?? new());
         var transport = new ConfiguredAdb(phone);
-        var directory = Path.Combine(TestPaths.Root, "fixture-cases", number.ToString());
+        var directory = Path.Join(TestPaths.Root, "fixture-cases", number.ToString());
         var server = new McpServer(new NativeEngine(transport, phone, directory, () => new ConfiguredControl(phone)));
         var request = command["rpc"]?.DeepClone().AsObject() ?? new JsonObject
         {

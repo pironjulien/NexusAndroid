@@ -36,7 +36,7 @@ public sealed partial class NativeEngine
         while(true)
         {
             var asked=DateTimeOffset.UtcNow;var idle=Idle();if(idle is null){presenceWarning="Phone does not report last touch; user-presence check unavailable on this device.";return;}
-            var own=lastInput;var state=ReadAwakeState();if(AwakeMatches(state)&&state["last"]?.GetValue<double>() is double last)own=DateTimeOffset.FromUnixTimeMilliseconds((long)(last*1000))>own?DateTimeOffset.FromUnixTimeMilliseconds((long)(last*1000)):own;
+            var own=lastInput;var state=ReadAwakeState();if(AwakeMatches(state)&&state["last"]?.GetValue<double>() is double lastSeconds)own=DateTimeOffset.FromUnixTimeMilliseconds((long)(lastSeconds*1000))>own?DateTimeOffset.FromUnixTimeMilliseconds((long)(lastSeconds*1000)):own;
             if(idle>=3||asked.AddSeconds(-idle.Value)<=own.AddSeconds(1))return;
             if(DateTime.UtcNow>=until)throw new InvalidOperationException("The user is using the phone right now; no action sent");NativeSafety.StopGuard();Thread.Sleep(160);
         }
@@ -66,7 +66,7 @@ public sealed partial class NativeEngine
         {
             using var lease=new PhoneLease(phoneLockPath);RestoreExpiredAwake();
         }
-        catch(Exception){/* Timer is read on the next call; transport failure must not fabricate a restored state. */}
+        catch(Exception){/* Timer callback boundary: never crash the host. Timer is read on the next call; transport failure must not fabricate a restored state. */}
         finally{Monitor.Exit(gate);}
     }
     // Caller holds both the in-process and shared phone leases. A restarted daemon
@@ -74,7 +74,7 @@ public sealed partial class NativeEngine
     private void RestoreExpiredAwake(bool forceOwn=false)
     {
         var state=ReadAwakeState();if(state["active"]?.GetValue<bool>()!=true)return;if(forceOwn&&state["pid"]?.GetValue<int>()!=Environment.ProcessId)return;var elapsed=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()/1000.0-(state["last"]?.GetValue<double>()??0);if(elapsed<120&&!forceOwn){awakeTimer??=new Timer(_=>RestoreAwake(),null,Timeout.InfiniteTimeSpan,Timeout.InfiniteTimeSpan);awakeTimer.Change(TimeSpan.FromSeconds(120-elapsed),Timeout.InfiniteTimeSpan);return;}
-        if(!AwakeMatches(state))return;var current=Shell("settings","get","system","screen_off_timeout").Trim();if(current is "300000" or "1800000")Shell("settings","put","system","screen_off_timeout",state["original"]!.ToString());state["active"]=false;WriteAwakeState(state);
+        if(!AwakeMatches(state))return;var current=Shell("settings","get","system","screen_off_timeout").Trim();if(current is "300000" or "1800000"){Shell("settings","put","system","screen_off_timeout",state["original"]!.ToString());}state["active"]=false;WriteAwakeState(state);
     }
     private void ExtendAwake(NativeScreen screen)
     {

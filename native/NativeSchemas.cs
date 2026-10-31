@@ -21,11 +21,11 @@ public static class NativeSchemas
         {
             if(schema["$ref"]?.ToString() is { } reference)
             {
-                JsonNode? resolved=root;foreach(var part in reference.TrimStart('#','/').Split('/'))resolved=resolved?[part];Check(value,resolved?.AsObject()??throw new ArgumentException("Unresolved schema reference"),path);return;
+                JsonNode? resolved=root;foreach(var part in reference.TrimStart('#','/').Split('/')){resolved=resolved?[part];}Check(value,resolved?.AsObject()??throw new ArgumentException("Unresolved schema reference"),path);return;
             }
             if(schema["anyOf"] is JsonArray alternatives)
             {
-                foreach(var option in alternatives.OfType<JsonObject>())try{Check(value,option,path);return;}catch(ArgumentException){}
+                foreach(var option in alternatives.OfType<JsonObject>())try{Check(value,option,path);return;}catch(ArgumentException){/* this alternative does not match: try the next one */}
                 throw new ArgumentException(path+": value does not match its allowed types");
             }
             if(schema["enum"] is JsonArray choices&&!choices.Any(c=>c?.ToJsonString()==value?.ToJsonString()))throw new ArgumentException(path+": invalid choice");

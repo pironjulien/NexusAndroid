@@ -18,13 +18,13 @@ public sealed class RegisterTests : IDisposable
 
     public RegisterTests()
     {
-        home = Path.Combine(TestPaths.Root, "register", Interlocked.Increment(ref number).ToString());
+        home = Path.Join(TestPaths.Root, "register", Interlocked.Increment(ref number).ToString());
         Directory.CreateDirectory(home);
-        var noTools = Path.Combine(home, "empty-path");
+        var noTools = Path.Join(home, "empty-path");
         Directory.CreateDirectory(noTools);
-        executable = Path.Combine(home, "Program Files", "NexusAndroid", "NexusAndroid.exe");
-        Set("APPDATA", Path.Combine(home, "AppData", "Roaming"));
-        Set("LOCALAPPDATA", Path.Combine(home, "AppData", "Local"));
+        executable = Path.Join(home, "Program Files", "NexusAndroid", "NexusAndroid.exe");
+        Set("APPDATA", Path.Join(home, "AppData", "Roaming"));
+        Set("LOCALAPPDATA", Path.Join(home, "AppData", "Local"));
         Set("PATH", noTools);  // never the real `claude` or `codex` CLI
         foreach (var name in new[] { "NEXUS_PACK", "NEXUS_PACK_APPS", "NEXUS_PACK_TARGETS" }) Set(name, null);
         Register.Home = home;
@@ -47,14 +47,14 @@ public sealed class RegisterTests : IDisposable
     /// <summary>Antigravity plugin files as shipped next to the executable, else the repository's plugin folder.</summary>
     private static string PluginFiles([CallerFilePath] string source = "")
     {
-        var shipped = Path.Combine(AppContext.BaseDirectory, "plugin");
-        if (File.Exists(Path.Combine(shipped, "plugin.json"))) return shipped;
-        var repository = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source)!, "..", "plugin"));
-        Assert.True(File.Exists(Path.Combine(repository, "plugin.json")), "plugin files not found: " + repository);
+        var shipped = Path.Join(AppContext.BaseDirectory, "plugin");
+        if (File.Exists(Path.Join(shipped, "plugin.json"))) return shipped;
+        var repository = Path.GetFullPath(Path.Join(Path.GetDirectoryName(source)!, "..", "plugin"));
+        Assert.True(File.Exists(Path.Join(repository, "plugin.json")), "plugin files not found: " + repository);
         return repository;
     }
 
-    private string At(params string[] parts) => Path.Combine([home, .. parts]);
+    private string At(params string[] parts) => Path.Join([home, .. parts]);
 
     private static void WriteText(string path, string text)
     {
@@ -111,12 +111,12 @@ public sealed class RegisterTests : IDisposable
         Assert.Equal(60L, server["startup_timeout_sec"]);
 
         var plugin = At(".gemini", "config", "plugins", "nexus-android");
-        Assert.True(File.Exists(Path.Combine(plugin, "plugin.json")));
-        Assert.True(File.Exists(Path.Combine(plugin, "skills", "nexus-android", "SKILL.md")));
-        Assert.Equal(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A }, File.ReadAllBytes(Path.Combine(plugin, "logo.png"))[..8]);
-        Assert.True(JsonNode.DeepEquals(Entry(), ReadJson(Path.Combine(plugin, "mcp_config.json"))["mcpServers"]!["nexus-android"]));
+        Assert.True(File.Exists(Path.Join(plugin, "plugin.json")));
+        Assert.True(File.Exists(Path.Join(plugin, "skills", "nexus-android", "SKILL.md")));
+        Assert.Equal(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A }, File.ReadAllBytes(Path.Join(plugin, "logo.png"))[..8]);
+        Assert.True(JsonNode.DeepEquals(Entry(), ReadJson(Path.Join(plugin, "mcp_config.json"))["mcpServers"]!["nexus-android"]));
         Assert.False(File.Exists(At(".gemini", "config", "mcp_config.json")));  // never a global entry
-        Assert.True(JsonNode.DeepEquals(Entry(), ReadJson(Path.Combine(store, "claude_desktop_config.json"))["mcpServers"]!["nexus-android"]));
+        Assert.True(JsonNode.DeepEquals(Entry(), ReadJson(Path.Join(store, "claude_desktop_config.json"))["mcpServers"]!["nexus-android"]));
 
         var codexText = ReadText(At(".codex", "config.toml"));
         var again = Register.DeclareAll();
@@ -132,14 +132,14 @@ public sealed class RegisterTests : IDisposable
     public void ClaudeDesktopStoreDataFolder()
     {
         var left = At("AppData", "Local", "Packages", "AnthropicPBC.Claude_x", "LocalCache", "Roaming", "Claude");
-        WriteText(Path.Combine(left, ".user-data-left.anthropicpbc.claude_x"), "");
+        WriteText(Path.Join(left, ".user-data-left.anthropicpbc.claude_x"), "");
         var data = At("AppData", "Local", "Claude-Data", "anthropicpbc.claude_x");
-        WriteText(Path.Combine(data, "claude_desktop_config.json"), """{"preferences": {"theme": "dark"}}""");
+        WriteText(Path.Join(data, "claude_desktop_config.json"), """{"preferences": {"theme": "dark"}}""");
         AssertResults(Register.DeclareAll(), ("Claude Desktop", "declared"));
-        var config = ReadJson(Path.Combine(data, "claude_desktop_config.json"));
+        var config = ReadJson(Path.Join(data, "claude_desktop_config.json"));
         AssertJson("""{"theme": "dark"}""", config["preferences"]);
         Assert.True(JsonNode.DeepEquals(Entry(), config["mcpServers"]!["nexus-android"]));
-        Assert.False(File.Exists(Path.Combine(left, "claude_desktop_config.json")));
+        Assert.False(File.Exists(Path.Join(left, "claude_desktop_config.json")));
     }
 
     [Fact]
@@ -150,13 +150,13 @@ public sealed class RegisterTests : IDisposable
         WriteText(At(".codex", "config.toml"), toml);
         const string daemon = """{"mcpServers": {"nexus-android": {"serverUrl": "http://127.0.0.1:16180/mcp"}}}""";
         var plugin = At(".gemini", "config", "plugins", "nexus-android");
-        WriteText(Path.Combine(plugin, "mcp_config.json"), daemon);
+        WriteText(Path.Join(plugin, "mcp_config.json"), daemon);
         var results = Register.DeclareAll();
         Assert.Equal(Register.Plugin, results["Claude Code"]);
         Assert.Equal(Register.Kept, results["Codex"]);
         Assert.StartsWith("kept", results["Antigravity"]);
         Assert.Equal(toml, ReadText(At(".codex", "config.toml")));
-        Assert.Equal(daemon, ReadText(Path.Combine(plugin, "mcp_config.json")));
+        Assert.Equal(daemon, ReadText(Path.Join(plugin, "mcp_config.json")));
     }
 
     [Fact]
@@ -201,22 +201,22 @@ public sealed class RegisterTests : IDisposable
         Assert.Equal(ours, Register.Ours(JsonNode.Parse(existing)));
         var folder = At("AppData", "Roaming", "Claude");
         var original = "{\"mcpServers\": {\"nexus-android\": " + existing + ", \"x\": {\"command\": \"y\"}}}";
-        WriteText(Path.Combine(folder, "claude_desktop_config.json"), original);
+        WriteText(Path.Join(folder, "claude_desktop_config.json"), original);
         AssertResults(Register.DeclareAll(new HashSet<string> { "claude-desktop" }), ("Claude Desktop", ours ? "declared" : Register.Kept));
-        var config = ReadJson(Path.Combine(folder, "claude_desktop_config.json"));
+        var config = ReadJson(Path.Join(folder, "claude_desktop_config.json"));
         AssertJson("""{"command": "y"}""", config["mcpServers"]!["x"]);
         if (ours) Assert.True(JsonNode.DeepEquals(Entry(), config["mcpServers"]!["nexus-android"]));
-        else Assert.Equal(original, ReadText(Path.Combine(folder, "claude_desktop_config.json")));
+        else Assert.Equal(original, ReadText(Path.Join(folder, "claude_desktop_config.json")));
     }
 
     [Fact]
     public void OldGlobalAntigravityEntryRemoved()
     {
         var root = At(".gemini", "config");
-        WriteText(Path.Combine(root, "mcp_config.json"), """{"mcpServers": {"nexus-android": {"command": "uvx", "args": ["nexus-android"]}, "x": {"command": "y"}}}""");
-        WriteText(Path.Combine(root, "config.json"), """{"plugins": {"nexus-android": {"enabled": false}}}""");
+        WriteText(Path.Join(root, "mcp_config.json"), """{"mcpServers": {"nexus-android": {"command": "uvx", "args": ["nexus-android"]}, "x": {"command": "y"}}}""");
+        WriteText(Path.Join(root, "config.json"), """{"plugins": {"nexus-android": {"enabled": false}}}""");
         Assert.Equal("plugin, turned off in Antigravity's settings", Register.Antigravity());
-        AssertJson("""{"x": {"command": "y"}}""", ReadJson(Path.Combine(root, "mcp_config.json"))["mcpServers"]);
+        AssertJson("""{"x": {"command": "y"}}""", ReadJson(Path.Join(root, "mcp_config.json"))["mcpServers"]);
     }
 
     [Fact]
@@ -268,10 +268,8 @@ internal static class Toml
     {
         var tables = new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal) { [""] = new(StringComparer.Ordinal) };
         var current = tables[""];
-        foreach (var raw in text.ReplaceLineEndings("\n").Split('\n'))
+        foreach (var line in text.ReplaceLineEndings("\n").Split('\n').Select(raw => raw.Trim()).Where(line => line.Length > 0 && !line.StartsWith('#')))
         {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith('#')) continue;
             var header = Regex.Match(line, @"^\[(?<name>[^\[\]]+)\]$");
             if (header.Success)
             {
