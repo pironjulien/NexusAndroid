@@ -1,7 +1,7 @@
 {
   "name": "nexus-android",
   "displayName": "Nexus Android",
-  "version": "0.22.6",
+  "version": "0.22.7",
   "description": "Android phone over plain ADB (no root, no app): screen, gestures, SMS/RCS, notifications, files, settings. Served by the local NexusAndroid daemon, installed by NexusSystem (or NexusAndroid's get.ps1); needs USB debugging on the phone.",
   "author": {
     "name": "Julien Piron",

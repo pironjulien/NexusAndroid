@@ -15,6 +15,7 @@
 #   -NoDaemon do not install the shared HTTP daemon (127.0.0.1:16180, bearer token NEXUS_MCP_TOKEN, hidden logon task;
 #             on a Nexus workstation, declared to the daemon supervisor instead)
 # NEXUS_PACK=1 (the Nexus pack): no question, no wait; exit code 0 on success; a last "NEXUS_PACK_RESULT ..." line.
+# NEXUS_RELEASE_TAG: install that release (vX.Y.Z, or a development build vX.Y.Z-dev.N) instead of the latest.
 # For tests only: NEXUS_ANDROID_SOURCE (a local NexusAndroid-win-*.zip instead of the latest release) and
 # NEXUS_ANDROID_HOME (another home folder: installation AND declarations go there, the real AI apps are never touched).
 # A local package aimed at the real home folder is refused unless -Real is given.
@@ -53,6 +54,12 @@ function Get-Architecture {
 }
 
 function Get-LatestTag {
+    # NEXUS_RELEASE_TAG (set by NexusSystem for its development channel): that release instead, a stable vX.Y.Z or a
+    # development vX.Y.Z-dev.N build, checked against its own SHA256SUMS.txt like any other.
+    if ($env:NEXUS_RELEASE_TAG) {
+        if ($env:NEXUS_RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(-dev\.\d+)?$') { throw "NEXUS_RELEASE_TAG is not a release tag: $env:NEXUS_RELEASE_TAG" }
+        return $env:NEXUS_RELEASE_TAG
+    }
     # The latest release's tag from the redirect of github.com/<repo>/releases/latest: no GitHub API (60 anonymous
     # requests an hour per IP); the API stays as a fallback.
     try {

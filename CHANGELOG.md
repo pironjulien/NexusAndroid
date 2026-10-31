@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.7] - 2026-10-31
+
+### Added
+- Development channel: every push to `main` whose tests pass publishes a pre-release `vX.Y.Z-dev.N` with the same
+  packages, checksums and build provenance as a release. Only NexusSystem's development channel installs it;
+  `releases/latest` never points to one.
+- `get.ps1` installs the release named by `NEXUS_RELEASE_TAG` (stable or development) instead of the latest one,
+  still checked against that release's `SHA256SUMS.txt`.
+
+### Changed
+- A stable release is the promotion of a tested development build: the same files, checked against their
+  checksums, published as `vX.Y.Z` at the same commit (Release workflow, "Run workflow"). Nothing is rebuilt.
+
 ## [0.22.6] - 2026-10-31
 
 ### Changed

@@ -1,25 +1,39 @@
-# Release: on a vX.Y.Z tag, runs test.ps1, builds the native engine for Windows x64 and Arm64 (self-contained single
-# file, no .NET to install), packs NexusAndroid-win-x64.zip, NexusAndroid-win-arm64.zip and the Claude Desktop extensions
-# nexus-android.mcpb (x64) and nexus-android-arm64.mcpb, writes SHA256SUMS.txt, attests their build provenance (Sigstore, keyless: verify a file with
-# `gh attestation verify <file> --repo pironjulien/NexusAndroid`; the bundle is attached as NexusAndroid-X.Y.Z.intoto.jsonl),
-# publishes the "NexusAndroid X.Y.Z" GitHub release with the CHANGELOG section as notes, then publishes server.json (the
-# .mcpb's URL and SHA-256) to the official MCP registry by GitHub OIDC. get.ps1 installs from releases/latest.
+# Release, in two channels.
+# - Development: every push to main runs test.ps1, builds the native engine for Windows x64 and Arm64 (self-contained
+#   single file, no .NET to install), packs NexusAndroid-win-x64.zip, NexusAndroid-win-arm64.zip and the Claude Desktop
+#   extensions nexus-android.mcpb (x64) and nexus-android-arm64.mcpb, writes SHA256SUMS.txt, attests their build
+#   provenance (Sigstore, keyless: `gh attestation verify <file> --repo pironjulien/NexusAndroid`; the bundle is attached
+#   as NexusAndroid-X.Y.Z.intoto.jsonl) and publishes them as the pre-release vX.Y.Z-dev.N. Only NexusSystem's
+#   development channel installs those; releases/latest never points to one. The five newest are kept.
+# - Stable: "Run workflow" with promote (a vX.Y.Z-dev.N tag, or empty for the newest) publishes the SAME files, checked
+#   against their SHA256SUMS.txt, as the release vX.Y.Z at the same commit, with the CHANGELOG section as notes; then
+#   server.json (the .mcpb's URL and SHA-256) goes to the official MCP registry by GitHub OIDC. get.ps1 installs from
+#   releases/latest. Nothing is rebuilt between the tested build and the stable release.
 # Actions pinned by commit SHA; Dependabot (github-actions) keeps them up to date.
 name: Release
 
 on:
   push:
-    tags: ["v*.*.*"]
+    branches: [main]
   workflow_dispatch:
     inputs:
-      tag:
-        description: Published release tag (vX.Y.Z) whose server.json to send to the MCP registry again
-        required: true
+      promote:
+        description: Development build to publish as stable (vX.Y.Z-dev.N; empty = the newest)
+        required: false
+        default: ''
+      registry:
+        description: Only send this stable release's server.json (vX.Y.Z) to the MCP registry again
+        required: false
+        default: ''
 
 permissions: {}
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  release:
+  dev:
     if: github.event_name == 'push'
     runs-on: windows-latest
     permissions:
@@ -33,14 +47,15 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           global-json-file: global.json
-      - name: Versions match the tag
+      - name: One version everywhere
+        id: version
         shell: pwsh
         env:
-          TAG: ${{ github.ref_name }}
+          RUN: ${{ github.run_number }}
         run: |
-          $version = $env:TAG.TrimStart('v')
+          $version = ([xml](Get-Content native/NexusAndroid.csproj -Raw)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "native/NexusAndroid.csproj: no X.Y.Z version ($version)." }
           $found = [ordered]@{
-            'native/NexusAndroid.csproj' = ([xml](Get-Content native/NexusAndroid.csproj -Raw)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
             'native/Program.cs' = [regex]::Match((Get-Content native/Program.cs -Raw), 'Version = "([^"]+)"').Groups[1].Value
             'mcpb/manifest.json' = (Get-Content mcpb/manifest.json -Raw | ConvertFrom-Json).version
             'plugin/plugin.json' = (Get-Content plugin/plugin.json -Raw | ConvertFrom-Json).version
@@ -50,15 +65,14 @@ jobs:
           }
           $wrong = @($found.GetEnumerator() | Where-Object { $_.Value -ne $version } | ForEach-Object { "$($_.Key)=$($_.Value)" })
           if ($wrong) { throw "Version $version expected: $($wrong -join ', ')" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version-dev.$env:RUN" >> $env:GITHUB_OUTPUT
       - name: Tests (test.ps1)
         shell: pwsh
         run: ./test.ps1
       - name: Build and pack
         shell: pwsh
-        env:
-          TAG: ${{ github.ref_name }}
         run: |
-          $version = $env:TAG.TrimStart('v')
           New-Item -ItemType Directory dist | Out-Null
           foreach ($rid in 'win-x64', 'win-arm64') {
             $out = Join-Path $env:RUNNER_TEMP "publish-$rid"
@@ -93,28 +107,74 @@ jobs:
         shell: pwsh
         env:
           BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
-          TAG: ${{ github.ref_name }}
-        run: Copy-Item $env:BUNDLE "dist/NexusAndroid-$($env:TAG.TrimStart('v')).intoto.jsonl"
-      - name: GitHub release
+          VERSION: ${{ steps.version.outputs.version }}
+        run: Copy-Item $env:BUNDLE "dist/NexusAndroid-$env:VERSION.intoto.jsonl"
+      - name: Development pre-release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          $version = $env:TAG.TrimStart('v')
-          $lines = Get-Content CHANGELOG.md
-          $start = [Array]::FindIndex($lines, [Predicate[string]] { param($l) $l -like "## ``[$version``]*" })
-          if ($start -lt 0) { throw "CHANGELOG.md has no [$version] section." }
-          $end = [Array]::FindIndex($lines, $start + 1, [Predicate[string]] { param($l) $l -like '## *' })
-          if ($end -lt 0) { $end = $lines.Count }
-          $lines[($start + 1)..($end - 1)] | Set-Content notes.md -Encoding utf8NoBOM
-          gh release create $env:TAG (Get-ChildItem dist -File).FullName --title "NexusAndroid $version" --notes-file notes.md --verify-tag --repo $env:GITHUB_REPOSITORY
+          $notes = "Development build of $env:GITHUB_SHA (tests passed). Installed only by NexusSystem's development channel; promoted as is to the stable v$env:VERSION."
+          gh release create $env:TAG (Get-ChildItem dist -File).FullName --prerelease --latest=false --target $env:GITHUB_SHA `
+            --title "NexusAndroid $env:VERSION (development build)" --notes $notes --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE) { throw 'gh release create failed.' }
+          # Keep the five newest development builds; a promoted build's files live on in its stable release.
+          $dev = @(gh release list --repo $env:GITHUB_REPOSITORY --limit 100 --json tagName,isPrerelease,createdAt | ConvertFrom-Json |
+            Where-Object { $_.isPrerelease -and $_.tagName -match '-dev\.\d+$' } | Sort-Object createdAt -Descending)
+          foreach ($old in $dev | Select-Object -Skip 5) {
+            gh release delete $old.tagName --cleanup-tag --yes --repo $env:GITHUB_REPOSITORY
+          }
+
+  promote:
+    if: github.event_name == 'workflow_dispatch' && inputs.registry == ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.publish.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Publish the tested development build as stable
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMOTE: ${{ inputs.promote }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          dev="$PROMOTE"
+          if [[ -z "$dev" ]]; then
+            dev=$(gh release list --repo "$REPOSITORY" --limit 100 --json tagName,isPrerelease,createdAt \
+              --jq '[.[] | select(.isPrerelease and (.tagName | test("-dev\\.[0-9]+$")))] | sort_by(.createdAt) | last | .tagName')
+          fi
+          [[ "$dev" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-dev\.[0-9]+$ ]] || { echo "Not a development build: $dev"; exit 1; }
+          version="${BASH_REMATCH[1]}"
+          stable="v$version"
+          if gh release view "$stable" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo "$stable is already released: raise the version, push, then promote the new build."; exit 1
+          fi
+          commit=$(gh release view "$dev" --repo "$REPOSITORY" --json targetCommitish --jq .targetCommitish)
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || commit=$(git rev-list -n 1 "$dev")
+          mkdir dist
+          gh release download "$dev" --repo "$REPOSITORY" --dir dist
+          (cd dist && tr -d '\r' < SHA256SUMS.txt | sha256sum --strict -c -)
+          git show "$commit:CHANGELOG.md" > changelog.md
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## / {exit} on {print}' changelog.md > notes.md
+          [[ -s notes.md ]] || { echo "CHANGELOG.md has no [$version] section at $commit."; exit 1; }
+          gh release create "$stable" dist/* --target "$commit" --title "NexusAndroid $version" --notes-file notes.md --latest --repo "$REPOSITORY"
+          echo "Promoted $dev ($commit) to $stable with the same files."
+          echo "tag=$stable" >> "$GITHUB_OUTPUT"
 
   registry:
-    # server.json to the official MCP registry: the .mcpb just published (its URL and SHA-256). mcp-publisher pinned by
-    # version and SHA-256; GitHub OIDC login, no token stored.
-    needs: release
-    if: always() && (needs.release.result == 'success' || github.event_name == 'workflow_dispatch')
+    # server.json to the official MCP registry: the stable .mcpb (its URL and SHA-256). mcp-publisher pinned by version
+    # and SHA-256; GitHub OIDC login, no token stored.
+    needs: promote
+    if: always() && (needs.promote.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.registry != ''))
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -128,7 +188,7 @@ jobs:
           persist-credentials: false
       - name: server.json for this release
         env:
-          TAG: ${{ inputs.tag || github.ref_name }}
+          TAG: ${{ inputs.registry || needs.promote.outputs.tag }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
