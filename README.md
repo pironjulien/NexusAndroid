@@ -22,10 +22,7 @@ cloud relay: a USB cable or the local Wi-Fi.
 Built and tested on a Samsung Galaxy Fold (`SM-F971B`, One UI) with a Windows PC. Other Android phones with USB
 debugging should work but have not been tested (see [Compatibility](https://github.com/pironjulien/NexusAndroid#compatibility)). Everything sent to the client is in English: server instructions,
 tool descriptions and tool reports (results, refusals, errors).
-Part of the Nexus family: [NexusWindows](https://julienpiron.fr/nexuswindows/)
-([Claude](https://github.com/pironjulien/NexusWindows-Claude) ·
-[Codex](https://github.com/pironjulien/NexusWindows-Codex) ·
-[Antigravity](https://github.com/pironjulien/NexusWindows-Antigravity)),
+Part of the Nexus family: [NexusWindows](https://julienpiron.fr/nexuswindows/) ([repo](https://github.com/pironjulien/NexusWindows)),
 [NexusBrowser](https://julienpiron.fr/nexusbrowser/) ([repo](https://github.com/pironjulien/NexusBrowser)),
 [NexusAndroid](https://julienpiron.fr/nexusandroid/) ([repo](https://github.com/pironjulien/NexusAndroid)).
 Project page: [julienpiron.fr/nexusandroid](https://julienpiron.fr/nexusandroid/).
