@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   still checked against that release's `SHA256SUMS.txt`.
 
 ### Changed
+- The release workflow uses NexusSystem's shared `product-dev-release` and `product-promote` workflows; only the
+  test and build steps stay here.
 - A stable release is the promotion of a tested development build: the same files, checked against their
   checksums, published as `vX.Y.Z` at the same commit (Release workflow, "Run workflow"). Nothing is rebuilt.
 
