@@ -1,0 +1,30 @@
+{
+  "name": "nexus-android",
+  "version": "0.22.6",
+  "description": "Android phone over plain ADB (no root, no app): screen, gestures, SMS/RCS, notifications, files, settings. Served by the local NexusAndroid daemon, installed by NexusSystem (or NexusAndroid's get.ps1); needs USB debugging on the phone.",
+  "author": {
+    "name": "Julien Piron",
+    "url": "https://github.com/pironjulien"
+  },
+  "homepage": "https://julienpiron.fr/nexusandroid/",
+  "repository": "https://github.com/pironjulien/NexusAndroid",
+  "license": "MIT",
+  "keywords": [
+    "android",
+    "adb",
+    "phone",
+    "computer-use",
+    "mcp"
+  ],
+  "mcpServers": "./.codex-mcp.json",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Nexus Android",
+    "shortDescription": "Your Android phone over ADB, every gesture read back",
+    "developerName": "Julien Piron",
+    "category": "Productivity",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png",
+    "websiteURL": "https://julienpiron.fr/nexusandroid/"
+  }
+}

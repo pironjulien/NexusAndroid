@@ -44,6 +44,8 @@ jobs:
             'native/Program.cs' = [regex]::Match((Get-Content native/Program.cs -Raw), 'Version = "([^"]+)"').Groups[1].Value
             'mcpb/manifest.json' = (Get-Content mcpb/manifest.json -Raw | ConvertFrom-Json).version
             'plugin/plugin.json' = (Get-Content plugin/plugin.json -Raw | ConvertFrom-Json).version
+            'plugin/.claude-plugin/plugin.json' = (Get-Content plugin/.claude-plugin/plugin.json -Raw | ConvertFrom-Json).version
+            'plugin/.codex-plugin/plugin.json' = (Get-Content plugin/.codex-plugin/plugin.json -Raw | ConvertFrom-Json).version
             'server.json' = (Get-Content server.json -Raw | ConvertFrom-Json).version
           }
           $wrong = @($found.GetEnumerator() | Where-Object { $_.Value -ne $version } | ForEach-Object { "$($_.Key)=$($_.Value)" })

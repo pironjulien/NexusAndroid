@@ -4,7 +4,7 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <RootNamespace>NexusAndroid</RootNamespace>
     <AssemblyName>NexusAndroid</AssemblyName>
-    <Version>0.22.5</Version>
+    <Version>0.22.6</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -24,7 +24,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Antigravity plugin (guide and logo), installed by `setup` next to the server entry. -->
-    <None Include="..\plugin\**\*" LinkBase="plugin" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Antigravity plugin (manifest, logo, guide), installed by `setup` next to the server entry. The same plugin
+         folder also serves Claude Code (.claude-plugin, .mcp.json) and Codex (.codex-plugin, .codex-mcp.json) from
+         the NexusSystem catalog; those files are not shipped with the executable. -->
+    <None Include="..\plugin\plugin.json;..\plugin\logo.png" LinkBase="plugin" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\plugin\skills\**\*" LinkBase="plugin\skills" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

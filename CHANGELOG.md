@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.6] - 2026-10-31
+
+### Changed
+- `plugin/` is now the single source of the NexusAndroid plugin for all three AI apps: Antigravity's manifest,
+  logo and guide (shipped with the executable, as before), plus Claude Code's (`.claude-plugin`, `.mcp.json`) and
+  Codex's (`.codex-plugin`, `.codex-mcp.json`) files. The NexusSystem catalog points to this folder at the release
+  tag instead of keeping its own copies, so the guide can no longer drift between AI apps.
+
 ## [0.22.5] - 2026-10-30
 
 ### Fixed
