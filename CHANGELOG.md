@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.22.9] - 2026-10-31
 
+### Fixed
+- Antigravity's plugin guide is refreshed when its route points to the shared local daemon (the route itself is kept
+  as it is); the installer used to answer "kept" and leave an older plugin in place.
+
 ### Changed
 - Release: a push whose version is not released yet becomes the stable release right after its development build
   (same files); "Run workflow" still promotes by hand. CodeQL and OpenSSF Scorecard workflows removed.
