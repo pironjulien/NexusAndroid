@@ -218,11 +218,16 @@ public sealed class RegisterTests : IDisposable
         AssertJson("""{"x": {"command": "y"}}""", ReadJson(Path.Join(root, "mcp_config.json"))["mcpServers"]);
     }
 
-    [Fact]
-    public void SharedDaemonRouteKeptAndGuideRefreshed()
+    /// <summary>The route is kept and the manifest refreshed whatever key holds the address: the local installer and
+    /// NexusSystem write `url` (0.23.0 left the 0.22.10 manifest in place when only `serverUrl` was recognized).</summary>
+    [Theory]
+    [InlineData("url")]
+    [InlineData("serverUrl")]
+    [InlineData("httpUrl")]
+    public void SharedDaemonRouteKeptAndGuideRefreshed(string key)
     {
         var target = At(".gemini", "config", "plugins", "nexus-android");
-        var route = """{"mcpServers": {"nexus-android": {"serverUrl": "http://127.0.0.1:16180/mcp"}}}""";
+        var route = "{\"mcpServers\": {\"nexus-android\": {\"" + key + "\": \"http://127.0.0.1:16180/mcp\", \"headers\": {\"Authorization\": \"Bearer x\"}}}}";
         WriteText(Path.Join(target, "mcp_config.json"), route);
         WriteText(Path.Join(target, "plugin.json"), """{"name": "nexus-android", "version": "0.0.1"}""");
         Assert.Equal("plugin", Register.Antigravity());

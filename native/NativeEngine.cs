@@ -14,7 +14,7 @@ public sealed partial class NativeEngine
     private readonly Func<string,int,NativeScreen,IVideoRecorder> recorder;
     private readonly object gate = new();
     private string verifiedHardwareForOperation="";
-    private sealed class SessionState{public List<UiElement> Last=[];public NativeScreen? Screen;public DateTime Seen;public double Scale=1,ScaleY=1;public ImageChainResult? Image;public int ImageWidth,ImageHeight,NextId=1;public bool CoordinatesValid=true;}
+    private sealed class SessionState{public List<UiElement> Last=[];public NativeScreen? Screen;public DateTime Seen;public double Scale=1,ScaleY=1;public ImageChainResult? Image;public int ImageWidth,ImageHeight,NextId=1;public bool CoordinatesValid=true;public (string Key,byte[] Thumbnail)? Sent;}
     private readonly Dictionary<string,SessionState> sessions=[];
     private SessionState Current{get{var key=NativeSafety.Session.Value??"stdio";if(!sessions.TryGetValue(key,out var state)){sessions[key]=state=new();}return state;}}
     private List<UiElement> last{get=>Current.Last;set=>Current.Last=value;}
@@ -96,7 +96,7 @@ public sealed partial class NativeEngine
     {
         if(args["region"] is JsonArray region)
         {
-            var full=Current.Image??throw new InvalidOperationException("No full image previously sent in this session");if(region.Count!=4)throw new ArgumentException("region needs four coordinates");var p=region.Select(n=>(int)Math.Round(n!.GetValue<double>())).ToArray();var x1=Math.Clamp(p[0],0,full.Width);var y1=Math.Clamp(p[1],0,full.Height);var x2=Math.Clamp(p[2],0,full.Width);var y2=Math.Clamp(p[3],0,full.Height);if(x2<=x1||y2<=y1)throw new ArgumentException("Empty region");var decoded=ImageChain.Decode(full.Bytes);var cropped=new PixelBuffer(x2-x1,y2-y1);for(var y=y1;y<y2;y++){Buffer.BlockCopy(decoded.Bgra,(y*decoded.Width+x1)*4,cropped.Bgra,(y-y1)*cropped.Width*4,cropped.Width*4);}var enlarged=ImageChain.ResizeBilinear(cropped,cropped.Width*2,cropped.Height*2);var result=ImageChain.ProcessChain(enlarged,maxBytes:500*1024);var regionOutput=Text($"Zoom of last full image [{x1},{y1},{x2},{y2}]. Action coordinates remain those of that full image.");regionOutput["content"]!.AsArray().Add(new JsonObject{["type"]="image",["mimeType"]=result.MimeType,["data"]=Convert.ToBase64String(result.Bytes)});return regionOutput;
+            var full=Current.Image??throw new InvalidOperationException("No full image previously sent in this session");if(region.Count!=4)throw new ArgumentException("region needs four coordinates");var p=region.Select(n=>(int)Math.Round(n!.GetValue<double>())).ToArray();var x1=Math.Clamp(p[0],0,full.Width);var y1=Math.Clamp(p[1],0,full.Height);var x2=Math.Clamp(p[2],0,full.Width);var y2=Math.Clamp(p[3],0,full.Height);if(x2<=x1||y2<=y1)throw new ArgumentException("Empty region");var decoded=ImageChain.Decode(full.Bytes);var cropped=new PixelBuffer(x2-x1,y2-y1);for(var y=y1;y<y2;y++){Buffer.BlockCopy(decoded.Bgra,(y*decoded.Width+x1)*4,cropped.Bgra,(y-y1)*cropped.Width*4,cropped.Width*4);}var enlarged=ImageChain.ResizeBilinear(cropped,cropped.Width*2,cropped.Height*2);var result=ImageChain.ProcessChain(enlarged,maxBytes:500*1024);Current.Sent=null;/* the zoom is now the last image sent: the next full view goes out again */var regionOutput=Text($"Zoom of last full image [{x1},{y1},{x2},{y2}]. Action coordinates remain those of that full image.");regionOutput["content"]!.AsArray().Add(new JsonObject{["type"]="image",["mimeType"]=result.MimeType,["data"]=Convert.ToBase64String(result.Bytes)});return regionOutput;
         }
         var show=Str(args,"show","auto");if(show=="none")return Text("No screen view requested; previous references remain bound to their observed contents.");var image=show is "both" or "image" || args["region"] is not null;var previous=last.ToList();
         var screen=Read();if(Locked(screen)){screen=LiftTrustedLock(screen);}ExtendAwake(screen);if(image){screen=Read(true);}var elements=Elements(screen);
@@ -109,19 +109,30 @@ public sealed partial class NativeEngine
         if(image && screen.Image is not null)
         {
             if(elements.Count==0 && !Bool(args,"confirm")){output["content"]!.AsArray().Add(new JsonObject{["type"]="text",["text"]="Image not sent: UI tree unavailable, code masking cannot be guaranteed. confirm=true only if the user accepts this exact unmasked image."});return output;}
-            var blackouts=elements.Where(Sensitive).Select(e=>(e.Left,e.Top,e.Right,e.Bottom)).ToList();
-            try{var lines=NativeOcr.Read(screen.Image);var context=NativeSafety.HasCodeKeyword(string.Join(' ',lines.Select(l=>l.Text)));foreach(var line in lines.Where(l=>NativeSafety.MaskCodes(NativeSafety.Mask(l.Text),context)!=l.Text))blackouts.Add((line.Left,line.Top,line.Right,line.Bottom));}
+            var blackouts=elements.Where(Sensitive).Select(e=>(e.Left,e.Top,e.Right,e.Bottom)).ToList();var seen=new List<string>();
+            try{var lines=NativeOcr.Read(screen.Image);seen.AddRange(lines.Select(l=>$"{NativeSafety.MaskCodes(NativeSafety.Mask(l.Text),false)}|{l.Left},{l.Top},{l.Right},{l.Bottom}"));var context=NativeSafety.HasCodeKeyword(string.Join(' ',lines.Select(l=>l.Text)));foreach(var line in lines.Where(l=>NativeSafety.MaskCodes(NativeSafety.Mask(l.Text),context)!=l.Text))blackouts.Add((line.Left,line.Top,line.Right,line.Bottom));}
             catch(Exception e)when(e is IOException or System.Runtime.InteropServices.COMException){output["content"]!.AsArray().Add(new JsonObject{["type"]="text",["text"]="Windows OCR unavailable; codes drawn outside the UI tree may remain visible: "+NativeSafety.Mask(e.Message)});}
             var marks=Str(args,"marks","auto");var badges=show=="both"&&marks!="none"?elements.Where(e=>marks=="all" || (e.Clickable&&string.IsNullOrWhiteSpace(e.Text))).Select(e=>(int.Parse(e.Id[1..]),e.CenterX,e.CenterY)).ToList():null;
             var result=ImageChain.ProcessEncodedImage(screen.Image,maxBytes:500*1024,blackouts:blackouts,badges:badges);
-            Current.Image=result;
+            // Same session, same marks, same geometry and same full screen content (system bar included, text read by OCR
+            // included), and the same colour print: the image the agent already holds is not sent again.
+            var key=string.IsNullOrEmpty(screen.Error)&&elements.Count>0?string.Join('#',ContentPrint(elements,seen,Foreground(screen)),screen.Width,screen.Height,result.Width,result.Height,string.Join(',',badges?.Select(b=>b.Item1)??[])):null;
+            var unchanged=key is not null&&Current.Image is not null&&Current.Sent is {} sent&&sent.Key==key&&ImageChain.SameThumbnail(sent.Thumbnail,result.Thumbnail);
+            if(!unchanged)
+            {
+                Current.Image=result;Current.Sent=key is not null&&result.Thumbnail is not null?(key,result.Thumbnail):null;
+                imageScale=(double)result.Width/screen.Width;Current.ScaleY=(double)result.Height/screen.Height;
+            }
             Current.ImageWidth=screen.Width;Current.ImageHeight=screen.Height;Current.CoordinatesValid=true;
-            imageScale=(double)result.Width/screen.Width;
-            Current.ScaleY=(double)result.Height/screen.Height;if(show!="image")output["content"]![0]!["text"]=NativeSafety.Mask($"{Foreground(screen)} · {screen.Width}×{screen.Height}"+(Locked(screen)?" · locked":"")+"\n"+NativeSafety.Mask(screen.Error)+"\n"+ScreenParser.FormatCompactTree(filtered.Take(300),imageScale,Current.ScaleY),codes:false);
-            output["content"]!.AsArray().Add(new JsonObject{["type"]="image",["mimeType"]=result.MimeType,["data"]=Convert.ToBase64String(result.Bytes)});
+            var header=$"{Foreground(screen)} · {screen.Width}×{screen.Height}"+(Locked(screen)?" · locked":"")+(unchanged?" · image unchanged since the last one sent (not sent again)":"");
+            output["content"]![0]!["text"]=NativeSafety.Mask(header+"\n"+NativeSafety.Mask(screen.Error)+"\n"+(show=="image"?"":ScreenParser.FormatCompactTree(filtered.Take(300),imageScale,Current.ScaleY)),codes:false);
+            if(!unchanged)output["content"]!.AsArray().Add(new JsonObject{["type"]="image",["mimeType"]=result.MimeType,["data"]=Convert.ToBase64String(result.Bytes)});
         }
         return output;
     }
+    /// <summary>Full print of a screen for "image unchanged": every element, system bar included (a tile or a notification
+    /// that changes state), exact bounds and states, masked text only, plus the text read on the image by OCR.</summary>
+    internal static string ContentPrint(IEnumerable<UiElement> elements,IEnumerable<string> seen,string package)=>Hash(string.Join('\n',new[]{package}.Concat(elements.Select(e=>$"{e.PackageName}|{e.ClassName}|{e.Text}|{e.ContentDesc}|{e.ResourceId}|{e.Left},{e.Top},{e.Right},{e.Bottom}|{e.Checked},{e.Selected},{e.Focused},{e.Enabled},{e.ShowingHint}|{e.IsOcr}").Order(StringComparer.Ordinal)).Concat(seen.Order(StringComparer.Ordinal))));
     private (int X,int Y,UiElement? Element) Resolve(JsonNode? target,List<UiElement> fresh)
     {
         if(target is null)throw new ArgumentException("Missing target: use [N], visible text, id:resource-id or x,y");var text=target.ToString();

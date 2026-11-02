@@ -21,6 +21,13 @@ public sealed partial class NativeEngine
     private readonly string awakePath;
     private Timer? awakeTimer;
     private string presenceWarning="";
+    // Seconds without a gesture or a look of any agent before the original screen timeout is restored
+    // (NEXUS_ANDROID_AWAKE_IDLE, default 120); the raised timeout always outlasts it by a minute, 5 minutes at least.
+    internal static double AwakeIdleSeconds(string? value)=>double.TryParse(value,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var seconds)&&seconds>0&&double.IsFinite(seconds)?Math.Min(seconds,24*3600):120;
+    private static readonly double AwakeIdle=AwakeIdleSeconds(Environment.GetEnvironmentVariable("NEXUS_ANDROID_AWAKE_IDLE"));
+    internal static int RaisedTimeoutMs(double idle)=>Math.Max(300000,(int)(idle+60)*1000);
+    private static readonly int RaisedTimeout=RaisedTimeoutMs(AwakeIdle);
+    private static bool OurTimeout(int value)=>value==RaisedTimeout||value is 300000 or 1800000;
     private JsonObject ReadAwakeState(){try{return File.Exists(awakePath)?JsonNode.Parse(File.ReadAllText(awakePath))?.AsObject()??new():new();}catch(Exception e)when(e is IOException or System.Text.Json.JsonException){presenceWarning+=" Saved screen-timeout state unreadable; no unknown value restored.";return new();}}
     private void WriteAwakeState(JsonObject state){Directory.CreateDirectory(Path.GetDirectoryName(awakePath)!);var temporary=awakePath+"."+Guid.NewGuid().ToString("N")+".tmp";try{File.WriteAllText(temporary,state.ToJsonString());File.Move(temporary,awakePath,true);}finally{if(File.Exists(temporary))File.Delete(temporary);}}
     private string OperationHardwareIdentity()=>verifiedHardwareForOperation.Length>0?verifiedHardwareForOperation:Shell("getprop","ro.serialno").Trim();
@@ -53,9 +60,9 @@ public sealed partial class NativeEngine
         try
         {
             var currentText=Shell("settings","get","system","screen_off_timeout").Trim();if(!int.TryParse(currentText,out var current)){presenceWarning+=" Screen timeout unavailable; it was not changed.";return;}
-            var state=ReadAwakeState();if(state["active"]?.GetValue<bool>()==true&&!AwakeMatches(state)){presenceWarning+=" Another phone owns the saved screen timeout; it was not replaced.";return;}var original=current is 300000 or 1800000?state["original"]?.GetValue<int>()??current:current;var now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()/1000.0;
-            state["active"]=true;state["original"]=original;state["last"]=now;state["poked"]=now;state["pid"]=Environment.ProcessId;state["serial"]=adb.SelectedSerial;state["phone"]=OperationHardwareIdentity();WriteAwakeState(state);if(current!=300000)Shell("settings","put","system","screen_off_timeout","300000");
-            awakeTimer??=new Timer(_=>RestoreAwake(),null,TimeSpan.FromSeconds(120),Timeout.InfiniteTimeSpan);awakeTimer.Change(TimeSpan.FromSeconds(120),Timeout.InfiniteTimeSpan);
+            var state=ReadAwakeState();if(state["active"]?.GetValue<bool>()==true&&!AwakeMatches(state)){presenceWarning+=" Another phone owns the saved screen timeout; it was not replaced.";return;}var original=OurTimeout(current)?state["original"]?.GetValue<int>()??current:current;var now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()/1000.0;
+            state["active"]=true;state["original"]=original;state["last"]=now;state["poked"]=now;state["pid"]=Environment.ProcessId;state["serial"]=adb.SelectedSerial;state["phone"]=OperationHardwareIdentity();WriteAwakeState(state);if(current!=RaisedTimeout)Shell("settings","put","system","screen_off_timeout",RaisedTimeout.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            awakeTimer??=new Timer(_=>RestoreAwake(),null,TimeSpan.FromSeconds(AwakeIdle),Timeout.InfiniteTimeSpan);awakeTimer.Change(TimeSpan.FromSeconds(AwakeIdle),Timeout.InfiniteTimeSpan);
         }
         catch(Exception e)when(e is IOException or InvalidOperationException){presenceWarning+=" Could not keep screen awake: "+NativeSafety.Mask(e.Message);}
     }
@@ -73,11 +80,11 @@ public sealed partial class NativeEngine
     // must complete an expired keep-awake period rather than leaving it indefinitely.
     private void RestoreExpiredAwake(bool forceOwn=false)
     {
-        var state=ReadAwakeState();if(state["active"]?.GetValue<bool>()!=true)return;if(forceOwn&&state["pid"]?.GetValue<int>()!=Environment.ProcessId)return;var elapsed=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()/1000.0-(state["last"]?.GetValue<double>()??0);if(elapsed<120&&!forceOwn){awakeTimer??=new Timer(_=>RestoreAwake(),null,Timeout.InfiniteTimeSpan,Timeout.InfiniteTimeSpan);awakeTimer.Change(TimeSpan.FromSeconds(120-elapsed),Timeout.InfiniteTimeSpan);return;}
-        if(!AwakeMatches(state))return;var current=Shell("settings","get","system","screen_off_timeout").Trim();if(current is "300000" or "1800000"){Shell("settings","put","system","screen_off_timeout",state["original"]!.ToString());}state["active"]=false;WriteAwakeState(state);
+        var state=ReadAwakeState();if(state["active"]?.GetValue<bool>()!=true)return;if(forceOwn&&state["pid"]?.GetValue<int>()!=Environment.ProcessId)return;var elapsed=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()/1000.0-(state["last"]?.GetValue<double>()??0);if(elapsed<AwakeIdle&&!forceOwn){awakeTimer??=new Timer(_=>RestoreAwake(),null,Timeout.InfiniteTimeSpan,Timeout.InfiniteTimeSpan);awakeTimer.Change(TimeSpan.FromSeconds(AwakeIdle-elapsed),Timeout.InfiniteTimeSpan);return;}
+        if(!AwakeMatches(state))return;var current=Shell("settings","get","system","screen_off_timeout").Trim();if(int.TryParse(current,out var raised)&&OurTimeout(raised)){Shell("settings","put","system","screen_off_timeout",state["original"]!.ToString());}state["active"]=false;WriteAwakeState(state);
     }
     private void ExtendAwake(NativeScreen screen)
     {
-        if(Environment.GetEnvironmentVariable("NEXUS_ANDROID_KEEP_AWAKE")=="0"||!Awake(screen)||Locked(screen))return;var state=ReadAwakeState();if(state["active"]?.GetValue<bool>()!=true||!AwakeMatches(state))return;var now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()/1000.0;if(now-(state["poked"]?.GetValue<double>()??0)>60){Shell("input","keyevent","KEYCODE_WAKEUP");lastInput=DateTimeOffset.UtcNow;state["poked"]=now;}state["last"]=now;WriteAwakeState(state);awakeTimer??=new Timer(_=>RestoreAwake(),null,Timeout.InfiniteTimeSpan,Timeout.InfiniteTimeSpan);awakeTimer.Change(TimeSpan.FromSeconds(120),Timeout.InfiniteTimeSpan);
+        if(Environment.GetEnvironmentVariable("NEXUS_ANDROID_KEEP_AWAKE")=="0"||!Awake(screen)||Locked(screen))return;var state=ReadAwakeState();if(state["active"]?.GetValue<bool>()!=true||!AwakeMatches(state))return;var now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()/1000.0;if(now-(state["poked"]?.GetValue<double>()??0)>60){Shell("input","keyevent","KEYCODE_WAKEUP");lastInput=DateTimeOffset.UtcNow;state["poked"]=now;}state["last"]=now;WriteAwakeState(state);awakeTimer??=new Timer(_=>RestoreAwake(),null,Timeout.InfiniteTimeSpan,Timeout.InfiniteTimeSpan);awakeTimer.Change(TimeSpan.FromSeconds(AwakeIdle),Timeout.InfiniteTimeSpan);
     }
 }

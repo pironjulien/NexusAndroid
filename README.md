@@ -163,7 +163,7 @@ screen-awake session and the same safeguards.
 | Tool | Role |
 | --- | --- |
 | `phone` | Connected phone (USB or Wi-Fi), model, screen, foreground app, fold posture, reboot detection (structured output) |
-| `look` | Numbered `[N]` elements with text, state and center `@x,y`, text first: the screen image is joined when nothing is readable (`act` and `launch` also join it when a step fails (`✗`), loses the link (`?`), or is not read back (`~`) and the screen did not change; otherwise `look(show="both")`), or on request (`show=both` or `image`, `region`); `marks` draws the `[N]` numbers on the image (`auto`: all when few, else the unnamed elements; `all`; `none`) |
+| `look` | Numbered `[N]` elements with text, state and center `@x,y`, text first: the screen image is joined when nothing is readable (`act` and `launch` also join it when a step fails (`✗`), loses the link (`?`), or is not read back (`~`) and the screen did not change; otherwise `look(show="both")`), or on request (`show=both` or `image`, `region`); `marks` draws the `[N]` numbers on the image (`auto`: all when few, else the unnamed elements; `all`; `none`); an image identical to the last one sent to the same session (same screen content, marks and size) is not sent again, the header says so and coordinates keep that image's scale |
 | `act` | Batched gestures: tap, long press, typing (accents and emoji included), clear, keys, scroll, swipe, wait, links (`geo:`, `google.navigation:`, `tel:` opens the dialer without calling, `mailto:`, `https://`); `then="changes"` returns only the elements added, changed and removed since the last list (unchanged ones counted, `[N]` kept valid), or the full list when the app or most of the screen changed |
 | `launch` | Open an app by package or part of its name, or a precise screen: `action` (`android.settings.WIFI_SETTINGS`), `data` (deep link), `extras`; target resolved first and reported; calling, sending or paying directly needs `confirm=true` and the accord for that exact intent, banking and identity apps are never opened this way |
 | `clipboard` | Read the phone's clipboard (codes masked, a lone code, password or token never shown) or write text to it, without pasting |
@@ -324,15 +324,16 @@ Unlocking again and again while an agent works is tedious, but a phone used to p
 first gesture (`act`, `launch`, `draft`) on a phone **the user has unlocked**, the server saves the screen timeout
 (`screen_off_timeout`) and raises it to 5 minutes, a delay Android counts again from every gesture; `phone` shows
 until when. If the server is killed, the screen still turns off (and locks) at most 5 minutes after the last gesture.
-While the agent only looks, a screen that is on gets a wake-up key every 3 minutes (no visible effect), so it does
-not turn off during a long observation.
+While the agent only looks, a screen that is on gets a wake-up key at most once a minute (no visible effect), so it
+does not turn off during a long observation.
 
-About 2 minutes after the last gesture of any agent, the original timeout is restored and the screen is turned off,
-which locks the phone again. If the user is holding the phone at that moment, or changed the timeout themselves, the
-screen is left alone. The original value is saved once (`~\.nexus\nexus-android\awake.json`) and shared by all
-servers under the common lock: one save, one restore, never the raised value taken for the original. After a crash,
-the next server to start restores it. The server never unlocks a phone that Android keeps locked.
-`NEXUS_ANDROID_AWAKE_IDLE` (seconds, default 120) changes the delay; `NEXUS_ANDROID_KEEP_AWAKE=0` turns it off.
+About 2 minutes after the last gesture or look of any agent, the original timeout is restored. The server does not
+turn the screen off itself: the phone then goes to sleep, and locks, after its own normal delay counted from the last
+activity. If the user changed the timeout themselves meanwhile, their value is kept. The original value is saved once
+(`~\.nexus\nexus-android\awake.json`) and shared by all servers under the common lock: one save, one restore, never
+the raised value taken for the original. After a crash, the next server to start restores it. The server never
+unlocks a phone that Android keeps locked. `NEXUS_ANDROID_AWAKE_IDLE` (seconds, default 120) changes the delay (the
+raised timeout then stays a minute longer than it, 5 minutes at least); `NEXUS_ANDROID_KEEP_AWAKE=0` turns it off.
 
 ## Compatibility
 
@@ -464,7 +465,7 @@ the PC, and the pinned scrcpy server from GitHub when it is missing (both off wi
   was found), backups of the AI client configs that `setup` or
   `install.ps1` edits (`backups/`), and the installed executables (`releases/` or `native/`). Files you `pull` go to `~/Downloads/Telephone`. The server writes no
   messages or screenshots to disk.
-- **Journal**, under `%LOCALAPPDATA%\NexusJournal\android\<agent>\<YYYY-MM>.jsonl` (or `NEXUS_JOURNAL_HOME`),
+- **Journal**, under `~\.nexus\journal\android\<agent>\<YYYY-MM>.jsonl` (or `NEXUS_JOURNAL_HOME`),
   shared format of the Nexus tools: one line per gesture or tool call with the calling AI (Claude, Codex,
   Antigravity), the action, the outcome, the duration, the technique, the app's package name and an error category
   from a fixed list. Never screen text, SMS, contact, typed text or code. Nothing is sent anywhere; months are kept
@@ -474,7 +475,7 @@ the PC, and the pinned scrcpy server from GitHub when it is missing (both off wi
   UI dump (`nexus-android-ui-*.xml`) and the temporary read folders (`nexus-q-*`, `nexus-p-*`) are deleted right after
   each read. The read helper stops by itself after 10 minutes without a request.
 - **Removing it**: delete `~/.nexus/nexus-android/`, `~/.nexus/android.lock` and
-  `%LOCALAPPDATA%\NexusJournal\android\`, remove the `nexus-android` entry
+  `~\.nexus\journal\android\`, remove the `nexus-android` entry
   from each client's config, run `adb shell "rm -rf /data/local/tmp/nexus-*"` (helpers, UI dumps and any read folder
   left by an interrupted read), and revoke the PC's key on the phone (Developer options → Revoke USB debugging
   authorizations).

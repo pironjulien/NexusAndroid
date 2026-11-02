@@ -359,7 +359,8 @@ public static class Register
         var mcpFile = Path.Join(target, "mcp_config.json");
         var current = File.Exists(mcpFile) ? ReadJson(mcpFile)["mcpServers"]?[Name] : null;
         // A route to a local HTTP server (the shared daemon) is kept as it is; the plugin's guide is still refreshed.
-        var shared = current is JsonObject route && Uri.TryCreate(route["serverUrl"]?.ToString(), UriKind.Absolute, out var url) && url.IsLoopback;
+        // Antigravity reads the address under any of these keys; the local installer and NexusSystem write `url`.
+        var shared = current is JsonObject route && new[] { "url", "serverUrl", "httpUrl" }.Any(key => Uri.TryCreate(route[key]?.ToString(), UriKind.Absolute, out var url) && url.IsLoopback);
         if (File.Exists(mcpFile) && !Ours(current) && !shared) return "kept (a nexus-android plugin of yours already exists)";
         if (!Directory.Exists(PluginSource)) return $"failed: plugin files missing next to the executable ({PluginSource})";
         var changed = false;

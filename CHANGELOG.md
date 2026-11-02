@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-11-02
+
+### Fixed
+- An image identical to the last one sent to the same session is no longer sent again, in `look` and in the view
+  `act` and `launch` return (lost when the engine moved to C# in 0.22.0). Same rule as before: same screen content
+  (every element, system bar and text read by OCR included), same `[N]` marks, same size and the same colour print;
+  the header says "image unchanged since the last one sent (not sent again)" and coordinates keep that image's scale.
+  Another session, a changed screen or a zoom in between sends it again.
+- `setup` refreshes Antigravity's plugin (manifest and guide) when its route to the shared daemon is written under
+  `url`, as the local installer and NexusSystem write it: only `serverUrl` was recognized, so the route was taken for
+  a foreign plugin and 0.23.0 left the 0.22.10 manifest installed.
+- `NEXUS_ANDROID_AWAKE_IDLE` is honoured again (seconds, default 120; the raised screen timeout stays a minute longer,
+  5 minutes at least); the C# engine had hard-coded 120 s.
+- README: the journal is in `~\.nexus\journal\android`, and the end of a keep-awake period restores the screen
+  timeout without turning the screen off (the phone sleeps after its own delay).
+
 ## [0.23.0] - 2026-10-31
 
 ### Added

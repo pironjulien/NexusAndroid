@@ -17,6 +17,9 @@ public sealed class ImageChainResult
     public required byte[] Bytes { get; init; }
     public required bool IsLossy { get; init; }
     public required int Quality { get; init; }
+    /// <summary>Colour print of the prepared image (codes blacked out, [N] drawn) before encoding: 64×64 RGB, compared by
+    /// <see cref="ImageChain.SameThumbnail"/> to tell an image identical to the last one sent.</summary>
+    public byte[]? Thumbnail { get; init; }
 
     public Dictionary<string, object> ToMetaDictionary() => new(StringComparer.Ordinal)
     {
@@ -384,6 +387,24 @@ public static class ImageChain
         return GdiPlusInterop.EncodeJpeg(buf, quality);
     }
 
+    public const int ThumbnailEdge = 64; // colour print side: red and green often share the same grey
+    public const int ThumbnailSlack = 2; // tolerated gap per channel and pixel (encoding noise); beyond, the screen changed
+
+    public static byte[] Thumbnail(PixelBuffer image)
+    {
+        var small = ResizeBilinear(image, ThumbnailEdge, ThumbnailEdge);
+        var rgb = new byte[ThumbnailEdge * ThumbnailEdge * 3];
+        for (int i = 0, j = 0; i < small.Bgra.Length; i += 4, j += 3) { rgb[j] = small.Bgra[i + 2]; rgb[j + 1] = small.Bgra[i + 1]; rgb[j + 2] = small.Bgra[i]; }
+        return rgb;
+    }
+
+    public static bool SameThumbnail(byte[]? a, byte[]? b)
+    {
+        if (a is null || b is null || a.Length != b.Length) return false;
+        for (var i = 0; i < a.Length; i++) if (Math.Abs(a[i] - b[i]) > ThumbnailSlack) return false;
+        return true;
+    }
+
     public static PixelBuffer Decode(ReadOnlySpan<byte> imageBytes) => GdiPlusInterop.DecodeImage(imageBytes);
 
     /// <summary>
@@ -434,6 +455,8 @@ public static class ImageChain
             }
         }
 
+        var thumbnail = Thumbnail(scaled);
+
         if (!forceLossy)
         {
             const bool isPng = true;
@@ -453,6 +476,7 @@ public static class ImageChain
                     Bytes = losslessBytes,
                     IsLossy = false,
                     Quality = 100,
+                    Thumbnail = thumbnail,
                 };
             }
         }
@@ -485,6 +509,7 @@ public static class ImageChain
                         Bytes = candidate,
                         IsLossy = true,
                         Quality = q,
+                        Thumbnail = thumbnail,
                     };
                 }
             }
@@ -512,6 +537,7 @@ public static class ImageChain
             Bytes = bestBytes,
             IsLossy = true,
             Quality = bestQuality,
+            Thumbnail = thumbnail,
         };
     }
 
