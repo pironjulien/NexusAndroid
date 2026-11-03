@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.5] - 2026-11-03
+
+### Fixed
+- Text reports (`checkup` first) reach Claude Code in full: it shows a tool's `structuredContent` alone, so the
+  report now rides along in it as `text`; `checkup` used to reach Claude as `connected` and the device list only.
+
 ## [0.23.4] - 2026-11-03
 
 ### Fixed

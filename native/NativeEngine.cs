@@ -27,7 +27,9 @@ public sealed partial class NativeEngine
     private static string Str(JsonObject a,string key,string fallback="")=>a[key]?.ToString()??fallback;
     private static bool Bool(JsonObject a,string key)=>a[key]?.GetValue<bool>()==true;
     private static int Num(JsonObject a,string key,int fallback)=>a[key] is null?fallback:a[key]!.GetValue<int>();
-    private static JsonObject Text(string text,JsonObject? structured=null,bool codes=false)=>new(){["content"]=new JsonArray(new JsonObject{["type"]="text",["text"]=NativeSafety.Mask(text,codes:codes)}),["structuredContent"]=NativeSafety.MaskJson(structured)};
+    // Claude Code shows structuredContent alone when a tool returns it: the text report rides along in it as "text",
+    // otherwise checkup and the other reports reached Claude as their bare fields.
+    private static JsonObject Text(string text,JsonObject? structured=null,bool codes=false){var masked=NativeSafety.Mask(text,codes:codes);var data=NativeSafety.MaskJson(structured);if(data is JsonObject fields&&!fields.ContainsKey("text"))fields["text"]=masked;return new(){["content"]=new JsonArray(new JsonObject{["type"]="text",["text"]=masked}),["structuredContent"]=data};}
     private static string Hash(string value)=>Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     private static bool Mutating(string[] args)=>args.Length>0&&args[0] switch{"input" or "wm" or "svc"=>true,"am"=>args.Skip(1).Any(a=>a is "start" or "force-stop" or "broadcast"),"settings"=>args.Length>1&&args[1]=="put","cmd"=>args.Any(a=>a is "execute-app-function" or "set-location-enabled" or "set_dnd" or "--set"),"pm"=>args.Any(a=>a is "clear" or "uninstall"),_=>false};
     private string Shell(params string[] args)
