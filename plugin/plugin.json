@@ -2,7 +2,7 @@
   "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "nexus-android",
   "displayName": "NexusAndroid",
-  "version": "0.23.2",
+  "version": "0.23.3",
   "description": "Your Android phone for Antigravity over plain ADB: see the screen, tap, type, open apps, read SMS and notifications, move files. No root, no phone app.",
   "logo": "logo.png",
   "suggestedPrompts": [

@@ -235,6 +235,22 @@ public sealed class RegisterTests : IDisposable
         Assert.DoesNotContain("0.0.1", ReadText(Path.Join(target, "plugin.json")));
     }
 
+    /// <summary>Files an earlier copy left in the plugin (Claude Code's .mcp.json, for example) are removed; the
+    /// declaration of the shared daemon stays.</summary>
+    [Fact]
+    public void FilesNoLongerShippedLeaveThePlugin()
+    {
+        var target = At(".gemini", "config", "plugins", "nexus-android");
+        var route = "{\"mcpServers\": {\"nexus-android\": {\"url\": \"http://127.0.0.1:16180/mcp\"}}}";
+        WriteText(Path.Join(target, "mcp_config.json"), route);
+        WriteText(Path.Join(target, "stale", "old.mcp.json"), "{}");
+        Assert.Equal("plugin", Register.Antigravity());
+        Assert.False(Directory.Exists(Path.Join(target, "stale")));
+        Assert.Equal(route, ReadText(Path.Join(target, "mcp_config.json")));
+        Assert.True(File.Exists(Path.Join(target, "skills", "nexus-android", "SKILL.md")));
+        Assert.Equal("plugin (already installed)", Register.Antigravity());
+    }
+
     [Fact]
     public void UnreadableFileReportedNotTouched()
     {

@@ -375,6 +375,19 @@ public static class Register
                 changed = true;
             }
         }
+        // Files the shipped plugin no longer has (an earlier .mcp.json of Claude Code's format, for example) go away;
+        // mcp_config.json is the declaration, handled below.
+        var shipped = Directory.EnumerateFiles(PluginSource, "*", SearchOption.AllDirectories)
+            .Select(file => Path.GetRelativePath(PluginSource, file)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in Directory.EnumerateFiles(target, "*", SearchOption.AllDirectories).ToList())
+        {
+            var relative = Path.GetRelativePath(target, file);
+            if (relative.Equals("mcp_config.json", StringComparison.OrdinalIgnoreCase) || shipped.Contains(relative)) continue;
+            File.Delete(file);
+            changed = true;
+        }
+        foreach (var dir in Directory.EnumerateDirectories(target, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length))
+            if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
         if (!shared && !JsonNode.DeepEquals(current, Entry()))
         {
             Write(mcpFile, new JsonObject { ["mcpServers"] = new JsonObject { [Name] = Entry() } }.ToJsonString(Indented) + "\n");

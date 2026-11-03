@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.3] - 2026-11-03
+
+### Fixed
+- The Antigravity plugin folder keeps only what the executable ships (manifest, logo, guide) and its declaration:
+  `setup` now removes files an earlier copy left in `~\.gemini\config\plugins\nexus-android` (Claude Code's
+  `.mcp.json`, the Codex files).
+
 ## [0.23.2] - 2026-11-03
 
 ### Added
