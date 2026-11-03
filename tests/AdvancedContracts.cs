@@ -93,6 +93,18 @@ Test("map find searches noted item labels and current settings keys without muta
     SeedIndex();adb.System="notification_badging=1\nindependent_setting=enabled\n";var found=Text(engine.Execute("map",new JsonObject{["query"]="notifications"}));Check(found.Contains("Notifications")&&found.Contains("now: system/notification_badging=1")&&!found.Contains("{\""),"APK or live state missing, or raw JSON instead of readable lines");
     Check(Text(engine.Execute("map",new JsonObject{["query"]="Bluetooth"})).Contains("[on]"),"noted item state not searched");Check(Text(engine.Execute("map",new JsonObject{["query"]="independent setting"})).Contains("independent_setting"),"raw setting key lost");
 });
+Test("map find ranks an exact setting name before related actions and keeps accent and plural matching",()=>
+{
+    SeedIndex(new JsonArray(
+        new JsonObject{["title"]="Augmentation de la luminosité",["english"]="Increase brightness",["path"]="Paramètres > Accessibilité > Augmentation de la luminosité",["keywords"]="luminosité brightness",["component"]="com.android.settings/.Settings"},
+        new JsonObject{["title"]="Luminosité",["english"]="Brightness",["path"]="Paramètres > Écran > Luminosité",["component"]="com.android.settings/.Settings"}));
+    foreach(var query in new[]{"luminosite","Luminosités","brightness"})
+    {
+        var found=Text(engine.Execute("map",new JsonObject{["query"]=query,["limit"]=1}));
+        Check(found.Contains("Paramètres > Écran > Luminosité")&&!found.Contains("Augmentation"),"exact setting lost to a related action: "+query);
+    }
+    SeedIndex();
+});
 Test("map open cannot launch a protected target saved before the migration",()=>
 {
     var path=Path.Join(DeviceRoot(),"screens.json");var rows=JsonNode.Parse(File.ReadAllText(path))!.AsArray();rows.Add(new JsonObject{["path"]="Legacy",["component"]="com.revolut.revolut/.Main",["items"]=new JsonArray()});File.WriteAllText(path,rows.ToJsonString());adb.Commands.Clear();Check(Refused(()=>engine.Execute("map",new JsonObject{["action"]="open",["target"]="com.revolut.revolut/.Main"}),"Protected"),"legacy protected launched");Check(!adb.Commands.Any(c=>c.StartsWith("'am' 'start'")),"protected launch sent");

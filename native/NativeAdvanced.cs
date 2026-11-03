@@ -231,8 +231,19 @@ public sealed partial class NativeEngine
         var stop="le la les de des du un une et ou sur pour par dans en au aux a mes mon ma ses son sa ce cette the of on to in for my and or est comment se regle reglage where how set".Split(' ').ToHashSet();
         string Stem(string word)=>word.Length>3&&word[^1] is 's' or 'x'?word[..^1]:word;
         var terms=NativeSafety.Normalize(search).Split(' ',StringSplitOptions.RemoveEmptyEntries).Where(t=>t.Length>1&&!stop.Contains(t)).Select(Stem).Distinct().ToArray();if(terms.Length==0)return Text("No searchable words in the phone-map query");
-        bool Hit(string term,string field)=>NativeSafety.Normalize(field).Split(' ',StringSplitOptions.RemoveEmptyEntries).Select(Stem).Any(w=>w==term||term.Length>=4&&w.StartsWith(term,StringComparison.Ordinal)||w.Length>=4&&term.StartsWith(w,StringComparison.Ordinal));
-        var scored=all.Select(row=>{var fields=new[]{(Str(row,"title"),3d),(Str(row,"english"),2.5),(Str(row,"path"),2d),(Str(row,"section"),1.5),(Str(row,"summary"),1d),(Str(row,"keywords"),1.5),(Str(row,"key"),.5)};var matches=terms.Count(t=>fields.Any(f=>Hit(t,f.Item1)));var score=terms.Sum(t=>fields.Where(f=>Hit(t,f.Item1)).Sum(f=>f.Item2));if(Bool(row,"orphan")){score-=2;}if(Str(row,"source")=="screen"){score+=.5;}return(Row:row,Matches:matches,Score:score);}).Where(r=>r.Matches>0).OrderByDescending(r=>r.Matches).ThenByDescending(r=>r.Score).ToList();
+        string[] Words(string field)=>NativeSafety.Normalize(field).Split(' ',StringSplitOptions.RemoveEmptyEntries).Select(Stem).ToArray();
+        bool Hit(string term,string[] words)=>words.Any(w=>w==term||term.Length>=4&&w.StartsWith(term,StringComparison.Ordinal)||w.Length>=4&&term.StartsWith(w,StringComparison.Ordinal));
+        // Normalize each field once per row, not again for every term and both scoring passes. An exact setting
+        // name wins ties over a longer related action ("Luminosité" before "Augmentation de la luminosité").
+        var searchName=Words(search);
+        var scored=all.Select(row=>
+        {
+            var fields=new[]{(Words(Str(row,"title")),3d),(Words(Str(row,"english")),2.5),(Words(Str(row,"path")),2d),(Words(Str(row,"section")),1.5),(Words(Str(row,"summary")),1d),(Words(Str(row,"keywords")),1.5),(Words(Str(row,"key")),.5)};
+            var matches=0;var score=0d;
+            foreach(var term in terms){var weights=fields.Where(f=>Hit(term,f.Item1)).Select(f=>f.Item2).ToArray();if(weights.Length>0){matches++;score+=weights.Sum();}}
+            if(Bool(row,"orphan")){score-=2;}if(Str(row,"source")=="screen"){score+=.5;}
+            return(Row:row,Matches:matches,ExactName:fields.Take(2).Any(f=>f.Item1.SequenceEqual(searchName)),Score:score);
+        }).Where(r=>r.Matches>0).OrderByDescending(r=>r.Matches).ThenByDescending(r=>r.ExactName).ThenByDescending(r=>r.Score).ToList();
         var need=(terms.Length+1)/2;if(scored.Any(p=>p.Matches>=need)){scored=scored.Where(p=>p.Matches>=need).ToList();}var results=scored.DistinctBy(p=>p.Row.ToJsonString()).Take(Math.Clamp(Num(args,"limit",8),1,30)).ToList();
         foreach(var result in results.Where(r=>Str(r.Row,"source")!="value"&&values.ContainsKey(Str(r.Row,"key")))){var value=values[Str(result.Row,"key")];result.Row["namespace"]=value.Namespace;result.Row["current_value"]=value.Value;}
         return Text("Settings map from the phone's Settings APK and noted screens (read-only; [brackets] mark unknown hierarchy):\n"+string.Join('\n',results.Select(p=>MapDescribe(p.Row))));

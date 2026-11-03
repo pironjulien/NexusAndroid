@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.4] - 2026-11-03
+
+### Fixed
+- Phone-map search ranks an exact setting name ahead of related actions, including accent-insensitive French and
+  English names (for example, Display > Brightness before Accessibility > Increase brightness). Search normalizes
+  each field once per row instead of repeating that work for each query term and scoring pass.
+
 ## [0.23.3] - 2026-11-03
 
 ### Fixed
