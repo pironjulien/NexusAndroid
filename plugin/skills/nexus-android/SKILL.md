@@ -86,6 +86,20 @@ Do not replay pending gestures, reuse old numbered targets or carry an old accor
 Handle this recovery yourself when the available tools allow it. If reloading would interrupt active work,
 report the stale connection and arrange a safe reload; do not ask the user to carry out technical investigation.
 
+## Not installed yet?
+When the nexus-android tools do not answer at all, NexusAndroid is not installed or its local service is not running
+on this Windows PC. Install it from the latest release as a file, never piped into PowerShell, then open a new
+conversation:
+
+```powershell
+$dir = Join-Path $env:TEMP 'nexus-android-get'; New-Item -ItemType Directory -Force $dir | Out-Null; Set-Location $dir
+$r = 'https://github.com/pironjulien/NexusAndroid/releases/latest/download'
+Invoke-WebRequest "$r/get.ps1" -OutFile get.ps1; Invoke-WebRequest "$r/SHA256SUMS.txt" -OutFile SHA256SUMS.txt
+$expected = (Select-String -Path SHA256SUMS.txt -Pattern '^([0-9a-f]{64})\s+get\.ps1$').Matches[0].Groups[1].Value
+if ((Get-FileHash get.ps1 -Algorithm SHA256).Hash -ne $expected) { throw 'get.ps1 does not match SHA256SUMS.txt' }
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\get.ps1
+```
+
 ## Setup reminder
 USB debugging on (Developer options), the PC's key accepted on the phone. `adb` is found on the PC or downloaded once
 (Google's Platform Tools). When no phone is set up, handle the PC-side checks and `NexusAndroid.exe setup` yourself

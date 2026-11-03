@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "nexus-android": {
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${PLUGIN_ROOT}\\scripts\\bridge.ps1",
+        "-Url",
+        "http://127.0.0.1:16180/mcp",
+        "-Product",
+        "NexusAndroid"
+      ]
+    }
+  }
+}

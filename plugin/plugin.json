@@ -1,7 +1,28 @@
 {
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "nexus-android",
   "displayName": "NexusAndroid",
-  "version": "0.23.1",
+  "version": "0.23.2",
+  "description": "Your Android phone for Antigravity over plain ADB: see the screen, tap, type, open apps, read SMS and notifications, move files. No root, no phone app.",
   "logo": "logo.png",
-  "description": "Android phone over ADB, shared with Claude, Codex and Antigravity: see the screen, tap, type, scroll, open apps and links, SMS/RCS, notifications, files, quick settings; paying, sending and calling only after the user's yes"
+  "suggestedPrompts": [
+    "Look at my phone screen and tell me which app is open.",
+    "Open the Settings app on my phone and turn on Do Not Disturb.",
+    "Read my latest SMS conversations and draft a reply to the most recent one without sending it."
+  ],
+  "author": {
+    "name": "Julien Piron",
+    "url": "https://julienpiron.fr"
+  },
+  "homepage": "https://julienpiron.fr/nexusandroid/",
+  "repository": "https://github.com/pironjulien/NexusAndroid",
+  "license": "MIT",
+  "keywords": [
+    "android",
+    "adb",
+    "phone",
+    "automation",
+    "mcp",
+    "computer-use"
+  ]
 }
