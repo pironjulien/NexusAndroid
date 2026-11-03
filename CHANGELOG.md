@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.6] - 2026-11-03
+
+### Fixed
+- `checkup` reads like a person would: storage and memory in GB (no raw `df`/`meminfo` lines with stray carriage
+  returns), battery health in words instead of its code, `none` instead of `null` for accessibility services.
+- `checkup` no longer lists the maker's preloaded apps or Chrome's web apps as installed outside official stores, and
+  now reports apps sideloaded through the package installer, which it used to count as a store.
+
 ## [0.23.5] - 2026-11-03
 
 ### Fixed

@@ -31,10 +31,32 @@ public sealed partial class NativeEngine
     private JsonObject Checkup(JsonObject args)
     {
         var device=adb.PickDevice();var devices=adb.GetDevices();if(device?.State!="device")return Text($"ADB: {adb.AdbPath}\n"+string.Join('\n',devices.Select(d=>$"{d.State} · {(d.IsUsb?"USB":"Wi-Fi")} · {d.Model}")),new JsonObject{["connected"]=false});verifiedHardwareForOperation=adb.VerifiedSelectedHardwareIdentity??"";RestoreExpiredAwake();
-        var battery=Shell("dumpsys","battery");string Battery(string field)=>Regex.Match(battery,@"(?m)^\s*"+field+@":\s*(\d+)").Groups[1].Value;var memory=Shell("cat","/proc/meminfo");var storage=Shell("df","-k","/data");var third=Shell("pm","list","packages","-3","-i");var processes=Shell("ps","-A","-o","PID,NAME,ARGS");var helpers=processes.Split('\n').Where(l=>Regex.IsMatch(l,@"(?i)mobilecli|DeviceServer|appium|uiautomator2|shizuku|scrcpy")&&!l.Contains("nexus-scrcpy")).Select(l=>l.Trim()).Take(12).ToList();
-        var lines=new List<string>{$"Device: {Shell("getprop","ro.product.model").Trim()} · link {(adb.SelectedSerial!.Contains(':')?"Wi-Fi":"USB")}",$"Android {Shell("getprop","ro.build.version.release").Trim()} · security patch {Shell("getprop","ro.build.version.security_patch").Trim()} · build {Shell("getprop","ro.build.display.id").Trim()}",$"Battery: {Battery("level")} % · health {Battery("health")} · temperature {(double.TryParse(Battery("temperature"),out var t)?t/10:0):0.0} °C","Storage (/data): "+storage.Trim(),"Memory: "+string.Join(" · ",memory.Split('\n').Where(l=>l.StartsWith("MemTotal:")||l.StartsWith("MemAvailable:"))),"Third-party apps: "+third.Split('\n',StringSplitOptions.RemoveEmptyEntries).Length,"Outside official stores: "+string.Join(", ",third.Split('\n').Where(l=>l.Contains("installer=")&&!Regex.IsMatch(l,@"installer=(com.android.vending|com.sec.android.app.samsungapps|com.google.android.packageinstaller|com.android.packageinstaller)\b")).Select(l=>l.Split(' ')[0].Replace("package:",""))),"Wireless debugging: "+(Shell("settings","get","global","adb_wifi_enabled").Trim()=="1"?"on":"off"),"Accessibility: "+Shell("settings","get","secure","enabled_accessibility_services").Trim(),"Other control helpers: "+(helpers.Count>0?string.Join("; ",helpers):"none")};
+        var battery=Shell("dumpsys","battery");string Battery(string field)=>Regex.Match(battery,@"(?m)^\s*"+field+@":\s*(\d+)").Groups[1].Value;var memory=Shell("cat","/proc/meminfo");var storage=Shell("df","-k","/data");var third=Shell("pm","list","packages","-3","-i","-f");var processes=Shell("ps","-A","-o","PID,NAME,ARGS");var helpers=processes.Split('\n').Where(l=>Regex.IsMatch(l,@"(?i)mobilecli|DeviceServer|appium|uiautomator2|shizuku|scrcpy")&&!l.Contains("nexus-scrcpy")).Select(l=>l.Trim()).Take(12).ToList();
+        var lines=new List<string>{$"Device: {Shell("getprop","ro.product.model").Trim()} · link {(adb.SelectedSerial!.Contains(':')?"Wi-Fi":"USB")}",$"Android {Shell("getprop","ro.build.version.release").Trim()} · security patch {Shell("getprop","ro.build.version.security_patch").Trim()} · build {Shell("getprop","ro.build.display.id").Trim()}",$"Battery: {Battery("level")} % · health {BatteryHealth(Battery("health"))} · temperature {(double.TryParse(Battery("temperature"),out var t)?t/10:0):0.0} °C","Storage (/data): "+CheckupStorage(storage),"Memory: "+CheckupMemory(memory),"Third-party apps: "+third.Split('\n',StringSplitOptions.RemoveEmptyEntries).Length,"Outside official stores: "+(OutsideOfficialStores(third) is {Count:>0} outside?string.Join(", ",outside):"none"),"Wireless debugging: "+(Shell("settings","get","global","adb_wifi_enabled").Trim()=="1"?"on":"off"),"Accessibility: "+(Shell("settings","get","secure","enabled_accessibility_services").Trim() is {Length:>0} services&&services!="null"?services:"none"),"Other control helpers: "+(helpers.Count>0?string.Join("; ",helpers):"none")};
         if(Bool(args,"clean")){NativeSafety.StopGuard();Shell("pm","trim-caches","999G");lines.Add("App-cache trim requested; storage read back:\n"+Shell("df","-k","/data"));}lines.Add("System/app updates are checked in Settings, Play Store or Galaxy Store.");return Text(string.Join('\n',lines),new JsonObject{["connected"]=true,["devices"]=JsonSerializer.SerializeToNode(devices)});
     }
+    // BatteryManager.BATTERY_HEALTH_* codes, as dumpsys battery prints them.
+    internal static string BatteryHealth(string code)=>code switch{"1"=>"unknown","2"=>"good","3"=>"overheat","4"=>"dead","5"=>"over voltage","6"=>"failure","7"=>"cold",_=>code.Length>0?code:"unknown"};
+    private static string Gigabytes(double kilobytes)=>(kilobytes/1024/1024).ToString("0.0",System.Globalization.CultureInfo.InvariantCulture)+" GB";
+    // df -k: the last line holds 1K-blocks, used, available and use%; device output ends lines with \r\n.
+    internal static string CheckupStorage(string df)
+    {
+        var fields=df.Replace("\r","").Split('\n',StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Split(' ',StringSplitOptions.RemoveEmptyEntries)??[];
+        return fields.Length>=5&&double.TryParse(fields[1],out var size)&&double.TryParse(fields[3],out var free)?$"{fields[4].Replace("%"," %")} used · {Gigabytes(free)} free of {Gigabytes(size)}":"unreadable";
+    }
+    internal static string CheckupMemory(string meminfo)
+    {
+        double Kb(string field)=>double.TryParse(Regex.Match(meminfo,@"(?m)^"+field+@":\s*(\d+)").Groups[1].Value,out var kb)?kb:-1;
+        var (total,available)=(Kb("MemTotal"),Kb("MemAvailable"));
+        return total>0&&available>=0?$"{Gigabytes(available)} available of {Gigabytes(total)}":"unreadable";
+    }
+    // pm list packages -3 -i -f: apps preloaded by the maker live outside /data/app (no store installs them); Chrome
+    // installs the WebAPKs that Google mints for installed web apps. The package installer is the sideloading path
+    // (an .apk opened by hand): outside the stores, so reported.
+    internal static List<string> OutsideOfficialStores(string packages)=>packages.Replace("\r","").Split('\n',StringSplitOptions.RemoveEmptyEntries)
+        .Select(l=>Regex.Match(l.Trim(),@"^package:(?<path>\S+)=(?<name>[\w.]+)\s+installer=(?<installer>\S+)"))
+        .Where(m=>m.Success&&m.Groups["path"].Value.StartsWith("/data/app/",StringComparison.Ordinal)&&!Regex.IsMatch(m.Groups["installer"].Value,@"^(com\.android\.vending|com\.sec\.android\.app\.samsungapps|com\.android\.chrome)$"))
+        .Select(m=>m.Groups["name"].Value).ToList();
     private string ResolvePackage(string app,bool includeUninstalled=false)
     {
         var aliases=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase){["chrome"]="com.android.chrome",["settings"]="com.android.settings",["parametres"]="com.android.settings",["messages"]="com.google.android.apps.messaging",["maps"]="com.google.android.apps.maps",["whatsapp"]="com.whatsapp"};
