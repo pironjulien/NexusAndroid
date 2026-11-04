@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.9] - 2026-11-04
+
+### Changed
+- The release's "one version everywhere" check now also reads `plugin/antigravity/plugin.json`, the Antigravity Marketplace manifest, so its version can no longer drift from the engine's.
+
 ## [0.23.8] - 2026-11-04
 
 ### Changed
