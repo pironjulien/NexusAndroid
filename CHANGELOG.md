@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.8] - 2026-11-04
+
+### Changed
+- Display name written NexusAndroid, without a space, like the repository and the NexusSystem catalog.
+
 ## [0.23.7] - 2026-11-04
 
 ### Changed
