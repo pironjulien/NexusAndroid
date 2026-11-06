@@ -146,6 +146,22 @@ public sealed class NativeUtilitiesTests
     }
 
     [Fact]
+    public void RcsBusinessCardShowsTitleTextAndButtons()
+    {
+        var fixture = Conversations();
+        Queries(fixture)["content://mms"] = JsonNode.Parse("""[{"_id": "4", "thread_id": "7", "date": "2", "msg_box": "1", "read": "1"}]""");
+        Queries(fixture)["content://mms/part"] = JsonNode.Parse("""[{"_id": "40", "mid": "4", "ct": "application/vnd.gsma.botmessage.v1.0+json"}]""");
+        var card = """{"message":{"generalPurposeCard":{"content":{"title":"Promo","description":"Cauliflower at 1,59€","media":{"mediaUrl":"https://x/img"},"suggestions":[{"action":{"displayText":"See offers","postback":{"data":"CTA_1"},"urlAction":{"openUrl":{"url":"https://shop.example/promo"}}}},{"reply":{"displayText":"STOP","postback":{"data":"stop"}}}]}}}}""";
+        fixture["exec_out"] = new JsonObject { ["content read --uri content://mms/part/"] = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(card)) };
+        var body = Success(Call("messages", Json("""{"conversation": 7, "images": 0}"""), fixture));
+        Assert.Contains("[RCS business card] Promo — Cauliflower at 1,59€", body);
+        Assert.Contains("See offers → https://shop.example/promo", body);
+        Assert.Contains("| STOP]", body);
+        Assert.DoesNotContain("not shown", body);
+        Assert.DoesNotContain("CTA_1", body);
+    }
+
+    [Fact]
     public void ThreadOutputKeepsMessageBoundariesAndMasksBeforeBudget()
     {
         var fixture = Conversations();

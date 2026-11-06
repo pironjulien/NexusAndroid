@@ -188,8 +188,31 @@ public sealed partial class NativeEngine
     {
         var country=SimCountry();var found=new HashSet<string>(StringComparer.Ordinal);return query.Query("content://com.android.contacts/data/phones/filter/"+Uri.EscapeDataString(value),"display_name:data1").Where(r=>Field(r,"data1").Length>0&&found.Add(NormalizeNumber(Field(r,"data1"),country))).Select(r=>(Field(r,"display_name"),Field(r,"data1"))).ToList();
     }
+    // RCS Business Messaging stores a card (title, text, buttons) as a GSMA botmessage JSON part, not as text/plain.
+    internal static string BotMessageText(string json)
+    {
+        var texts=new List<string>();var buttons=new List<string>();
+        void Walk(JsonNode? node)
+        {
+            if(node is JsonArray array){foreach(var child in array)Walk(child);return;}
+            if(node is not JsonObject obj)return;
+            if(obj["displayText"] is JsonValue label&&label.TryGetValue<string>(out var display))
+            {
+                var url=obj["urlAction"]?["openUrl"]?["url"]?.GetValue<string>()??obj["dialAction"]?["phoneNumber"]?.GetValue<string>();buttons.Add(url is null?display:$"{display} → {url}");return;
+            }
+            foreach(var (key,value) in obj)
+            {
+                if(key is "title" or "description" or "text"&&value is JsonValue v&&v.TryGetValue<string>(out var s)&&s.Trim().Length>0)texts.Add(s.Trim());
+                else if(key is not "media" and not "postback")Walk(value);
+            }
+        }
+        Walk(JsonNode.Parse(json));var body=string.Join(" — ",texts);
+        if(buttons.Count>0)body+=(body.Length>0?" ":"")+"[buttons: "+string.Join(" | ",buttons)+"]";
+        return body.Length>0?"[RCS business card] "+body:"[RCS business card without text]";
+    }
     private string ContactName(string number)
     {
+        if(number.EndsWith("@bot.rcs.google.com",StringComparison.OrdinalIgnoreCase))return "RCS business sender (verified by Google)";
         var rows=query.Query("content://com.android.contacts/phone_lookup/"+Uri.EscapeDataString(number),"display_name");var name=rows.Select(r=>Field(r,"display_name")).FirstOrDefault(n=>n.Length>0);return name is null?number:$"{name} ({number})";
     }
     private static string? RcsOwner(string address)
@@ -382,6 +405,11 @@ public sealed partial class NativeEngine
             {
                 try{if(!long.TryParse(part.Id,out var id))throw new IOException("Invalid image part id");var bytes=adb.ExecOut("content read --uri content://mms/part/"+id,60000);var image=ImageChain.ProcessEncodedImage(bytes,maxBytes:500*1024);images.Add(new JsonObject{["type"]="image",["mimeType"]=image.MimeType,["data"]=Convert.ToBase64String(image.Bytes)});item.Labels.Add($"[image {images.Count}]");}
                 catch(Exception e)when(e is IOException or ArgumentException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception){item.Labels.Add("[unreadable image]");}
+            }
+            else if(mime.StartsWith("application/vnd.gsma.botmessage",StringComparison.Ordinal))
+            {
+                try{if(!long.TryParse(part.Id,out var id))throw new IOException("Invalid card part id");var card=BotMessageText(System.Text.Encoding.UTF8.GetString(adb.ExecOut("content read --uri content://mms/part/"+id,15000)));item.Body=(item.Body+" "+card).Trim();}
+                catch(Exception e)when(e is IOException or ArgumentException or InvalidOperationException or TimeoutException or JsonException or System.ComponentModel.Win32Exception){item.Labels.Add("[unreadable RCS business card]");}
             }
             else item.Labels.Add("["+(mime.StartsWith("image/")?"image":mime.StartsWith("video/")?"video":mime.StartsWith("audio/")?"audio":mime)+" not shown]");
         }
