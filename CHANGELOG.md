@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.15] - 2026-11-06
+
+### Added
+- `look` says when a dialog is in front (what lies behind is not reachable; back closes it) and when the open app offers AppFunctions, a structured path through `functions` that needs no screen (catalog read once every 10 minutes).
+
+### Changed
+- `scroll` stops where the finger stops: down, four even moves, a 120 ms hold, then up, in one shell. `input swipe` lifted while still moving, so lists flung on (600 px moved a Settings list about 1,070 px on the Fold; now about 577). One notch is now about a third of the screen. Falls back to `input swipe` without `input motionevent`, and never leaves a finger down.
+- `apps info` is a short summary: running version (and the factory version it updates), the store that installed it, dates (1970 placeholders left out), enabled state.
+
+### Fixed
+- `checkup` no longer lists removable factory apps (fixed-name `/data/app` folders) and Samsung carrier-agent preloads as installed outside official stores.
 ## [0.23.14] - 2026-11-06
 
 ### Changed

@@ -108,7 +108,8 @@ public sealed partial class NativeEngine
         var fresh=DateTime.UtcNow;last=elements;lastScreen=screen;lastSeen=fresh;if(Current.Image is not null&&(Current.ImageWidth!=screen.Width||Current.ImageHeight!=screen.Height))Current.CoordinatesValid=false;
         var filtered=Str(args,"query") is {Length:>0} q?elements.Where(e=>(e.Text+" "+e.ContentDesc).Contains(q,StringComparison.OrdinalIgnoreCase)).ToList():elements;
         var tree=ScreenParser.FormatCompactTree(filtered.Take(300),imageScale,Current.ScaleY);if(show=="changes"){var differences=new List<string>();foreach(var element in filtered){var old=previous.FirstOrDefault(e=>e.Id==element.Id);if(old is null)differences.Add("+ "+ScreenParser.FormatCompactTree([element],imageScale,Current.ScaleY).TrimEnd());else if(old!=element)differences.Add("~ "+ScreenParser.FormatCompactTree([element],imageScale,Current.ScaleY).TrimEnd());}foreach(var old in previous.Where(p=>elements.All(e=>e.Id!=p.Id))){differences.Add("- ["+old.Id[1..]+"] removed");}tree=differences.Count>0?string.Join('\n',differences):"No visible element changed";}
-        var output=Text($"{Foreground(screen)} · {screen.Width}×{screen.Height}"+(Locked(screen)?" · locked":"")+"\n"+NativeSafety.Mask(screen.Error)+"\n"+(show=="image" ? "" : tree),codes:false);
+        var hints=LookHints(screen,elements);
+        var output=Text($"{Foreground(screen)} · {screen.Width}×{screen.Height}"+(Locked(screen)?" · locked":"")+hints+"\n"+NativeSafety.Mask(screen.Error)+"\n"+(show=="image" ? "" : tree),codes:false);
         if(image && screen.Image is not null)
         {
             if(elements.Count==0 && !Bool(args,"confirm")){output["content"]!.AsArray().Add(new JsonObject{["type"]="text",["text"]="Image not sent: UI tree unavailable, code masking cannot be guaranteed. confirm=true only if the user accepts this exact unmasked image."});return output;}
@@ -127,13 +128,53 @@ public sealed partial class NativeEngine
                 imageScale=(double)result.Width/screen.Width;Current.ScaleY=(double)result.Height/screen.Height;
             }
             Current.ImageWidth=screen.Width;Current.ImageHeight=screen.Height;Current.CoordinatesValid=true;
-            var header=$"{Foreground(screen)} · {screen.Width}×{screen.Height}"+(Locked(screen)?" · locked":"")+(unchanged?" · image unchanged since the last one sent (not sent again)":"");
+            var header=$"{Foreground(screen)} · {screen.Width}×{screen.Height}"+(Locked(screen)?" · locked":"")+hints+(unchanged?" · image unchanged since the last one sent (not sent again)":"");
             output["content"]![0]!["text"]=NativeSafety.Mask(header+"\n"+NativeSafety.Mask(screen.Error)+"\n"+(show=="image"?"":ScreenParser.FormatCompactTree(filtered.Take(300),imageScale,Current.ScaleY)),codes:false);
             if(!unchanged)output["content"]!.AsArray().Add(new JsonObject{["type"]="image",["mimeType"]=result.MimeType,["data"]=Convert.ToBase64String(result.Bytes)});
         }
         return output;
     }
-    /// <summary>Full print of a screen for "image unchanged": every element, system bar included (a tile or a notification
+    /// <summary>Short notes for the AI after the screen header: a dialog window in front (what lies behind it is not in the
+    /// tree and cannot be reached), and the app's own AppFunctions, a structured path that needs no screen.</summary>
+    private string LookHints(NativeScreen screen,List<UiElement> elements)
+    {
+        var notes="";
+        var own=elements.Where(e=>!e.IsOcr&&e.PackageName==Foreground(screen)&&e.Right>e.Left&&e.Bottom>e.Top).ToList();
+        if(own.Count>0&&screen.Width>0&&screen.Height>0)
+        {
+            // A full-screen app has a root view the size of the screen; a dialog window's largest view is the dialog.
+            var largest=own.Max(e=>(long)(e.Right-e.Left)*(e.Bottom-e.Top));
+            if(largest<(long)screen.Width*screen.Height*6/10)notes+=" · dialog in front: what lies behind is not reachable (back closes it)";
+        }
+        var count=AppFunctionCount(Foreground(screen));
+        if(count>0)notes+=$" · {count} app functions: functions(app=\"{Foreground(screen)}\") works without the screen";
+        return notes;
+    }
+    private (string Serial,Dictionary<string,int> Counts,DateTime Until) functionApps=("",[],DateTime.MinValue);
+    /// <summary>Enabled AppFunctions per package, read once every 10 minutes (one shell), never failing a look.</summary>
+    private int AppFunctionCount(string package)
+    {
+        if(package.Length==0||AndroidPolicy.IsProtectedPackage(package))return 0;
+        var serial=adb.SelectedSerial??"";
+        if(functionApps.Serial!=serial||functionApps.Until<DateTime.UtcNow)
+        {
+            var counts=new Dictionary<string,int>();
+            try
+            {
+                if(JsonNode.Parse(Shell("cmd","app_function","list-app-functions")) is JsonObject raw)
+                {
+                    foreach(var pair in raw.Where(p=>p.Value is JsonArray))
+                    {
+                        var enabled=pair.Value!.AsArray().OfType<JsonObject>().SelectMany(e=>e.Where(p=>p.Key.StartsWith("AppFunctionStaticMetadata",StringComparison.Ordinal)).Select(p=>p.Value).OfType<JsonObject>()).Count(item=>!(item["enabledByDefault"] is JsonArray v&&v.Count>0&&string.Equals(v[0]?.ToString(),"false",StringComparison.OrdinalIgnoreCase)));
+                        if(enabled>0)counts[pair.Key]=enabled;
+                    }
+                }
+            }
+            catch(Exception e)when(e is IOException or System.Text.Json.JsonException or InvalidOperationException or TimeoutException){/* no hint rather than a failed look */}
+            functionApps=(serial,counts,DateTime.UtcNow.AddMinutes(10));
+        }
+        return functionApps.Counts.GetValueOrDefault(package);
+    }    /// <summary>Full print of a screen for "image unchanged": every element, system bar included (a tile or a notification
     /// that changes state), exact bounds and states, masked text only, plus the text read on the image by OCR.</summary>
     internal static string ContentPrint(IEnumerable<UiElement> elements,IEnumerable<string> seen,string package)=>Hash(string.Join('\n',new[]{package}.Concat(elements.Select(e=>$"{e.PackageName}|{e.ClassName}|{e.Text}|{e.ContentDesc}|{e.ResourceId}|{e.Left},{e.Top},{e.Right},{e.Bottom}|{e.Checked},{e.Selected},{e.Focused},{e.Enabled},{e.ShowingHint}|{e.IsOcr}").Order(StringComparer.Ordinal)).Concat(seen.Order(StringComparer.Ordinal))));
     private (int X,int Y,UiElement? Element) Resolve(JsonNode? target,List<UiElement> fresh)
@@ -473,10 +514,28 @@ public sealed partial class NativeEngine
             var to=(X:aim.X+dx/2,Y:aim.Y+dy/2);
             if(from.X<0||from.Y<0||to.X<0||to.Y<0||from.X>=screen.Width||to.X>=screen.Width||from.Y>=screen.Height||to.Y>=screen.Height)throw new ArgumentException("Scroll path outside screen");
             Guard(screen,elements,step,AtPoint(elements,from.X,from.Y),"scroll",destination:AtPoint(elements,to.X,to.Y));
-            Shell("input","swipe",from.X.ToString(CultureInfo.InvariantCulture),from.Y.ToString(CultureInfo.InvariantCulture),to.X.ToString(CultureInfo.InvariantCulture),to.Y.ToString(CultureInfo.InvariantCulture),"350");
+            SteadySwipe(from.X,from.Y,to.X,to.Y);
         }
         // Verification compares with the screen before the first swipe, whatever the amount.
         return amount>1?original:(screen,elements);
+    }
+    /// <summary>A scroll that stops where the finger stops: down, four even moves, a 120 ms hold, then up, in one shell.
+    /// `input swipe` lifts while still moving, so lists fling on (600 px moved a Settings list ~1,070 px on the Fold;
+    /// this moves it ~577, the touch slop aside). Falls back to `input swipe` where `input motionevent` is missing.</summary>
+    private void SteadySwipe(int x1,int y1,int x2,int y2)
+    {
+        string P(int x,int y)=>x.ToString(CultureInfo.InvariantCulture)+" "+y.ToString(CultureInfo.InvariantCulture);
+        var moves=Enumerable.Range(1,4).Select(i=>"input motionevent MOVE "+P(x1+(x2-x1)*i/4,y1+(y2-y1)*i/4));
+        var script="input motionevent DOWN "+P(x1,y1)+"; "+string.Join("; ",moves)+"; sleep 0.12; input motionevent UP "+P(x2,y2);
+        string output;
+        try{output=Shell("sh","-c",script);}
+        catch(Exception e)when(e is IOException or TimeoutException or InvalidOperationException)
+        {
+            // Never leave a finger down on the screen.
+            try{Shell("input","motionevent","UP",x2.ToString(CultureInfo.InvariantCulture),y2.ToString(CultureInfo.InvariantCulture));}catch(Exception up)when(up is IOException or TimeoutException or InvalidOperationException){/* reported with the original failure */}
+            throw;
+        }
+        if(Regex.IsMatch(output,@"(?i)error|unknown|usage"))Shell("input","swipe",x1.ToString(CultureInfo.InvariantCulture),y1.ToString(CultureInfo.InvariantCulture),x2.ToString(CultureInfo.InvariantCulture),y2.ToString(CultureInfo.InvariantCulture),"350");
     }
     private void Zoom(JsonObject step,Aim aim,NativeScreen screen,List<UiElement> elements)
     {

@@ -40,13 +40,13 @@ public sealed class GestureTests
 
     private static string Text(JsonObject result) => string.Join("\n", result["response"]!["result"]!["content"]!.AsArray().Select(b => b!["text"]?.ToString() ?? ""));
 
-    private static List<string> Inputs(JsonObject result) => result["commands"]!.AsArray().Select(c => c!.ToString().Replace("'", "")).Where(c => c.StartsWith("input ", StringComparison.Ordinal)).ToList();
+    private static List<string> Inputs(JsonObject result) => result["commands"]!.AsArray().Select(c => c!.ToString().Replace("'", "")).Where(c => c.StartsWith("input ", StringComparison.Ordinal) || c.StartsWith("sh -c input motionevent", StringComparison.Ordinal)).ToList();
 
     [Fact]
     public void ScrollDownSwipesUpFromTheCenterAndIsVerifiedByMovedContent()
     {
         var result = Act(Fixture(List, Scrolled), """{"steps": [{"do": "scroll", "direction": "down"}]}""");
-        Assert.Equal(["input swipe 540 1280 540 640 350"], Inputs(result));
+        Assert.Equal(["sh -c input motionevent DOWN 540 1280; input motionevent MOVE 540 1120; input motionevent MOVE 540 960; input motionevent MOVE 540 800; input motionevent MOVE 540 640; sleep 0.12; input motionevent UP 540 640"], Inputs(result));
         Assert.Contains("✓ scroll", Text(result));
     }
 
@@ -54,7 +54,7 @@ public sealed class GestureTests
     public void ScrollAmountRepeatsTheSwipe()
     {
         var result = Act(Fixture(List, Scrolled), """{"steps": [{"do": "scroll", "direction": "up", "amount": 2}]}""");
-        Assert.Equal(["input swipe 540 640 540 1280 350", "input swipe 540 640 540 1280 350"], Inputs(result));
+        Assert.Equal(2, Inputs(result).Count(i => i.StartsWith("sh -c input motionevent DOWN 540 640;", StringComparison.Ordinal) && i.EndsWith("UP 540 1280", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -193,6 +193,31 @@ public sealed class GestureTests
         var result = Act(Fixture(List), """{"steps": [{"do": "tap", "target": "Open"}, {"do": "fly"}]}""");
         Assert.Contains("Error", Text(result));
         Assert.Empty(Inputs(result));
+    }
+
+    private static string Look(JsonObject fixture) => Text(FixtureDriver.Call(new JsonObject { ["tool"] = "look", ["args"] = new JsonObject(), ["fixture"] = fixture }));
+
+    [Fact]
+    public void LookNamesADialogInFrontButNotAFullScreenApp()
+    {
+        var dialog = Screen(Node("", "", 140, 700, 940, 1200, "android.widget.FrameLayout", "", ""), Node("Supprimer ?", "", 180, 740, 900, 800, "android.widget.TextView", "", ""), Node("Annuler", "", 500, 1100, 700, 1180));
+        Assert.Contains("dialog in front", Look(Fixture(dialog)));
+        Assert.DoesNotContain("dialog in front", Look(Fixture(List)));
+    }
+
+    [Fact]
+    public void LookPointsToTheForegroundAppsFunctions()
+    {
+        var fixture = Fixture(List);
+        fixture["shell"]!["list-app-functions"] = """{"com.example.app": [{"AppFunctionStaticMetadata#1": {"functionId": ["a#findNotes"]}, "AppFunctionStaticMetadata#2": {"functionId": ["a#deleteNotes"], "enabledByDefault": ["false"]}}], "com.other": [{"AppFunctionStaticMetadata#1": {"functionId": ["b#x"]}}]}""";
+        Assert.Contains("1 app functions: functions(app=\"com.example.app\")", Look(fixture));
+    }
+
+    [Fact]
+    public void AppInfoSummarizesAnUpdatedPreinstalledApp()
+    {
+        const string dump = "    versionCode=326833900 minSdk=32 targetSdk=37\n    versionName=messages_20261022\n    lastUpdateTime=2026-11-05 15:44:51\n    installerPackageName=com.android.vending\n    User 0: installed=true enabled=0\n      firstInstallTime=1970-01-03 22:01:31\n    versionCode=307085900\n    versionName=messages_20260417\n    lastUpdateTime=1970-01-01 00:59:59\n    installerPackageName=null\n";
+        Assert.Equal("com.google.android.apps.messaging\nVersion: messages_20261022 (update of the factory version messages_20260417)\nInstalled by: Play Store\nLast updated: 2026-11-05 15:44:51\nState: enabled", NexusAndroid.NativeEngine.AppInfo("com.google.android.apps.messaging", dump));
     }
 
     [Fact]

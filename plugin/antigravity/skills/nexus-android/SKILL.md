@@ -17,13 +17,15 @@ Do not create a question card just to report progress.
 2. `look` → numbered elements `[N] role "text" [states] @x,y`, text first: the image (same `[N]` drawn on it,
    `marks`: `auto`, `all`, `none`) is joined only when nothing is readable, or on request (`show="both"` or
    `"image"`, `region` to zoom).
+   The header also says when a dialog is in front (what lies behind is not reachable) and when the app offers
+   AppFunctions, a structured path through `functions` that needs no screen.
 3. `act(steps=[...])` → several gestures in one call, stops at the first error, returns the updated screen;
    `then="changes"` returns only what changed since the last list (added, changed, removed), numbers kept.
    - Target: `"[N]"` (brackets) from the last `look`, visible text (`"Settings"`), or `"x,y"` in pixels of the last
      full image.
    - Steps: `tap`, `long_press`, `double_tap`, `type` (accents and emoji work; `target` = field to tap first),
      `clear`, `key` (`back`, `home`, `recent`, arrows; `enter` needs `confirm=true` and an accord), `scroll` (`direction` = reading
-     direction), `swipe` (`target` → `to`), `wait` (`text`, or `gone=true`), `open_url`.
+     direction; about a third of the screen per notch, stopping where the finger stops, no fling), `swipe` (`target` → `to`), `wait` (`text`, or `gone=true`), `open_url`.
    - Direct links with `open_url`: `geo:0,0?q=address`, `google.navigation:q=address`, `tel:...` (opens the dialer,
      does not call), `mailto:`, `https://`.
 4. Reports: ✓ effect read back, ~ sent but not verified (the image is joined only if the screen did not change; otherwise `look(show="both")`), ✗ failed or refused, ? link lost during the

@@ -53,9 +53,32 @@ public sealed partial class NativeEngine
     // pm list packages -3 -i -f: apps preloaded by the maker live outside /data/app (no store installs them); Chrome
     // installs the WebAPKs that Google mints for installed web apps. The package installer is the sideloading path
     // (an .apk opened by hand): outside the stores, so reported.
+    /// <summary>`dumpsys package` in a few lines: the running version first, the factory one it updates when there is one
+    /// (a preinstalled app shows twice, with 1970 dates), the store that installed it and whether it is enabled.</summary>
+    internal static string AppInfo(string package,string dump)
+    {
+        string? First(string pattern,int skip=0)=>Regex.Matches(dump,pattern).Skip(skip).Select(m=>m.Groups[1].Value.Trim()).FirstOrDefault();
+        var version=First(@"versionName=(\S+)");
+        var factory=First(@"versionName=(\S+)",1);
+        var installer=First(@"installerPackageName=(\S+)");
+        var installed=First(@"firstInstallTime=([\d-]+ [\d:]+)");
+        var updated=First(@"lastUpdateTime=([\d-]+ [\d:]+)");
+        var enabled=First(@"\benabled=(\d)");
+        var store=installer switch{"com.android.vending"=>"Play Store","com.sec.android.app.samsungapps"=>"Galaxy Store","com.samsung.android.app.omcagent"=>"Samsung carrier setup","null" or null=>"preinstalled or sideloaded",_=>installer};
+        var lines=new List<string>{package};
+        if(version is null)return package+"\nNot installed for this user.";
+        lines.Add("Version: "+version+(factory is not null&&factory!=version?$" (update of the factory version {factory})":""));
+        lines.Add("Installed by: "+store);
+        if(installed is not null&&!installed.StartsWith("1970",StringComparison.Ordinal))lines.Add("First installed: "+installed);
+        if(updated is not null&&!updated.StartsWith("1970",StringComparison.Ordinal))lines.Add("Last updated: "+updated);
+        lines.Add("State: "+(enabled is "2" or "3" or "4"?"disabled":"enabled"));
+        return string.Join('\n',lines);
+    }
     internal static List<string> OutsideOfficialStores(string packages)=>packages.Replace("\r","").Split('\n',StringSplitOptions.RemoveEmptyEntries)
         .Select(l=>Regex.Match(l.Trim(),@"^package:(?<path>\S+)=(?<name>[\w.]+)\s+installer=(?<installer>\S+)"))
-        .Where(m=>m.Success&&m.Groups["path"].Value.StartsWith("/data/app/",StringComparison.Ordinal)&&!Regex.IsMatch(m.Groups["installer"].Value,@"^(com\.android\.vending|com\.sec\.android\.app\.samsungapps|com\.android\.chrome)$"))
+        // Removable factory apps sit in a fixed-name folder (/data/app/Tips/Tips.apk) and Samsung's carrier agent (OMC)
+        // installs preloads: neither is a sideload. Anything installed later lives in a random folder: /data/app/~~x/pkg-y/base.apk (Android 11+) or /data/app/pkg-y/base.apk (earlier).
+        .Where(m=>m.Success&&Regex.IsMatch(m.Groups["path"].Value,@"^/data/app/(?:~~[^/]+/)?[\w.]+-[^/]+/base\.apk$")&&!Regex.IsMatch(m.Groups["installer"].Value,@"^(com\.android\.vending|com\.sec\.android\.app\.samsungapps|com\.android\.chrome|com\.samsung\.android\.app\.omcagent)$"))
         .Select(m=>m.Groups["name"].Value).ToList();
     private string ResolvePackage(string app,bool includeUninstalled=false)
     {
@@ -161,7 +184,7 @@ public sealed partial class NativeEngine
     private JsonObject Apps(JsonObject args)
     {
         var action=Str(args,"action");if(action=="list")return Text(Shell("pm","list","packages","-3"));var pkg=action=="install"?"":ResolvePackage(Str(args,"app"),action=="restore");
-        if(action=="info"){var dump=Shell("dumpsys","package",pkg);return Text(pkg+"\n"+string.Join('\n',dump.Split('\n').Where(l=>Regex.IsMatch(l,@"versionName=|versionCode=|firstInstallTime=|lastUpdateTime=|installerPackageName=|User 0:"))));}
+        if(action=="info")return Text(AppInfo(pkg,Shell("dumpsys","package",pkg)));
         NativeSafety.StopGuard();if(action is "clear" or "uninstall" or "stop")
         {
             if(CorePackages.Contains(pkg)||pkg.StartsWith("com.android.providers.",StringComparison.Ordinal))throw new InvalidOperationException("Core system app refused");
