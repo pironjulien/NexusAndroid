@@ -725,6 +725,19 @@ public sealed class NativeUtilitiesTests
     }
 
     [Fact]
+    public void AppLaunchStartsTheResolvedLauncherComponent()
+    {
+        var fixture = DraftFixture("com.example.clock");
+        fixture["shell"]!["list packages"] = "package:com.example.clock";
+        fixture["shell"]!["resolve-activity"] = "priority=0 preferredOrder=0\ncom.example.clock/.ClockPackage";
+        fixture["shell"]!["query-activities"] = "com.example.clock/.ClockPackage";
+        var result = Call("launch", Json("""{"app": "com.example.clock", "then": "none"}"""), fixture);
+        var start = Assert.Single(Commands(result), command => command.Contains("'am' 'start'", StringComparison.Ordinal));
+        Assert.Contains("'-n' 'com.example.clock/.ClockPackage'", start);
+        Assert.DoesNotContain("'-p'", start);
+    }
+
+    [Fact]
     public void ProtectedCandidateBlocksIntentBeforeLaunch()
     {
         var fixture = Json("""{"shell": {"resolve-activity": "com.example.app/.Main", "query-activities": "com.example.app/.Main\ncom.revolut.revolut/.Main"}}""");

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.13] - 2026-11-06
+
+### Fixed
+- `launch(app)` starts the exact launcher activity found when resolving the app: Samsung Clock resolved by package but `am start -p` answered "unable to resolve", so the app could not be opened by name.
+
 ## [0.23.12] - 2026-11-06
 
 ### Fixed
