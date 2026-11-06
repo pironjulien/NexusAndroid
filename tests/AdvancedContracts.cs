@@ -163,7 +163,7 @@ sealed class FixtureAdb(FixturePhone phone):AdbClient("offline-fixture-never-sta
         if(command.Contains("'dumpsys' 'package' 'packages'"))return PermissionDump;if(command.Contains("'dumpsys' 'bluetooth_manager'"))return Bluetooth;
         if(command.Contains("resolve-activity")||command.Contains("query-activities"))return "com.android.settings/.Settings";
         if(command.StartsWith("'am' 'start'")){phone.Package="com.android.settings";return "Status: ok";}
-        if(command.Contains("lastUserActivityTime"))return "lastUserActivityTime=12345 (5000 ms ago)";
+        if(command.Contains("lastUserActivityTime"))return "lastUserActivityTime=12345 (20000 ms ago)";
         return "";
     }
     public override (string Stdout,string Stderr) RunAdb(string arguments,int timeoutMs=15000){Commands.Add(arguments);return arguments.StartsWith("forward tcp:0")?(Port.ToString(),""):("","");}

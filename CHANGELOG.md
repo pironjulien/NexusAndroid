@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.16] - 2026-11-06
+
+### Fixed
+- The phone counts as in the user's hands for 15 s after a touch that is not ours (was 3 s): an agent opened an app over a conversation the user was reading between two scrolls. Gestures and launches now wait up to 20 s for the user to put the phone down, then refuse.
+- `scroll` (and `zoom`) in a messaging app is never taken for an unnamed send button: scrolling a conversation asked for an accord.
 ## [0.23.15] - 2026-11-06
 
 ### Added

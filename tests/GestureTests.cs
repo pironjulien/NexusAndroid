@@ -221,6 +221,27 @@ public sealed class GestureTests
     }
 
     [Fact]
+    public void ScrollingAConversationIsNeverTakenForASend()
+    {
+        const string messaging = "com.google.android.apps.messaging";
+        var rows = $"<hierarchy><node text='' package='{messaging}' class='android.view.View' resource-id='message_list' bounds='[0,110][1080,1920]' clickable='true' scrollable='true' enabled='true'><node text='' package='{messaging}' class='android.view.View' bounds='[20,600][1060,740]' clickable='true' enabled='true'/><node text='' package='{messaging}' class='android.view.View' bounds='[20,1200][1060,1340]' clickable='true' enabled='true'/></node></hierarchy>";
+        var fixture = Fixture(rows, rows.Replace("[20,600][1060,740]", "[20,500][1060,640]"));
+        fixture["state"] = $"mCurrentFocus=Window{{fixture u0 {messaging}/.Main}}\nmWakefulness=Awake\nisKeyguardShowing=false";
+        var result = Act(fixture, """{"steps": [{"do": "scroll", "direction": "down"}]}""");
+        Assert.DoesNotContain("accord=", Text(result));
+        Assert.Single(Inputs(result));
+    }
+
+    [Fact]
+    public void ATouchOfTheUserMoreThan15SecondsAgoLeavesThePhoneFree()
+    {
+        var fixture = Fixture(List, Scrolled);
+        fixture["shell"]!["lastUserActivityTime"] = "lastUserActivityTime=37861654 (16000 ms ago)";
+        var result = Act(fixture, """{"steps": [{"do": "tap", "target": "Open"}]}""");
+        Assert.Equal(["input tap 300 1550"], Inputs(result));
+    }
+
+    [Fact]
     public void ALockedPhoneWithACodeGetsNoInput()
     {
         var fixture = Fixture(List, Scrolled);
