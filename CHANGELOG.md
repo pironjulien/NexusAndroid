@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.12] - 2026-11-06
+
+### Fixed
+- A lost link to the phone helper (cable unplugged, Wi-Fi debugging cut, adb server restarted) no longer leaves every tool failing until the server restarts: a request that never reached the helper starts it again and is sent once more.
+- A gesture that went through is no longer reported as failed when its target has no id or text: only a requested routine needs stable targets (now also `desc:`), and an unstable one cancels the recording instead of the success.
+- `act` judges a tap, key or drag on the settled screen: it reads until the app has answered and two reads agree (600 ms without change, 1.5 s at most), and counts a menu, dialog or page opening in the same app as an effect. Opening a conversation or a menu was reported "effect unverified" and stopped the batch.
+- `look` with an image tries once more when the screen moves during the capture (timer, video, minute change) instead of failing at once.
+- `messages` no longer labels conversations "hidden in the app" when the SMS app is Google Messages, which keeps its own archive.
+- AppFunctions whose method carries a holder prefix (`CrossAppEvent_getEvents`) are classified by their verb: calendar reads no longer ask for confirmation.
+- `files list` shows name · size · date, so a size next to a date is no longer masked as a card number.
+
+### Changed
+- Faster: a thread's MMS/RCS parts and addresses are read in one request per page instead of two per message; contact names and the SIM country are cached briefly; no connection check before each helper request; the safety patterns are compiled once; `look` with an image reads the screen once instead of twice; `act` skips a second presence check and screen read per step.
 ## [0.23.11] - 2026-11-06
 
 ### Fixed

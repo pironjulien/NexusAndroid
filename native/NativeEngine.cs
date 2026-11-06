@@ -101,7 +101,8 @@ public sealed partial class NativeEngine
             var full=Current.Image??throw new InvalidOperationException("No full image previously sent in this session");if(region.Count!=4)throw new ArgumentException("region needs four coordinates");var p=region.Select(n=>(int)Math.Round(n!.GetValue<double>())).ToArray();var x1=Math.Clamp(p[0],0,full.Width);var y1=Math.Clamp(p[1],0,full.Height);var x2=Math.Clamp(p[2],0,full.Width);var y2=Math.Clamp(p[3],0,full.Height);if(x2<=x1||y2<=y1)throw new ArgumentException("Empty region");var decoded=ImageChain.Decode(full.Bytes);var cropped=new PixelBuffer(x2-x1,y2-y1);for(var y=y1;y<y2;y++){Buffer.BlockCopy(decoded.Bgra,(y*decoded.Width+x1)*4,cropped.Bgra,(y-y1)*cropped.Width*4,cropped.Width*4);}var enlarged=ImageChain.ResizeBilinear(cropped,cropped.Width*2,cropped.Height*2);var result=ImageChain.ProcessChain(enlarged,maxBytes:500*1024);Current.Sent=null;/* the zoom is now the last image sent: the next full view goes out again */var regionOutput=Text($"Zoom of last full image [{x1},{y1},{x2},{y2}]. Action coordinates remain those of that full image.");regionOutput["content"]!.AsArray().Add(new JsonObject{["type"]="image",["mimeType"]=result.MimeType,["data"]=Convert.ToBase64String(result.Bytes)});return regionOutput;
         }
         var show=Str(args,"show","auto");if(show=="none")return Text("No screen view requested; previous references remain bound to their observed contents.");var image=show is "both" or "image" || args["region"] is not null;var previous=last.ToList();
-        var screen=Read();if(Locked(screen)){screen=LiftTrustedLock(screen);}ExtendAwake(screen);if(image){screen=Read(true);}var elements=Elements(screen);
+        // One read when the phone is open: the image comes with the tree; a lock lifted first needs the image read again.
+        var screen=Read(image);if(Locked(screen)){screen=LiftTrustedLock(screen);if(image)screen=Read(true);}ExtendAwake(screen);var elements=Elements(screen);
         if(show=="auto" && !elements.Any(e=>e.Text.Length>0||e.ContentDesc.Length>0)){image=true;screen=Read(true);elements=Elements(screen);}
         var assigned=new List<UiElement>();var used=new HashSet<string>();foreach(var element in elements){var candidates=previous.Where(p=>p.ResourceId==element.ResourceId&&p.ClassName==element.ClassName&&p.PackageName==element.PackageName&&p.Left==element.Left&&p.Top==element.Top&&!used.Contains(p.Id)).ToList();var id=candidates.Count==1?candidates[0].Id:"e"+Current.NextId++;used.Add(id);assigned.Add(element with{Id=id});}elements=assigned;
         var fresh=DateTime.UtcNow;last=elements;lastScreen=screen;lastSeen=fresh;if(Current.Image is not null&&(Current.ImageWidth!=screen.Width||Current.ImageHeight!=screen.Height))Current.CoordinatesValid=false;
@@ -202,7 +203,7 @@ public sealed partial class NativeEngine
         if(steps is null||steps.Count==0)throw new ArgumentException("steps required");
         var templates=steps.DeepClone().AsArray();var parameters=args["params"]?.AsObject();foreach(var step in steps.OfType<JsonObject>().Where(s=>s["text"] is not null)){var text=Str(step,"text");var substitutions=Regex.Matches(text,@"\{\{(\w+)\}\}");if(substitutions.Count>0){if(Str(step,"do")=="type"&&Regex.Replace(text,@"\{\{\w+\}\}","").Trim().Length>0)throw new ArgumentException("Parameterized typed text must contain only parameters");foreach(Match parameter in substitutions){if(parameters?[parameter.Groups[1].Value] is null)throw new ArgumentException("Missing routine parameter: "+parameter.Groups[1].Value);text=text.Replace(parameter.Value,parameters[parameter.Groups[1].Value]!.ToString());}step["text"]=text;}}
         foreach(var node in steps){if(node is not JsonObject s||!Gestures.Contains(Str(s,"do")))throw new ArgumentException("Unknown gesture or missing do; no input sent");}
-        var reports=new List<string>();var savedSteps=new JsonArray();var allVerified=true;var routinePackage=Foreground(Read());var stepIndex=-1;var toastMark=ToastMark();
+        var reports=new List<string>();var savedSteps=new JsonArray();var allVerified=true;var routinePackage=Str(args,"remember").Length>0?Foreground(Read()):"";var stepIndex=-1;var unstableTarget=false;var toastMark=ToastMark();
         foreach(var node in steps)
         {
             stepIndex++;var stepBegan=System.Diagnostics.Stopwatch.StartNew();var step=node!.AsObject();var action=Str(step,"do");var screen=Read();if(action is not ("wait" or "open_url")){WaitForOwner(screen);screen=LiftTrustedLock(screen);if(!Awake(screen)&&!Locked(screen)){Shell("input","keyevent","KEYCODE_WAKEUP");lastInput=DateTimeOffset.UtcNow;screen=Read();}}
@@ -216,7 +217,7 @@ public sealed partial class NativeEngine
                 if(action=="open_url"){Launch(new JsonObject{["action"]="android.intent.action.VIEW",["data"]=Str(step,"text"),["confirm"]=step["confirm"]?.DeepClone(),["accord"]=step["accord"]?.DeepClone(),["then"]="none"});var template=templates[stepIndex]!.DeepClone().AsObject();template.Remove("confirm");template.Remove("accord");savedSteps.Add(template);reports.Add("✓ intent arrival inspected");continue;}
                 (int X,int Y,UiElement? Element) aim=default;
                 UiElement? endElement=null;
-                var key=Str(step,"keys").ToLowerInvariant();var keyCodes=action=="key"?Keys(key):[];var guardKey=action=="key"?!SafeKeys(keyCodes)?"enter":NavigationGesture(keyCodes):key;WaitForOwner(screen);screen=LiftTrustedLock(Read());var elements=Elements(screen);
+                var key=Str(step,"keys").ToLowerInvariant();var keyCodes=action=="key"?Keys(key):[];var guardKey=action=="key"?!SafeKeys(keyCodes)?"enter":NavigationGesture(keyCodes):key;var elements=Elements(screen);
                 if(action=="key")aim.Element=elements.FirstOrDefault(e=>e.Focused);
                 else if((action is "type" or "clear")&&step["target"] is null)aim.Element=elements.SingleOrDefault(e=>e.Focused&&e.Editable)??throw new InvalidOperationException("Input focus changed; no input sent");
                 else if(action is "scroll" or "zoom"&&step["target"] is null)aim=(screen.Width/2,screen.Height/2,AtPoint(elements,screen.Width/2,screen.Height/2));
@@ -250,20 +251,41 @@ public sealed partial class NativeEngine
                         var zoomDirection=Str(step,"direction","in");if(zoomDirection is not ("in" or "out"))throw new ArgumentException("zoom requires in/out");var geometry=ScrcpyChannel.ZoomGeometry(aim.X,aim.Y,screen.Width,screen.Height,zoomDirection=="in",Num(step,"amount",1));foreach(var point in new[]{geometry.First,geometry.Second})foreach(var under in elements.Where(e=>point.X>=e.Left&&point.X<e.Right&&point.Y>=e.Top&&point.Y<e.Bottom)){var label=under.RawText+" "+under.RawDescription;if(NativeSafety.Risky(label)||NativeSafety.ContextRisk(label,string.Join(' ',elements.Select(e=>e.RawText)))||(AndroidPolicy.IsProtectedPackage(Foreground(screen))||AndroidPolicy.IsProtectedPackage(under.PackageName))&&under.Clickable)throw new InvalidOperationException("A zoom finger would land on an action button; aim at the content away from buttons");}
                         using(var channel=control())channel.Zoom(aim.X,aim.Y,screen.Width,screen.Height,zoomDirection=="in",Num(step,"amount",1));break;
                 }
-                lastInput=DateTimeOffset.UtcNow;KeepScreenAwake(screen);var after=Read();var afterElements=Elements(after);var same=aim.Element is null?null:FollowTarget(aim.Element,afterElements);
-                var verified=Foreground(after)!=Foreground(screen)||(same is not null&&(same.Checked!=aim.Element!.Checked||same.RawText!=aim.Element.RawText||same.Focused!=aim.Element.Focused));
+                lastInput=DateTimeOffset.UtcNow;KeepScreenAwake(screen);var after=SettleAfter(screen);var afterElements=Elements(after);var same=aim.Element is null?null:FollowTarget(aim.Element,afterElements);
+                // A menu, dialog or new page opening in the same app is an effect too: the app's own elements changed.
+                string AppView(NativeScreen view,List<UiElement> list)=>string.Join('|',list.Where(e=>e.PackageName==Foreground(view)).Select(e=>$"{e.ResourceId}|{e.ClassName}|{e.RawText}|{e.RawDescription}|{e.Left},{e.Top},{e.Right},{e.Bottom}|{e.Checked}|{e.Selected}"));
+                var verified=Foreground(after)!=Foreground(screen)||(same is not null&&(same.Checked!=aim.Element!.Checked||same.RawText!=aim.Element.RawText||same.Focused!=aim.Element.Focused))||action is "tap" or "long_press" or "double_tap" or "key" or "drag"&&AppView(after,afterElements)!=AppView(screen,elements);
                 if(action is "type" or "clear")verified=same is {Focused:true,Editable:true}&&same.RawText!=aim.Element!.RawText&&(action=="clear"?same.RawText.Length==0:same.RawText.Contains(Str(step,"text"),StringComparison.Ordinal));
                 if(action=="scroll")verified=Hash(string.Join('|',afterElements.Where(e=>e.PackageName==Foreground(after)).Select(e=>$"{e.ResourceId}|{e.RawText}|{e.Top}|{e.Bottom}")))!=Hash(string.Join('|',elements.Where(e=>e.PackageName==Foreground(screen)).Select(e=>$"{e.ResourceId}|{e.RawText}|{e.Top}|{e.Bottom}")));
                 reports.Add((verified?"✓ ":"~ ")+action+(verified?" effect read back":" sent, effect unverified; do not repeat"));NativeJournal.Write(action,Foreground(after),verified?"✓":"~",stepBegan.Elapsed.TotalMilliseconds);
                 if(!verified){allVerified=false;break;}
-                var saved=templates[stepIndex]!.DeepClone().AsObject();saved.Remove("confirm");saved.Remove("accord");if(step["target"] is not null&&aim.Element is not null){saved["target"]=aim.Element.ResourceId.Length>0?"id:"+aim.Element.ResourceId:aim.Element.RawText;}if(step["to"] is not null&&endElement is not null)saved["to"]=endElement.ResourceId.Length>0?"id:"+endElement.ResourceId:endElement.RawText;
-                if(saved["target"]?.ToString() is {Length:0})throw new InvalidOperationException("No stable target to remember");savedSteps.Add(saved);
+                // The gesture already went through: only a requested routine needs stable targets, and an unstable one
+                // cancels the recording, never the reported success (a false ✗ invites a double tap).
+                var saved=templates[stepIndex]!.DeepClone().AsObject();saved.Remove("confirm");saved.Remove("accord");if(step["target"] is not null&&aim.Element is not null){saved["target"]=StableTarget(aim.Element);}if(step["to"] is not null&&endElement is not null)saved["to"]=StableTarget(endElement);
+                if(saved["target"]?.ToString() is {Length:0}||saved["to"]?.ToString() is {Length:0})unstableTarget=true;savedSteps.Add(saved);
             }
             catch(Exception ex)when(NativeSafety.Recoverable(ex)){/* Step boundary: any failure is reported as ✗ and stops the batch, never crashes the host. */reports.Add("✗ "+action+": "+ex.Message);allVerified=false;break;}
         }
-        if(Str(args,"remember") is {Length:>0} remember && allVerified){foreach(var saved in savedSteps.OfType<JsonObject>()){saved.Remove("confirm");saved.Remove("accord");}File.WriteAllText(RoutinePath(remember),new JsonObject{["package"]=routinePackage,["saved"]=DateTimeOffset.Now.ToString("O"),["steps"]=savedSteps}.ToJsonString());reports.Add("Routine saved using stable targets; no authorizations stored");}
+        if(Str(args,"remember") is {Length:>0}&&allVerified&&unstableTarget)reports.Add("Routine not saved: a target has no id, text or description to find it again");
+        else if(Str(args,"remember") is {Length:>0} remember && allVerified){foreach(var saved in savedSteps.OfType<JsonObject>()){saved.Remove("confirm");saved.Remove("accord");}File.WriteAllText(RoutinePath(remember),new JsonObject{["package"]=routinePackage,["saved"]=DateTimeOffset.Now.ToString("O"),["steps"]=savedSteps}.ToJsonString());reports.Add("Routine saved using stable targets; no authorizations stored");}
         if(presenceWarning.Length>0){reports.Add("⚠ "+presenceWarning);presenceWarning="";}var view=Look(new JsonObject{["show"]=Str(args,"then","auto")});var toasts=ToastsSince(toastMark);reports.AddRange(toasts.Select(t=>$"Toast {t.Package}: {t.Text}"));
         view["content"]!.AsArray().Insert(0,new JsonObject{["type"]="text",["text"]=NativeSafety.Mask(string.Join('\n',reports))});view["structuredContent"]=new JsonObject{["verified"]=allVerified,["reports"]=new JsonArray(reports.Select(v=>(JsonNode?)JsonValue.Create(NativeSafety.Mask(v))).ToArray()),["toasts"]=new JsonArray(toasts.Select(t=>(JsonNode?)new JsonObject{["package"]=t.Package,["text"]=t.Text}).ToArray())};return view;
+    }
+    private static string StableTarget(UiElement element)=>element.ResourceId.Length>0?"id:"+element.ResourceId:element.RawText.Length>0?element.RawText:element.RawDescription.Length>0?"desc:"+element.RawDescription:"";
+    // After a gesture the app answers within a few frames (dialog, new screen, typed text): read until the screen has
+    // changed and two reads agree, instead of judging the read taken right after the input. A screen that never
+    // changes is returned after 600 ms (effect unverified); one that never settles (video, clock) after 1.5 s.
+    internal const int SettleNoChangeMs=600,SettleMaxMs=1500;
+    private NativeScreen SettleAfter(NativeScreen before)
+    {
+        var baseline=before.Xml;var clock=System.Diagnostics.Stopwatch.StartNew();var current=Read();string? changed=null;
+        while(true)
+        {
+            if(current.Xml!=baseline){if(current.Xml==changed)return current;changed=current.Xml;}
+            else if(clock.ElapsedMilliseconds>=SettleNoChangeMs)return current;
+            if(clock.ElapsedMilliseconds>=SettleMaxMs)return current;
+            NativeSafety.StopGuard();Thread.Sleep(60);current=Read();
+        }
     }
     // Toasts shown during the gestures ("Copied", "Saved", "Network error"), read by the phone helper's accessibility link.
     // Never decisive: an unavailable helper only leaves them out.

@@ -345,6 +345,52 @@ public sealed class NativeUtilitiesTests
         Assert.DoesNotContain("+33612345678", body);
     }
 
+    // ------------------------------------------------------------------ lot of 2026-11-06
+
+    [Theory]
+    [InlineData("com.google.android.apps.messaging", false)]
+    [InlineData("com.samsung.android.messaging", true)]
+    public void ArchiveLabelOnlyForAppsThatUseTheProviderFlag(string smsApp, bool labelled)
+    {
+        var fixture = Conversations();
+        fixture["shell"]!["get-role-holders"] = smsApp;
+        var body = Success(Call("messages", Json("""{"limit": 5}"""), fixture));
+        Assert.Equal(labelled, body.Contains("hidden in the app", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ThreadReadsPartsAndAddressesOncePerPage()
+    {
+        var result = Call("messages", Json("""{"conversation": 7, "images": 0}"""), ImageFixture([1, 2, 3]));
+        Success(result);
+        Assert.Single(QueryCalls(result), call => call["uri"]!.ToString() == "content://mms/part");
+        Assert.Single(QueryCalls(result), call => call["uri"]!.ToString() == "content://mms/addr");
+        Assert.Contains(QueryCalls(result), call => call["uri"]!.ToString() == "content://mms/part" && call["where"]!.ToString() == "mid IN (3,2)");
+    }
+
+    [Fact]
+    public void FilesListingKeepsNumbersApartFromTheCardMask()
+    {
+        var listing = NexusAndroid.NativeEngine.FilesListing("total 8\n-rwxrwx--- 1 u0_a335 media_rw 606901 2026-10-08 18:57 diplome.pdf\ndrwxrws--- 2 u0_a335 media_rw 3452 2026-10-07 20:13 carrefour\n");
+        Assert.Equal("diplome.pdf · 593 KB · 2026-10-08 18:57\ncarrefour · folder · 2026-10-07 20:13", listing);
+        Assert.DoesNotContain("masked", NexusAndroid.NativeSafety.Mask(listing));
+    }
+
+    [Fact]
+    public void MenuOpeningOnADescriptionOnlyIconIsVerifiedOnce()
+    {
+        const string package = "com.example.app";
+        var fixture = DraftFixture(package);
+        var icon = $"<node text='' content-desc='Plus' package='{package}' class='android.widget.ImageButton' bounds='[900,100][1000,200]' clickable='true' enabled='true'/>";
+        fixture["xml"] = $"<hierarchy>{icon}</hierarchy>";
+        fixture["xml_after_input"] = $"<hierarchy>{icon}<node text='Informations' package='{package}' class='android.widget.TextView' bounds='[500,300][1000,400]' clickable='true' enabled='true'/></hierarchy>";
+        var result = FixtureDriver.Call(new JsonObject { ["tool"] = "act", ["args"] = Json("""{"steps": [{"do": "tap", "target": "[1]"}]}"""), ["fixture"] = fixture }, [("look", new JsonObject())]);
+        var body = Text(result);
+        Assert.Contains("✓ tap", body);
+        Assert.DoesNotContain("✗", body);
+        Assert.DoesNotContain("~ tap", body);
+    }
+
     // ------------------------------------------------------------------ unnamed containers
 
     [Theory]

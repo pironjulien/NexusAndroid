@@ -15,7 +15,9 @@ public sealed partial class NativeEngine
     // Classify schema AND method: a read-like schema must not launder a real send/delete method.
     private static string FunctionRisk(string name,string method)
     {
-        var tail=Regex.Replace(method,@"^[A-Z]\w*(?:Functions|Actions|Function)_","");
+        // Samsung prefixes the method with its holder class (PersonFunctions_, CrossAppEvent_...): drop that capitalized
+        // first segment only, so a snake_case method keeps every word (send_message stays outward).
+        var tail=Regex.Replace(method,@"^[A-Z][A-Za-z0-9]*_","");
         var names=new[]{name,tail}.Select(n=>Regex.Matches(n,@"[A-Z]?[a-z]+|[A-Z]+(?![a-z])").Select(m=>m.Value.ToLowerInvariant()).ToArray()).Where(w=>w.Length>0).ToList();
         var verbs=names.Select(w=>w[0]).ToHashSet();var every=names.SelectMany(w=>w).ToHashSet();
         string[] read=["find","get","show","is","list","read","search","check","launch","open","query","count"];

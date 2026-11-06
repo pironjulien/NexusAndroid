@@ -22,14 +22,25 @@ public static class NativeSafety
     private static readonly JsonObject Policy = LoadPolicy();
     private static JsonObject LoadPolicy(){using var reader=new StreamReader(Assembly.GetExecutingAssembly().GetManifestResourceStream("garde-fous.json")!);return JsonNode.Parse(reader.ReadToEnd())!.AsObject();}
     public static string Comparable(string value) => Regex.Replace(string.Concat(value.Normalize(NormalizationForm.FormD).Where(c => CharUnicodeInfo.GetUnicodeCategory(c) is not (UnicodeCategory.NonSpacingMark or UnicodeCategory.Format))).ToLowerInvariant(), @"[^\p{L}\p{N}]+", " ").Trim();
+    private static readonly Dictionary<char,char> UpperMap=new Dictionary<char,char>{['А']='A',['В']='B',['Е']='E',['К']='K',['М']='M',['Н']='H',['О']='O',['Р']='P',['С']='C',['Т']='T',['У']='Y',['Х']='X',['І']='I',['Ј']='J',['Ѕ']='S',['Α']='A',['Β']='B',['Ε']='E',['Ζ']='Z',['Η']='H',['Ι']='I',['Κ']='K',['Μ']='M',['Ν']='N',['Ο']='O',['Ρ']='P',['Τ']='T',['Υ']='Y',['Χ']='X'};
+    private static readonly Dictionary<char,char> LowerMap=new Dictionary<char,char>{['а']='a',['в']='b',['е']='e',['к']='k',['м']='m',['н']='h',['о']='o',['р']='p',['с']='c',['т']='t',['у']='y',['х']='x',['і']='i',['ј']='j',['ѕ']='s',['ԁ']='d',['ԛ']='q',['ԝ']='w',['һ']='h',['ӏ']='l',['α']='a',['β']='b',['ε']='e',['η']='n',['ι']='i',['κ']='k',['ν']='v',['ο']='o',['ρ']='p',['τ']='t',['υ']='u',['χ']='x',['ω']='w'};
     public static string Normalize(string value)
     {
-        var upperMap=new Dictionary<char,char>{['А']='A',['В']='B',['Е']='E',['К']='K',['М']='M',['Н']='H',['О']='O',['Р']='P',['С']='C',['Т']='T',['У']='Y',['Х']='X',['І']='I',['Ј']='J',['Ѕ']='S',['Α']='A',['Β']='B',['Ε']='E',['Ζ']='Z',['Η']='H',['Ι']='I',['Κ']='K',['Μ']='M',['Ν']='N',['Ο']='O',['Ρ']='P',['Τ']='T',['Υ']='Y',['Χ']='X'};
-        var lowerMap=new Dictionary<char,char>{['а']='a',['в']='b',['е']='e',['к']='k',['м']='m',['н']='h',['о']='o',['р']='p',['с']='c',['т']='t',['у']='y',['х']='x',['і']='i',['ј']='j',['ѕ']='s',['ԁ']='d',['ԛ']='q',['ԝ']='w',['һ']='h',['ӏ']='l',['α']='a',['β']='b',['ε']='e',['η']='n',['ι']='i',['κ']='k',['ν']='v',['ο']='o',['ρ']='p',['τ']='t',['υ']='u',['χ']='x',['ω']='w'};
-        var visible=string.Concat(value.Normalize(NormalizationForm.FormKD).Replace("€"," eur ").Replace("$"," usd ").Replace("£"," gbp ").Replace("¥"," jpy ").Where(c=>CharUnicodeInfo.GetUnicodeCategory(c) is not (UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark or UnicodeCategory.EnclosingMark or UnicodeCategory.Format)).Select(c=>upperMap.GetValueOrDefault(c,c))).ToLowerInvariant();
-        var mapped=string.Concat(visible.Select(c=>lowerMap.GetValueOrDefault(c,c)));return Regex.Replace(mapped,@"[^a-z0-9]+"," ").Trim();
+        var visible=string.Concat(value.Normalize(NormalizationForm.FormKD).Replace("€"," eur ").Replace("$"," usd ").Replace("£"," gbp ").Replace("¥"," jpy ").Where(c=>CharUnicodeInfo.GetUnicodeCategory(c) is not (UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark or UnicodeCategory.EnclosingMark or UnicodeCategory.Format)).Select(c=>UpperMap.GetValueOrDefault(c,c))).ToLowerInvariant();
+        var mapped=string.Concat(visible.Select(c=>LowerMap.GetValueOrDefault(c,c)));return Regex.Replace(mapped,@"[^a-z0-9]+"," ").Trim();
     }
-    private static bool Matches(string section, string key, string text) => Policy[section]?[key]?.AsArray().Any(p => Regex.IsMatch(Normalize(text), @"\b(?:" + p!.GetValue<string>() + @")\b", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100))) == true;
+    // One compiled alternation per policy list, built once: the ~70 patterns were rebuilt and the text re-normalized for
+    // each of them on every guarded gesture (the static regex cache holds only 15). Same meaning: any pattern matches.
+    private static readonly ConcurrentDictionary<string, Regex?> Compiled = new();
+    private static bool Matches(string section, string key, string text)
+    {
+        var regex = Compiled.GetOrAdd(section + "\0" + key, _ =>
+        {
+            var patterns = Policy[section]?[key]?.AsArray().Select(p => "(?:" + p!.GetValue<string>() + ")").ToArray();
+            return patterns is null || patterns.Length == 0 ? null : new Regex(@"\b(?:" + string.Join('|', patterns) + @")\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(500));
+        });
+        return regex is not null && regex.IsMatch(Normalize(text));
+    }
     public static bool Risky(string label) => Matches("confirmation", "motifs", label);
     public static bool Outward(string label) => Risky(label) && !Matches("accord", "motifs_locaux", label);
     public static bool ContextRisk(string label,string context) => Policy["confirmation"]?["contextes"]?.AsArray().OfType<JsonObject>().Any(c=>Regex.IsMatch(Normalize(context),@"\b(?:"+c["titre"]+@")\b")&&Regex.IsMatch(Normalize(label),@"\b(?:"+c["verbes"]+@")\b"))==true;
