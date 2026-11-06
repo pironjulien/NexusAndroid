@@ -242,6 +242,18 @@ public sealed class GestureTests
     }
 
     [Fact]
+    public void AfterALookARecentTouchOfTheUserDoesNotHoldTheAgent()
+    {
+        // The user hands the phone over: touched 8 s ago, the agent then looked at the screen and acts on it.
+        var fixture = Fixture(List, Scrolled);
+        fixture["shell"]!["lastUserActivityTime"] = "lastUserActivityTime=37861654 (8000 ms ago)";
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var result = Act(fixture, """{"steps": [{"do": "tap", "target": "Open"}]}""");
+        Assert.Equal(["input tap 300 1550"], Inputs(result));
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), "waited " + clock.Elapsed);
+    }
+
+    [Fact]
     public void ALockedPhoneWithACodeGetsNoInput()
     {
         var fixture = Fixture(List, Scrolled);

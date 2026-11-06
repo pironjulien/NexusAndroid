@@ -184,7 +184,8 @@ public sealed partial class NativeEngine
     private JsonObject Apps(JsonObject args)
     {
         var action=Str(args,"action");if(action=="list")return Text(Shell("pm","list","packages","-3"));var pkg=action=="install"?"":ResolvePackage(Str(args,"app"),action=="restore");
-        if(action=="info")return Text(AppInfo(pkg,Shell("dumpsys","package",pkg)));
+        // Filtered on the phone: the full `dumpsys package` of a big app took ~5 s over Wi-Fi for five lines.
+        if(action=="info")return Text(AppInfo(pkg,Shell("sh","-c","dumpsys package "+NativeSafety.Quote(pkg)+" | grep -E 'versionName=|firstInstallTime=|lastUpdateTime=|installerPackageName=|[ ]enabled='")));
         NativeSafety.StopGuard();if(action is "clear" or "uninstall" or "stop")
         {
             if(CorePackages.Contains(pkg)||pkg.StartsWith("com.android.providers.",StringComparison.Ordinal))throw new InvalidOperationException("Core system app refused");

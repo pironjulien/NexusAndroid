@@ -37,10 +37,11 @@ public sealed partial class NativeEngine
     {
         var output=Shell("sh","-c","dumpsys power | grep lastUserActivityTime= || true");var match=Regex.Match(output,@"lastUserActivityTime=\d+ \((\d+) ms ago\)");return match.Success?double.Parse(match.Groups[1].Value,System.Globalization.CultureInfo.InvariantCulture)/1000:null;
     }
-    // A touch that is not ours less than 15 s ago means the user has the phone in hand (reading a conversation between
-    // two scrolls counts): wait up to 20 s for them to put it down, then refuse. 3 s let an agent open an app over a
-    // conversation the user was reading (2026-11-06).
+    // A touch that is not ours less than 15 s ago, on a screen the agent has not looked at since, means the user has the
+    // phone in hand (reading a conversation between two scrolls counts): wait up to 20 s, then refuse. 3 s alone let an
+    // agent open an app over a conversation the user was reading (2026-11-06); after a look, 3 s keeps hand-overs fast.
     internal const double OwnerQuietSeconds=15;
+    internal const double OwnerActiveSeconds=3;
     private void WaitForOwner(NativeScreen screen)
     {
         if(!Awake(screen))return;var until=DateTime.UtcNow.AddSeconds(20);
@@ -48,7 +49,10 @@ public sealed partial class NativeEngine
         {
             var asked=DateTimeOffset.UtcNow;var idle=Idle();if(idle is null){presenceWarning="Phone does not report last touch; user-presence check unavailable on this device.";return;}
             var own=lastInput;var state=ReadAwakeState();if(AwakeMatches(state)&&state["last"]?.GetValue<double>() is double lastSeconds)own=DateTimeOffset.FromUnixTimeMilliseconds((long)(lastSeconds*1000))>own?DateTimeOffset.FromUnixTimeMilliseconds((long)(lastSeconds*1000)):own;
-            if(idle>=OwnerQuietSeconds||asked.AddSeconds(-idle.Value)<=own.AddSeconds(1))return;
+            // The agent looked at the screen after the user's last touch: it acts on what it saw, so only a live touch
+            // (3 s) holds it. Otherwise the user may be reading what the agent has not seen: 15 s.
+            var touched=asked.AddSeconds(-idle.Value);var quiet=new DateTimeOffset(lastSeen,TimeSpan.Zero)>touched?OwnerActiveSeconds:OwnerQuietSeconds;
+            if(idle>=quiet||touched<=own.AddSeconds(1))return;
             if(DateTime.UtcNow>=until)throw new InvalidOperationException("The user is using the phone right now; no action sent");NativeSafety.StopGuard();Thread.Sleep(160);
         }
     }

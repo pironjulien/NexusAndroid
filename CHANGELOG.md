@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.17] - 2026-11-06
+
+### Changed
+- The 15 s user-presence window applies only when the agent has not looked at the screen since the user's last touch. After a `look`, only a live touch (3 s) holds the agent, so handing the phone over ("look, tap this") stays as fast as before.
+- `apps info` filters `dumpsys package` on the phone: 0.55 s instead of 2.4 s for Google Messages over Wi-Fi.
 ## [0.23.16] - 2026-11-06
 
 ### Fixed
