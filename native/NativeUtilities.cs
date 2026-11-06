@@ -28,11 +28,29 @@ public sealed partial class NativeEngine
         var data=new JsonObject{["model"]=model,["android"]=android,["transport"]=device.IsUsb?"usb":"wifi",["serial"]=device.Serial,["posture"]=posture,["screen_on"]=awake,["locked"]=locked,["code_required"]=locked&&!trusted,["foreground"]=Foreground(state),["kept_awake_until"]=awakeUntil,["rebooted"]=rebooted};
         var text=$"{model} · Android {android} · {(device.IsUsb?"USB":"Wi-Fi")} · screen {(awake?"on":"off")} · foreground {Foreground(state)}"+(locked?(trusted?" · lock screen without code":" · locked, code required"):"");data["text"]=text;return Text(text,data);
     }
-    private JsonObject Checkup(JsonObject args)
+    /// <summary>Several read-only commands in one adb shell, each output cut at its own marker. A reply without every
+    /// marker (no `sh`, a cut stream) falls back to one call per command, so a read is never lost.</summary>
+    private string[] ShellBatch(params string[][] commands)
+    {
+        var tag="@@NX"+Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4))+"@@";
+        var script=string.Join("; ",commands.Select((c,i)=>"echo "+tag+i+"; "+string.Join(' ',c.Select(NativeSafety.Quote))+" 2>&1"));
+        var output=Shell("sh","-c",script);var parts=new string[commands.Length];
+        for(var i=0;i<commands.Length;i++)
+        {
+            var start=output.IndexOf(tag+i+"\n",StringComparison.Ordinal);if(start<0)start=output.IndexOf(tag+i+"\r\n",StringComparison.Ordinal);
+            if(start<0)return commands.Select(c=>Shell(c)).ToArray();
+            start=output.IndexOf('\n',start)+1;var end=i+1<commands.Length?output.IndexOf(tag+(i+1),start,StringComparison.Ordinal):output.Length;
+            if(end<0)return commands.Select(c=>Shell(c)).ToArray();
+            parts[i]=output[start..end].TrimEnd('\r','\n');
+        }
+        return parts;
+    }    private JsonObject Checkup(JsonObject args)
     {
         var device=adb.PickDevice();var devices=adb.GetDevices();if(device?.State!="device")return Text($"ADB: {adb.AdbPath}\n"+string.Join('\n',devices.Select(d=>$"{d.State} · {(d.IsUsb?"USB":"Wi-Fi")} · {d.Model}")),new JsonObject{["connected"]=false});verifiedHardwareForOperation=adb.VerifiedSelectedHardwareIdentity??"";RestoreExpiredAwake();
-        var battery=Shell("dumpsys","battery");string Battery(string field)=>Regex.Match(battery,@"(?m)^\s*"+field+@":\s*(\d+)").Groups[1].Value;var memory=Shell("cat","/proc/meminfo");var storage=Shell("df","-k","/data");var third=Shell("pm","list","packages","-3","-i","-f");var processes=Shell("ps","-A","-o","PID,NAME,ARGS");var helpers=processes.Split('\n').Where(l=>Regex.IsMatch(l,@"(?i)mobilecli|DeviceServer|appium|uiautomator2|shizuku|scrcpy")&&!l.Contains("nexus-scrcpy")).Select(l=>l.Trim()).Take(12).ToList();
-        var lines=new List<string>{$"Device: {Shell("getprop","ro.product.model").Trim()} · link {(adb.SelectedSerial!.Contains(':')?"Wi-Fi":"USB")}",$"Android {Shell("getprop","ro.build.version.release").Trim()} · security patch {Shell("getprop","ro.build.version.security_patch").Trim()} · build {Shell("getprop","ro.build.display.id").Trim()}",$"Battery: {Battery("level")} % · health {BatteryHealth(Battery("health"))} · temperature {(double.TryParse(Battery("temperature"),out var t)?t/10:0):0.0} °C","Storage (/data): "+CheckupStorage(storage),"Memory: "+CheckupMemory(memory),"Third-party apps: "+third.Split('\n',StringSplitOptions.RemoveEmptyEntries).Length,"Outside official stores: "+(OutsideOfficialStores(third) is {Count:>0} outside?string.Join(", ",outside):"none"),"Wireless debugging: "+(Shell("settings","get","global","adb_wifi_enabled").Trim()=="1"?"on":"off"),"Accessibility: "+(Shell("settings","get","secure","enabled_accessibility_services").Trim() is {Length:>0} services&&services!="null"?services:"none"),"Other control helpers: "+(helpers.Count>0?string.Join("; ",helpers):"none")};
+        // Eleven reads in one shell instead of eleven adb round trips (1.3 s on the Fold over Wi-Fi).
+        var reads=ShellBatch(["dumpsys","battery"],["cat","/proc/meminfo"],["df","-k","/data"],["pm","list","packages","-3","-i","-f"],["ps","-A","-o","PID,NAME,ARGS"],["getprop","ro.product.model"],["getprop","ro.build.version.release"],["getprop","ro.build.version.security_patch"],["getprop","ro.build.display.id"],["settings","get","global","adb_wifi_enabled"],["settings","get","secure","enabled_accessibility_services"]);
+        var battery=reads[0];string Battery(string field)=>Regex.Match(battery,@"(?m)^\s*"+field+@":\s*(\d+)").Groups[1].Value;var memory=reads[1];var storage=reads[2];var third=reads[3];var processes=reads[4];var helpers=processes.Split('\n').Where(l=>Regex.IsMatch(l,@"(?i)mobilecli|DeviceServer|appium|uiautomator2|shizuku|scrcpy")&&!l.Contains("nexus-scrcpy")).Select(l=>l.Trim()).Take(12).ToList();
+        var lines=new List<string>{$"Device: {reads[5].Trim()} · link {(adb.SelectedSerial!.Contains(':')?"Wi-Fi":"USB")}",$"Android {reads[6].Trim()} · security patch {reads[7].Trim()} · build {reads[8].Trim()}",$"Battery: {Battery("level")} % · health {BatteryHealth(Battery("health"))} · temperature {(double.TryParse(Battery("temperature"),out var t)?t/10:0):0.0} °C","Storage (/data): "+CheckupStorage(storage),"Memory: "+CheckupMemory(memory),"Third-party apps: "+third.Split('\n',StringSplitOptions.RemoveEmptyEntries).Length,"Outside official stores: "+(OutsideOfficialStores(third) is {Count:>0} outside?string.Join(", ",outside):"none"),"Wireless debugging: "+(reads[9].Trim()=="1"?"on":"off"),"Accessibility: "+(reads[10].Trim() is {Length:>0} services&&services!="null"?services:"none"),"Other control helpers: "+(helpers.Count>0?string.Join("; ",helpers):"none")};
         if(Bool(args,"clean")){NativeSafety.StopGuard();Shell("pm","trim-caches","999G");lines.Add("App-cache trim requested; storage read back:\n"+Shell("df","-k","/data"));}lines.Add("System/app updates are checked in Settings, Play Store or Galaxy Store.");return Text(string.Join('\n',lines),new JsonObject{["connected"]=true,["devices"]=JsonSerializer.SerializeToNode(devices)});
     }
     // BatteryManager.BATTERY_HEALTH_* codes, as dumpsys battery prints them.

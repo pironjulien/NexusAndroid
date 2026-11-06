@@ -1,0 +1,68 @@
+[
+  {
+    "notches": 10,
+    "verified": 10,
+    "median_moved_px": 1177,
+    "spread_px": 10,
+    "back_off_px": 4.5,
+    "median_ms": 1007.83875,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "input swipe 350 ms (before 0.23.15)"
+  },
+  {
+    "notches": 10,
+    "verified": 10,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 801.6563,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "product defaults"
+  },
+  {
+    "notches": 10,
+    "verified": 10,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 929.18505,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "steady, 4 moves, hold 120 ms (0.23.15-0.23.17)"
+  },
+  {
+    "notches": 10,
+    "verified": 10,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 816.41015,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "steady, 2 moves, hold 60 ms"
+  },
+  {
+    "notches": 10,
+    "verified": 10,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 866.43875,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "steady, 4 moves, hold 40 ms"
+  },
+  {
+    "notches": 10,
+    "verified": 10,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 1087.00135,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "steady, 8 moves, hold 120 ms"
+  }
+]

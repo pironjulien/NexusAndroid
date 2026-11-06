@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Real-phone bench: drives the connected phone through the engine itself (no MCP, no model) to compare each tuning
+       value with and without. Harmless apps only (Clock, Settings, reading messages); the phone is left on its home
+       screen. Run: dotnet run -c Release (from this folder). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>NexusAndroid.Banc</AssemblyName>
+    <RootNamespace>NexusAndroid.Banc</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\native\NexusAndroid.csproj" />
+  </ItemGroup>
+</Project>

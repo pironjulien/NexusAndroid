@@ -1,0 +1,34 @@
+# NexusAndroid bench (real phone)
+
+`Banc` drives the connected phone through the engine itself (no MCP client, no model) and compares each tuning value
+of `native/Tuning.cs` with and without. Every result is judged on the phone, not on what the tool reports: a ✓ for a
+tap that did nothing and a ~ for a tap that did act are both counted.
+
+Harmless apps only: Clock tabs and its overflow menu, scrolling Settings, `look`, and read-only tools (messages,
+notifications, apps info, checkup, calendar). The phone is left on its home screen. The engine's own user-presence
+check still applies: a phone in the user's hands stops the run.
+
+```powershell
+cd benchmarks/Banc
+dotnet run -c Release -- 8                # 8 repetitions, every section
+dotnet run -c Release -- 10 scroll        # one section: settle, scroll, look or read
+```
+
+Results land in `benchmarks/results/<date>-fold.md` (table) and `.json`.
+
+## Scenarios
+
+| Section | What is measured |
+| --- | --- |
+| settle | Tap a Clock tab: reported ✓, tab really active 1.2 s later, false ✓, missed effects, median time; then open and close the overflow menu |
+| scroll | One notch down and up in Settings: distance moved (median title shift), spread, return to start, time |
+| look | Text only and with image under each size cap: time, image size, text size |
+| read | Median time of the read-only tools |
+
+## Choices it settled (2026-11-06, Galaxy Fold, Android 17, Wi-Fi)
+
+| Setting | Before | Now | Why |
+| --- | --- | --- | --- |
+| Settle after a gesture | two equal reads | first change | 632 ms vs 1,056 ms per tap, 8/8 taps and 4/4 menus really done and reported ✓ in both |
+| Scroll shape | 4 moves, 120 ms hold | 2 moves, 60 ms hold | 633 px for 657 px of travel in 10/10 notches in both, 802 ms vs 929 ms; `input swipe` flung on to ~1,177 px |
+| `look` image cap | 500 KB (376 KB PNG) | 200 KB (140 KB JPEG) | same size in pixels, so the same cost for the model, same time; follows the 200 KB rule for shared images |

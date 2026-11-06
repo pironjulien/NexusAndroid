@@ -1,0 +1,190 @@
+[
+  {
+    "taps": 8,
+    "verified": 8,
+    "done": 8,
+    "false_ok": 0,
+    "missed": 0,
+    "median_ms": 1029.6873500000002,
+    "menu_verified": 4,
+    "menu_done": 4,
+    "menu_median_ms": 773.4567,
+    "scenario": "settle",
+    "variant": "current 600/1500 ms, poll 60, two reads"
+  },
+  {
+    "taps": 8,
+    "verified": 8,
+    "done": 8,
+    "false_ok": 0,
+    "missed": 0,
+    "median_ms": 948.59315,
+    "menu_verified": 4,
+    "menu_done": 4,
+    "menu_median_ms": 755.9944499999999,
+    "scenario": "settle",
+    "variant": "fast 300/1000 ms, poll 30, two reads"
+  },
+  {
+    "taps": 8,
+    "verified": 8,
+    "done": 8,
+    "false_ok": 0,
+    "missed": 0,
+    "median_ms": 650.36735,
+    "menu_verified": 4,
+    "menu_done": 4,
+    "menu_median_ms": 584.4399,
+    "scenario": "settle",
+    "variant": "first change 600/1500 ms, poll 60"
+  },
+  {
+    "taps": 8,
+    "verified": 8,
+    "done": 8,
+    "false_ok": 0,
+    "missed": 0,
+    "median_ms": 643.8873000000001,
+    "menu_verified": 4,
+    "menu_done": 4,
+    "menu_median_ms": 602.4263000000001,
+    "scenario": "settle",
+    "variant": "first change 300/1000 ms, poll 30"
+  },
+  {
+    "taps": 8,
+    "verified": 8,
+    "done": 8,
+    "false_ok": 0,
+    "missed": 0,
+    "median_ms": 1063.8983,
+    "menu_verified": 4,
+    "menu_done": 4,
+    "menu_median_ms": 784.5234,
+    "scenario": "settle",
+    "variant": "patient 900/2000 ms, poll 60, two reads"
+  },
+  {
+    "notches": 4,
+    "verified": 4,
+    "median_moved_px": 1172,
+    "spread_px": 3,
+    "back_off_px": 0,
+    "median_ms": 2269.17175,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "input swipe 350 ms (before 0.23.15)"
+  },
+  {
+    "notches": 4,
+    "verified": 4,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 1114.4745,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "steady, 4 moves, hold 120 ms (current)"
+  },
+  {
+    "notches": 4,
+    "verified": 4,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 991.9199,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "steady, 2 moves, hold 60 ms"
+  },
+  {
+    "notches": 4,
+    "verified": 4,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 1053.90885,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "steady, 4 moves, hold 40 ms"
+  },
+  {
+    "notches": 4,
+    "verified": 4,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 1260.71825,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "steady, 8 moves, hold 120 ms"
+  },
+  {
+    "runs": 4,
+    "median_ms": 205.19865,
+    "image_kb": 0,
+    "text_chars": 2183,
+    "scenario": "look",
+    "variant": "text only"
+  },
+  {
+    "runs": 4,
+    "median_ms": 506.1536,
+    "image_kb": 376.22900390625,
+    "text_chars": 2184,
+    "scenario": "look",
+    "variant": "image, 500 KB cap (current)"
+  },
+  {
+    "runs": 4,
+    "median_ms": 548.3734,
+    "image_kb": 139.09130859375,
+    "text_chars": 2184,
+    "scenario": "look",
+    "variant": "image, 300 KB cap"
+  },
+  {
+    "runs": 4,
+    "median_ms": 512.36705,
+    "image_kb": 139.11474609375,
+    "text_chars": 2184,
+    "scenario": "look",
+    "variant": "image, 200 KB cap"
+  },
+  {
+    "runs": 4,
+    "median_ms": 218.5321,
+    "scenario": "read",
+    "variant": "messages list (15)"
+  },
+  {
+    "runs": 4,
+    "median_ms": 270.35490000000004,
+    "scenario": "read",
+    "variant": "RCS group thread (30, no image)"
+  },
+  {
+    "runs": 4,
+    "median_ms": 288.89054999999996,
+    "scenario": "read",
+    "variant": "notifications"
+  },
+  {
+    "runs": 4,
+    "median_ms": 802.68155,
+    "scenario": "read",
+    "variant": "apps info"
+  },
+  {
+    "runs": 4,
+    "median_ms": 1298.5395,
+    "scenario": "read",
+    "variant": "checkup"
+  },
+  {
+    "runs": 4,
+    "median_ms": 121.95125,
+    "scenario": "read",
+    "variant": "calendar 7 days"
+  }
+]

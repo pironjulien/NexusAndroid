@@ -1,0 +1,214 @@
+[
+  {
+    "taps": 8,
+    "verified": 8,
+    "done": 8,
+    "false_ok": 0,
+    "missed": 0,
+    "median_ms": 631.5717,
+    "menu_verified": 4,
+    "menu_done": 4,
+    "menu_median_ms": 580.3151499999999,
+    "scenario": "settle",
+    "variant": "product defaults"
+  },
+  {
+    "taps": 8,
+    "verified": 8,
+    "done": 8,
+    "false_ok": 0,
+    "missed": 0,
+    "median_ms": 1055.74425,
+    "menu_verified": 4,
+    "menu_done": 4,
+    "menu_median_ms": 800.5323,
+    "scenario": "settle",
+    "variant": "two reads 600/1500 ms, poll 60 (0.23.12-0.23.17)"
+  },
+  {
+    "taps": 8,
+    "verified": 8,
+    "done": 8,
+    "false_ok": 0,
+    "missed": 0,
+    "median_ms": 966.2763500000001,
+    "menu_verified": 4,
+    "menu_done": 4,
+    "menu_median_ms": 772.0138999999999,
+    "scenario": "settle",
+    "variant": "fast 300/1000 ms, poll 30, two reads"
+  },
+  {
+    "taps": 8,
+    "verified": 8,
+    "done": 8,
+    "false_ok": 0,
+    "missed": 0,
+    "median_ms": 664.5949499999999,
+    "menu_verified": 4,
+    "menu_done": 4,
+    "menu_median_ms": 602.5171,
+    "scenario": "settle",
+    "variant": "first change 600/1500 ms, poll 60"
+  },
+  {
+    "taps": 8,
+    "verified": 8,
+    "done": 8,
+    "false_ok": 0,
+    "missed": 0,
+    "median_ms": 659.49725,
+    "menu_verified": 4,
+    "menu_done": 4,
+    "menu_median_ms": 597.94415,
+    "scenario": "settle",
+    "variant": "first change 300/1000 ms, poll 30"
+  },
+  {
+    "taps": 8,
+    "verified": 8,
+    "done": 8,
+    "false_ok": 0,
+    "missed": 0,
+    "median_ms": 1028.9508,
+    "menu_verified": 4,
+    "menu_done": 4,
+    "menu_median_ms": 796.9454000000001,
+    "scenario": "settle",
+    "variant": "patient 900/2000 ms, poll 60, two reads"
+  },
+  {
+    "notches": 4,
+    "verified": 4,
+    "median_moved_px": 1180,
+    "spread_px": 1,
+    "back_off_px": 2.5,
+    "median_ms": 1000.6916,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "input swipe 350 ms (before 0.23.15)"
+  },
+  {
+    "notches": 4,
+    "verified": 4,
+    "median_moved_px": 633,
+    "spread_px": 53,
+    "back_off_px": 0,
+    "median_ms": 810.05895,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "product defaults"
+  },
+  {
+    "notches": 4,
+    "verified": 4,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 940.07015,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "steady, 4 moves, hold 120 ms (0.23.15-0.23.17)"
+  },
+  {
+    "notches": 4,
+    "verified": 4,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 795.0160000000001,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "steady, 2 moves, hold 60 ms"
+  },
+  {
+    "notches": 4,
+    "verified": 4,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 889.87895,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "steady, 4 moves, hold 40 ms"
+  },
+  {
+    "notches": 4,
+    "verified": 4,
+    "median_moved_px": 633,
+    "spread_px": 0,
+    "back_off_px": 0,
+    "median_ms": 1090.7914500000002,
+    "expected_px": 657,
+    "scenario": "scroll",
+    "variant": "steady, 8 moves, hold 120 ms"
+  },
+  {
+    "runs": 4,
+    "median_ms": 213.18220000000002,
+    "image_kb": 0,
+    "text_chars": 2162.5,
+    "scenario": "look",
+    "variant": "text only"
+  },
+  {
+    "runs": 4,
+    "median_ms": 519.25045,
+    "image_kb": 140.1240234375,
+    "text_chars": 2163.5,
+    "scenario": "look",
+    "variant": "image, product cap"
+  },
+  {
+    "runs": 4,
+    "median_ms": 456.16085,
+    "image_kb": 382.31396484375,
+    "text_chars": 2163.5,
+    "scenario": "look",
+    "variant": "image, 500 KB cap (until 0.23.17)"
+  },
+  {
+    "runs": 4,
+    "median_ms": 462.44205,
+    "image_kb": 140.04931640625,
+    "text_chars": 2163.5,
+    "scenario": "look",
+    "variant": "image, 300 KB cap"
+  },
+  {
+    "runs": 4,
+    "median_ms": 252.0977,
+    "scenario": "read",
+    "variant": "messages list (15)"
+  },
+  {
+    "runs": 4,
+    "median_ms": 273.1345,
+    "scenario": "read",
+    "variant": "RCS group thread (30, no image)"
+  },
+  {
+    "runs": 4,
+    "median_ms": 290.136,
+    "scenario": "read",
+    "variant": "notifications"
+  },
+  {
+    "runs": 4,
+    "median_ms": 782.77745,
+    "scenario": "read",
+    "variant": "apps info"
+  },
+  {
+    "runs": 4,
+    "median_ms": 1252.9092,
+    "scenario": "read",
+    "variant": "checkup"
+  },
+  {
+    "runs": 4,
+    "median_ms": 104.301,
+    "scenario": "read",
+    "variant": "calendar 7 days"
+  }
+]

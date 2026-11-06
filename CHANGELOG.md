@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.18] - 2026-11-06
+
+### Added
+- `benchmarks/Banc`: a real-phone bench that drives the engine on the connected phone, compares each tuning value with and without, and judges every result on the phone itself (a ✓ that did nothing and a ~ that did act both count). Results in `benchmarks/results`.
+- `native/Tuning.cs`: the timings and gesture shapes the bench chose, in one place.
+
+### Changed
+- Settle after a gesture: the screen is returned at its first change instead of once two reads agree. Bench on the Fold: 632 ms instead of 1,056 ms per tap, every tap and menu still really done and reported ✓.
+- Scroll: 2 moves and a 60 ms hold (was 4 and 120 ms): the same 633 px per notch in 10 out of 10, 802 ms instead of 929 ms.
+- `look` images are capped at 200 KB (was 500 KB): the Settings screen goes out as a 140 KB JPEG instead of a 376 KB PNG, same size in pixels, same time.
+- `checkup` reads its eleven values in one shell instead of eleven adb round trips (falls back to one call each when the batch reply is incomplete).
 ## [0.23.17] - 2026-11-06
 
 ### Changed

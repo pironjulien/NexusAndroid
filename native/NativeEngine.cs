@@ -117,7 +117,7 @@ public sealed partial class NativeEngine
             try{var lines=NativeOcr.Read(screen.Image);seen.AddRange(lines.Select(l=>$"{NativeSafety.MaskCodes(NativeSafety.Mask(l.Text),false)}|{l.Left},{l.Top},{l.Right},{l.Bottom}"));var context=NativeSafety.HasCodeKeyword(string.Join(' ',lines.Select(l=>l.Text)));foreach(var line in lines.Where(l=>NativeSafety.MaskCodes(NativeSafety.Mask(l.Text),context)!=l.Text))blackouts.Add((line.Left,line.Top,line.Right,line.Bottom));}
             catch(Exception e)when(e is IOException or System.Runtime.InteropServices.COMException){output["content"]!.AsArray().Add(new JsonObject{["type"]="text",["text"]="Windows OCR unavailable; codes drawn outside the UI tree may remain visible: "+NativeSafety.Mask(e.Message)});}
             var marks=Str(args,"marks","auto");var badges=show=="both"&&marks!="none"?elements.Where(e=>marks=="all" || (e.Clickable&&string.IsNullOrWhiteSpace(e.Text))).Select(e=>(int.Parse(e.Id[1..]),e.CenterX,e.CenterY)).ToList():null;
-            var result=ImageChain.ProcessEncodedImage(screen.Image,maxBytes:500*1024,blackouts:blackouts,badges:badges);
+            var result=ImageChain.ProcessEncodedImage(screen.Image,maxBytes:Tuning.LookImageMaxBytes,blackouts:blackouts,badges:badges);
             // Same session, same marks, same geometry and same full screen content (system bar included, text read by OCR
             // included), and the same colour print: the image the agent already holds is not sent again.
             var key=string.IsNullOrEmpty(screen.Error)&&elements.Count>0?string.Join('#',ContentPrint(elements,seen,Foreground(screen)),screen.Width,screen.Height,result.Width,result.Height,string.Join(',',badges?.Select(b=>b.Item1)??[])):null;
@@ -514,7 +514,8 @@ public sealed partial class NativeEngine
             var to=(X:aim.X+dx/2,Y:aim.Y+dy/2);
             if(from.X<0||from.Y<0||to.X<0||to.Y<0||from.X>=screen.Width||to.X>=screen.Width||from.Y>=screen.Height||to.Y>=screen.Height)throw new ArgumentException("Scroll path outside screen");
             Guard(screen,elements,step,AtPoint(elements,from.X,from.Y),"scroll",destination:AtPoint(elements,to.X,to.Y));
-            SteadySwipe(from.X,from.Y,to.X,to.Y);
+            if(Tuning.SteadyScroll)SteadySwipe(from.X,from.Y,to.X,to.Y);
+            else Shell("input","swipe",from.X.ToString(CultureInfo.InvariantCulture),from.Y.ToString(CultureInfo.InvariantCulture),to.X.ToString(CultureInfo.InvariantCulture),to.Y.ToString(CultureInfo.InvariantCulture),"350");
         }
         // Verification compares with the screen before the first swipe, whatever the amount.
         return amount>1?original:(screen,elements);
@@ -525,8 +526,8 @@ public sealed partial class NativeEngine
     private void SteadySwipe(int x1,int y1,int x2,int y2)
     {
         string P(int x,int y)=>x.ToString(CultureInfo.InvariantCulture)+" "+y.ToString(CultureInfo.InvariantCulture);
-        var moves=Enumerable.Range(1,4).Select(i=>"input motionevent MOVE "+P(x1+(x2-x1)*i/4,y1+(y2-y1)*i/4));
-        var script="input motionevent DOWN "+P(x1,y1)+"; "+string.Join("; ",moves)+"; sleep 0.12; input motionevent UP "+P(x2,y2);
+        var steps=Tuning.SteadyMoves;var moves=Enumerable.Range(1,steps).Select(i=>"input motionevent MOVE "+P(x1+(x2-x1)*i/steps,y1+(y2-y1)*i/steps));
+        var script="input motionevent DOWN "+P(x1,y1)+"; "+string.Join("; ",moves)+"; sleep "+(Tuning.SteadyHoldMs/1000.0).ToString("0.###",CultureInfo.InvariantCulture)+"; input motionevent UP "+P(x2,y2);
         string output;
         try{output=Shell("sh","-c",script);}
         catch(Exception e)when(e is IOException or TimeoutException or InvalidOperationException)
@@ -588,16 +589,16 @@ public sealed partial class NativeEngine
     // After a gesture the app answers within a few frames (dialog, new screen, typed text): read until the screen has
     // changed and two reads agree, instead of judging the read taken right after the input. A screen that never
     // changes is returned after 600 ms (effect unverified); one that never settles (video, clock) after 1.5 s.
-    internal const int SettleNoChangeMs=600,SettleMaxMs=1500;
+
     private NativeScreen SettleAfter(NativeScreen before)
     {
         var baseline=before.Xml;var clock=System.Diagnostics.Stopwatch.StartNew();var current=Read();string? changed=null;
         while(true)
         {
-            if(current.Xml!=baseline){if(current.Xml==changed)return current;changed=current.Xml;}
-            else if(clock.ElapsedMilliseconds>=SettleNoChangeMs)return current;
-            if(clock.ElapsedMilliseconds>=SettleMaxMs)return current;
-            NativeSafety.StopGuard();Thread.Sleep(60);current=Read();
+            if(current.Xml!=baseline){if(!Tuning.SettleTwoReads||current.Xml==changed)return current;changed=current.Xml;}
+            else if(clock.ElapsedMilliseconds>=Tuning.SettleNoChangeMs)return current;
+            if(clock.ElapsedMilliseconds>=Tuning.SettleMaxMs)return current;
+            NativeSafety.StopGuard();Thread.Sleep(Tuning.SettlePollMs);current=Read();
         }
     }
     // Toasts shown during the gestures ("Copied", "Saved", "Network error"), read by the phone helper's accessibility link.

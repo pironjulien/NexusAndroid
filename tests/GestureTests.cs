@@ -46,7 +46,7 @@ public sealed class GestureTests
     public void ScrollDownSwipesUpFromTheCenterAndIsVerifiedByMovedContent()
     {
         var result = Act(Fixture(List, Scrolled), """{"steps": [{"do": "scroll", "direction": "down"}]}""");
-        Assert.Equal(["sh -c input motionevent DOWN 540 1280; input motionevent MOVE 540 1120; input motionevent MOVE 540 960; input motionevent MOVE 540 800; input motionevent MOVE 540 640; sleep 0.12; input motionevent UP 540 640"], Inputs(result));
+        Assert.Equal(["sh -c input motionevent DOWN 540 1280; input motionevent MOVE 540 960; input motionevent MOVE 540 640; sleep 0.06; input motionevent UP 540 640"], Inputs(result));
         Assert.Contains("✓ scroll", Text(result));
     }
 

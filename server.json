@@ -3,7 +3,7 @@
   "name": "io.github.pironjulien/nexus-android",
   "title": "NexusAndroid",
   "description": "Android computer use over plain ADB: screen, gestures, SMS, notifications, files. No root, no app.",
-  "version": "0.23.17",
+  "version": "0.23.18",
   "websiteUrl": "https://julienpiron.fr/nexusandroid/",
   "icons": [
     {
@@ -24,8 +24,8 @@
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/pironjulien/NexusAndroid/releases/download/v0.23.17/nexus-android.mcpb",
-      "version": "0.23.17",
+      "identifier": "https://github.com/pironjulien/NexusAndroid/releases/download/v0.23.18/nexus-android.mcpb",
+      "version": "0.23.18",
       "fileSha256": "set by the release workflow from the attested file",
       "transport": {
         "type": "stdio"
