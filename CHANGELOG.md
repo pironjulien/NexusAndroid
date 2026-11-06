@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.11] - 2026-11-06
+
+### Fixed
+- An unnamed clickable container (Jetpack Compose menu entry, conversation row, dialog button) is now judged on the short labels drawn inside it, instead of being taken for an unnamed send icon in messaging apps: opening a conversation, a menu or tapping `Block` no longer asks for an accord. Send buttons recognized by their id, and labels such as `Send`, still do.
+
+### Changed
+- Guide: leave the phone as found when the task is done (home screen or the user's app).
+
 ## [0.23.10] - 2026-11-06
 
 ### Fixed

@@ -29,6 +29,8 @@ Do not create a question card just to report progress.
 4. Reports: ✓ effect read back, ~ sent but not verified (the image is joined only if the screen did not change; otherwise `look(show="both")`), ✗ failed or refused, ? link lost during the
    gesture. A transport error after input may also mean an unknown effect: stop the batch, reconnect if needed,
    then inspect a fresh `look` before deciding what remains to do. Never replay the failed gesture automatically.
+5. Leave the phone as you found it: when the task is done, close what you opened (`key home`, or back to the app the
+   user was in), unless the user asked to keep that screen open.
 
 ## Other tools
 - `launch(app)`: package name or part of the app name; it can also open a precise screen or link (an action such as

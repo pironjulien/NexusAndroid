@@ -9,13 +9,19 @@ internal static class FixtureDriver
 {
     private static int caseNumber;
 
-    public static JsonObject Call(JsonObject command)
+    public static JsonObject Call(JsonObject command) => Call(command, []);
+
+    /// <summary>Same as Call, after earlier tool calls on the same server (a look before an act on [N]).</summary>
+    public static JsonObject Call(JsonObject command, (string Tool, JsonObject Args)[] before)
     {
         var number = Interlocked.Increment(ref caseNumber);
         var phone = new ConfiguredPhone(command["fixture"]?.DeepClone().AsObject() ?? new());
         var transport = new ConfiguredAdb(phone);
         var directory = Path.Join(TestPaths.Root, "fixture-cases", number.ToString());
         var server = new McpServer(new NativeEngine(transport, phone, directory, () => new ConfiguredControl(phone)));
+        foreach (var (tool, args) in before)
+            server.HandleRequest(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = number, ["method"] = "tools/call", ["params"] = new JsonObject { ["name"] = tool, ["arguments"] = args } });
+        transport.Commands.Clear();
         var request = command["rpc"]?.DeepClone().AsObject() ?? new JsonObject
         {
             ["jsonrpc"] = "2.0", ["id"] = number, ["method"] = "tools/call",

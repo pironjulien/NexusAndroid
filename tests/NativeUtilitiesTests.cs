@@ -345,6 +345,24 @@ public sealed class NativeUtilitiesTests
         Assert.DoesNotContain("+33612345678", body);
     }
 
+    // ------------------------------------------------------------------ unnamed containers
+
+    [Theory]
+    [InlineData("Bloquer et signaler comme spam", false)]
+    [InlineData("", true)]
+    [InlineData("Envoyer", true)]
+    public void UnnamedContainerIsJudgedOnTheLabelDrawnInside(string inner, bool needsAccord)
+    {
+        const string package = "com.google.android.apps.messaging";
+        var fixture = DraftFixture(package);
+        var child = inner.Length > 0 ? $"<node text='{inner}' package='{package}' class='android.widget.TextView' bounds='[20,520][580,580]' enabled='true'/>" : "";
+        fixture["xml"] = $"<hierarchy><node text='' package='{package}' class='android.view.View' bounds='[0,500][600,600]' clickable='true' enabled='true'>{child}</node></hierarchy>";
+        var result = FixtureDriver.Call(new JsonObject { ["tool"] = "act", ["args"] = Json("""{"steps": [{"do": "tap", "target": "[1]"}]}"""), ["fixture"] = fixture }, [("look", new JsonObject())]);
+        var body = Text(result);
+        Assert.True(needsAccord == Regex.IsMatch(body, "accord=[a-f0-9]{48}"), body);
+        Assert.Equal(!needsAccord, Commands(result).Any(command => command.Contains("tap", StringComparison.Ordinal) && command.Contains("input", StringComparison.Ordinal)));
+    }
+
     // ------------------------------------------------------------------ drafts
 
     private static JsonObject DraftFixture(string package = "com.example.sms", string body = "draft text")

@@ -179,6 +179,9 @@ public sealed partial class NativeEngine
             if(gesture!="scroll"&&!Bool(step,"confirm"))throw new InvalidOperationException("Protected app: reading and scrolling only without confirm=true");
         }
         if(target?.IsPassword==true && gesture is "type" or "clear")throw new InvalidOperationException("Password field: typing refused");
+        // Compose and RecyclerView rows put their words in child or overlapping views: an empty clickable container is
+        // judged on the short labels drawn inside it (menu entry, button, row title), long snippets are content, not action.
+        if(target is not null&&label.Trim().Length==0)label=string.Join(' ',elements.Where(e=>!ReferenceEquals(e,target)&&!e.Editable&&!e.IsOcr&&e.PackageName==target.PackageName&&e.Left>=target.Left&&e.Top>=target.Top&&e.Right<=target.Right&&e.Bottom<=target.Bottom).Select(e=>(e.RawText+" "+e.RawDescription).Trim()).Where(t=>t.Length is >0 and <=60).Distinct());
         var trigger=gesture is "type" or "clear"?"":label;var unnamedSend=target is not null && !target.Editable && (Regex.IsMatch(target.ResourceId,@"(?i)send|compose_message_send|send_message_button|send_button")||target.Clickable&&label.Trim().Length==0&&Regex.IsMatch(pkg,@"(?i)messag|messenger|chat|mail|sms|dialer|telecom|incallui|whatsapp|telegram|discord|instagram|twitter|facebook|slack|teams"));
         var risky=NativeSafety.Risky(trigger)||NativeSafety.ContextRisk(trigger,context)||unnamedSend||gesture=="enter"||gesture=="type"&&Str(step,"text").Contains('\n');
         if(risky&&gesture=="double_tap")throw new InvalidOperationException("No double tap on an outward or irreversible trigger");
