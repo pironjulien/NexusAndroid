@@ -223,7 +223,7 @@ public sealed class NativeUtilitiesTests
         }
         foreach (var block in images)
         {
-            var decoded = ImageChain.Decode(Convert.FromBase64String(block["data"]!.ToString()));
+            var decoded = NexusAndroid.Tests.Images.WebPTests.DecodeSent(Convert.FromBase64String(block["data"]!.ToString()));
             Assert.True(decoded.Width > 0 && decoded.Height > 0);
         }
     }
@@ -298,7 +298,7 @@ public sealed class NativeUtilitiesTests
         var result = Call("messages", Json("""{"conversation": 7, "images": 1, "limit": 1}"""), ImageFixture(source));
         Success(result);
         var block = Blocks(result).First(b => b["type"]?.ToString() == "image");
-        var actual = ImageChain.Decode(Convert.FromBase64String(block["data"]!.ToString()));
+        var actual = NexusAndroid.Tests.Images.WebPTests.DecodeSent(Convert.FromBase64String(block["data"]!.ToString()));
         Assert.Equal((expectedWidth, expectedHeight), (actual.Width, actual.Height));
         foreach (var (x, y) in new[] { (8, 8), (actual.Width - 8, 8), (8, actual.Height - 8), (actual.Width - 8, actual.Height - 8) })
         {

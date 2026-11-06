@@ -20,6 +20,9 @@ public sealed class ImageChainResult
     /// <summary>Colour print of the prepared image (codes blacked out, [N] drawn) before encoding: 64×64 RGB, compared by
     /// <see cref="ImageChain.SameThumbnail"/> to tell an image identical to the last one sent.</summary>
     public byte[]? Thumbnail { get; init; }
+    /// <summary>The pixels that were encoded (codes blacked out, [N] drawn): a `region` zoom crops them directly, since
+    /// GDI+ cannot read the WebP that was sent.</summary>
+    public PixelBuffer? Pixels { get; init; }
 
     public Dictionary<string, object> ToMetaDictionary() => new(StringComparer.Ordinal)
     {
@@ -419,14 +422,15 @@ public static class ImageChain
         PixelBuffer source,
         int maxEdge = DefaultMaxEdge,
         int maxBytes = DefaultMaxInlineBytes,
-        string preferredLosslessFormat = "png",
+        string preferredLosslessFormat = "webp",
         bool forceLossy = false,
         int maxRawPixels = DefaultMaxRawPixels,
         IReadOnlyList<(int X1, int Y1, int X2, int Y2)>? blackouts = null,
         IReadOnlyList<(int Index, int Cx, int Cy)>? badges = null)
     {
         ArgumentNullException.ThrowIfNull(source);
-        if(!string.Equals(preferredLosslessFormat,"png",StringComparison.OrdinalIgnoreCase))throw new ArgumentException("The native lossless encoder supports standard PNG; no private WebP format is accepted");
+        var webp=string.Equals(preferredLosslessFormat,"webp",StringComparison.OrdinalIgnoreCase);
+        if(!webp&&!string.Equals(preferredLosslessFormat,"png",StringComparison.OrdinalIgnoreCase))throw new ArgumentException("Lossless format must be webp (images for the AI) or png (files for the user)");
         var origW = source.Width;
         var origH = source.Height;
 
@@ -459,27 +463,36 @@ public static class ImageChain
 
         if (!forceLossy)
         {
-            const bool isPng = true;
-            var losslessBytes = EncodePng(scaled);
-            if (maxBytes <= 0 || losslessBytes.Length <= maxBytes)
+            // Shared Nexus rule (NexusShared/images.md): lossless WebP while it fits, then near-lossless (2 low bits
+            // per channel, as NexusWindows), then the lossy ladder below. PNG stays for files written for the user.
+            var lossless = webp ? WebP.Lossless(scaled.Bgra, scaled.Width, scaled.Height) : EncodePng(scaled);
+            if (maxBytes <= 0 || lossless.Length <= maxBytes) return Encoded(scaled, lossless, webp ? "webp" : "png", false, 100);
+            if (webp)
             {
-                return new ImageChainResult
-                {
-                    Width = scaled.Width,
-                    Height = scaled.Height,
-                    OriginalWidth = origW,
-                    OriginalHeight = origH,
-                    ScaleX = Math.Round((double)origW / scaled.Width, 4),
-                    ScaleY = Math.Round((double)origH / scaled.Height, 4),
-                    Format = isPng ? "png" : "webp",
-                    MimeType = isPng ? "image/png" : "image/webp",
-                    Bytes = losslessBytes,
-                    IsLossy = false,
-                    Quality = 100,
-                    Thumbnail = thumbnail,
-                };
+                var reduced = scaled.Clone();
+                var bgra = reduced.Bgra;
+                for (var i = 0; i < bgra.Length; i++) if ((i & 3) != 3) bgra[i] &= 0xFC;
+                var near = WebP.Lossless(bgra, reduced.Width, reduced.Height);
+                if (near.Length <= maxBytes) return Encoded(reduced, near, "webp", true, 98);
             }
         }
+
+        ImageChainResult Encoded(PixelBuffer pixels, byte[] bytes, string format, bool lossy, int quality) => new()
+        {
+            Width = pixels.Width,
+            Height = pixels.Height,
+            OriginalWidth = origW,
+            OriginalHeight = origH,
+            ScaleX = Math.Round((double)origW / pixels.Width, 4),
+            ScaleY = Math.Round((double)origH / pixels.Height, 4),
+            Format = format,
+            MimeType = "image/" + format,
+            Bytes = bytes,
+            IsLossy = lossy,
+            Quality = quality,
+            Thumbnail = thumbnail,
+            Pixels = pixels,
+        };
 
         // Lossy compression + adaptive resolution scaling to strictly obey maxBytes (Anti-Crash 400)
         int[] qualities = [82, 72, 60, 48, 36, 26, 18];
@@ -510,6 +523,7 @@ public static class ImageChain
                         IsLossy = true,
                         Quality = q,
                         Thumbnail = thumbnail,
+                        Pixels = currentBuf,
                     };
                 }
             }
@@ -538,6 +552,7 @@ public static class ImageChain
             IsLossy = true,
             Quality = bestQuality,
             Thumbnail = thumbnail,
+            Pixels = currentBuf,
         };
     }
 
@@ -545,7 +560,7 @@ public static class ImageChain
         ReadOnlySpan<byte> encodedBytes,
         int maxEdge = DefaultMaxEdge,
         int maxBytes = DefaultMaxInlineBytes,
-        string preferredLosslessFormat = "png",
+        string preferredLosslessFormat = "webp",
         bool forceLossy = false,
         int maxRawPixels = DefaultMaxRawPixels,
         IReadOnlyList<(int X1, int Y1, int X2, int Y2)>? blackouts = null,

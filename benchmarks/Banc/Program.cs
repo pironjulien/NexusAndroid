@@ -53,11 +53,11 @@ internal static class Program
     }
 
     // The product defaults, captured before any variant changes them.
-    private static readonly (int NoChange, int Max, int Poll, bool Two, bool Steady, int Moves, int Hold, int Image) Product =
-        (Tuning.SettleNoChangeMs, Tuning.SettleMaxMs, Tuning.SettlePollMs, Tuning.SettleTwoReads, Tuning.SteadyScroll, Tuning.SteadyMoves, Tuning.SteadyHoldMs, Tuning.LookImageMaxBytes);
+    private static readonly (int NoChange, int Max, int Poll, bool Two, bool Steady, int Moves, int Hold, int Image, string Format) Product =
+        (Tuning.SettleNoChangeMs, Tuning.SettleMaxMs, Tuning.SettlePollMs, Tuning.SettleTwoReads, Tuning.SteadyScroll, Tuning.SteadyMoves, Tuning.SteadyHoldMs, Tuning.LookImageMaxBytes, Tuning.LookLosslessFormat);
     private static void Defaults()
     {
-        (Tuning.SettleNoChangeMs, Tuning.SettleMaxMs, Tuning.SettlePollMs, Tuning.SettleTwoReads, Tuning.SteadyScroll, Tuning.SteadyMoves, Tuning.SteadyHoldMs, Tuning.LookImageMaxBytes) = Product;
+        (Tuning.SettleNoChangeMs, Tuning.SettleMaxMs, Tuning.SettlePollMs, Tuning.SettleTwoReads, Tuning.SteadyScroll, Tuning.SteadyMoves, Tuning.SteadyHoldMs, Tuning.LookImageMaxBytes, Tuning.LookLosslessFormat) = Product;
     }
 
     private static JsonObject Json(string text) => JsonNode.Parse(text)!.AsObject();
@@ -231,7 +231,8 @@ internal static class Program
             Defaults();
         }
         Measure("text only", new JsonObject());
-        Measure("image, product cap", new JsonObject { ["show"] = "both" });
+        Measure("image, product (lossless WebP)", new JsonObject { ["show"] = "both" });
+        Measure("image, lossless PNG (until 0.23.19)", new JsonObject { ["show"] = "both" }, () => Tuning.LookLosslessFormat = "png");
         engine.Execute("act", Json("""{"steps": [{"do": "key", "keys": "home"}], "then": "none"}"""));
         Report.AppendLine();
     }

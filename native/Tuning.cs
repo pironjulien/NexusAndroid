@@ -23,4 +23,6 @@ internal static class Tuning
     /// lossless while it fits 500 KB, never more. Not a bench knob: the bench measures bytes and time, not how well the
     /// model reads small text, which is what the rule protects (98.8 % of characters read at full size, lossless).</summary>
     internal static int LookImageMaxBytes = 500 * 1024;
+    /// <summary>Lossless format of `look` images: webp (shared rule) or png (until 0.23.19), compared on the bench.</summary>
+    internal static string LookLosslessFormat = "webp";
 }

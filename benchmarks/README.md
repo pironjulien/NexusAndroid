@@ -31,3 +31,4 @@ Results land in `benchmarks/results/<date>-fold.md` (table) and `.json`.
 | --- | --- | --- | --- |
 | Settle after a gesture | two equal reads | first change | 632 ms vs 1,056 ms per tap, 8/8 taps and 4/4 menus really done and reported ✓ in both |
 | Scroll shape | 4 moves, 120 ms hold | 2 moves, 60 ms hold | 633 px for 657 px of travel in 10/10 notches in both, 802 ms vs 929 ms; `input swipe` flung on to ~1,177 px |
+| `look` lossless format | PNG (378 KB) | WebP (172 KB) | the shared rule's format; same pixels, so same legibility; +95 ms to encode; busy screens stay lossless longer under the 500 KB cap |

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.20] - 2026-11-06
+
+### Changed
+- Images sent to the AI follow the shared Nexus rule's format (NexusShared/images.md): lossless WebP while it fits 500 KB, then near-lossless WebP (2 low bits per channel, as NexusWindows), then the lossy ladder. The encoder is NexusWindows' own VP8L encoder, kept in this product's code; files written for the user stay PNG. Bench on the Fold: the Settings screen goes out as 172 KB instead of a 378 KB PNG, same pixels, about 95 ms more to encode.
+- A `region` zoom crops the pixels kept from the last image sent instead of decoding it again.
+
+### Added
+- Tests: lossless WebP decodes to the exact pixels with Windows' own decoder (1×1 to 1248×1972), the chain stays under 500 KB on noise, files stay PNG.
 ## [0.23.19] - 2026-11-06
 
 ### Fixed
