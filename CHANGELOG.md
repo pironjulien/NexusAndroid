@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.10] - 2026-11-06
+
+### Fixed
+- `messages` now reads RCS Business Messaging cards (GSMA botmessage JSON parts): title, text and buttons with their links, instead of `[application/vnd.gsma.botmessage.v1.0+json not shown]`.
+- Verified RCS business senders (`…@bot.rcs.google.com`) are named as such instead of their opaque bot address.
+
 ## [0.23.9] - 2026-11-04
 
 ### Changed
