@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.22] - 2026-11-06
+
+### Changed
+- Images sent to the AI follow the shared Nexus rule's new ceiling (NexusShared/images.md, 2026-11-06): lossless WebP while it fits 3 MB (was 500 KB), then WebP with 2 then 3 low bits dropped, then JPEG from quality 82; never above 3 MB. Applies to `look`, `region` zooms and MMS images, all through one shared constant. None of the three AI apps refuses an image under 6.8 MB, and file size costs no tokens, so real Fold screens (883-983 KB lossless) now go out lossless.
+
+### Added
+- Tests: the ceiling is 3 MB, an image between 500 KB and 3 MB stays lossless WebP, a heavier one falls back and stays under 3 MB.
 ## [0.23.21] - 2026-11-06
 
 ### Changed

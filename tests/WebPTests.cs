@@ -71,9 +71,17 @@ public sealed class WebPTests
     }
 
     [Fact]
+    public void TheCeilingIsThreeMegabytes()
+    {
+        // NexusShared/images.md, 2026-11-06: never above 3 MB (was 500 KB); look follows the same ceiling.
+        Assert.Equal(3 * 1024 * 1024, ImageChain.DefaultMaxInlineBytes);
+        Assert.Equal(ImageChain.DefaultMaxInlineBytes, NexusAndroid.Tuning.LookImageMaxBytes);
+    }
+
+    [Fact]
     public void TheChainSendsLosslessWebPWhileItFitsAndKeepsThePixelsForZoom()
     {
-        var result = ImageChain.ProcessChain(Sample(1080, 1920, 4), maxBytes: 500 * 1024);
+        var result = ImageChain.ProcessChain(Sample(1080, 1920, 4));
         Assert.Equal("image/webp", result.MimeType);
         Assert.False(result.IsLossy);
         Assert.NotNull(result.Pixels);
@@ -97,14 +105,32 @@ public sealed class WebPTests
     }
 
     [Fact]
+    public void AnImageBetween500KBAnd3MBStaysLosslessWebP()
+    {
+        // A busy screen: a noise band heavy enough to exceed the old 500 KB cap, well under 3 MB.
+        var random = new Random(8);
+        var picture = PixelBuffer.CreateSyntheticScreen(1248, 1972);
+        for (var i = 0; i < 1248 * 300 * 4; i++) picture.Bgra[i] = (i & 3) == 3 ? (byte)255 : (byte)random.Next(256);
+        var lossless = WebP.Lossless(picture.Bgra, picture.Width, picture.Height).Length;
+        Assert.InRange(lossless, 500 * 1024 + 1, ImageChain.DefaultMaxInlineBytes);
+        var result = ImageChain.ProcessChain(picture);
+        Assert.Equal("image/webp", result.MimeType);
+        Assert.False(result.IsLossy);
+        Assert.Equal(lossless, result.Bytes.Length);
+        Assert.True(picture.Bgra.AsSpan().SequenceEqual(DecodeSent(result.Bytes).Bgra), "lossless pixels differ");
+    }
+
+    [Fact]
     public void AnImageTooHeavyForLosslessStaysUnderTheCap()
     {
+        // Full-screen noise: lossless WebP is over 3 MB, so the fallback applies and the result never exceeds 3 MB.
         var random = new Random(5);
-        var noise = new PixelBuffer(1200, 1200);
+        var noise = new PixelBuffer(1600, 1600);
         random.NextBytes(noise.Bgra);
         for (var i = 3; i < noise.Bgra.Length; i += 4) noise.Bgra[i] = 255;
-        var result = ImageChain.ProcessChain(noise, maxBytes: 500 * 1024);
-        Assert.True(result.Bytes.Length <= 500 * 1024, result.Bytes.Length + " bytes");
+        Assert.True(WebP.Lossless(noise.Bgra, noise.Width, noise.Height).Length > ImageChain.DefaultMaxInlineBytes);
+        var result = ImageChain.ProcessChain(noise);
+        Assert.True(result.Bytes.Length <= ImageChain.DefaultMaxInlineBytes, result.Bytes.Length + " bytes");
         Assert.True(result.IsLossy);
     }
 

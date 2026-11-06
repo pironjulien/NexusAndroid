@@ -473,7 +473,7 @@ public sealed partial class NativeEngine
         {
             var mime=part.Mime;if(mime.StartsWith("image/",StringComparison.Ordinal)&&images.Count<maxImages)
             {
-                try{if(!long.TryParse(part.Id,out var id))throw new IOException("Invalid image part id");var bytes=adb.ExecOut("content read --uri content://mms/part/"+id,60000);var image=ImageChain.ProcessEncodedImage(bytes,maxBytes:500*1024);images.Add(new JsonObject{["type"]="image",["mimeType"]=image.MimeType,["data"]=Convert.ToBase64String(image.Bytes)});item.Labels.Add($"[image {images.Count}]");}
+                try{if(!long.TryParse(part.Id,out var id))throw new IOException("Invalid image part id");var bytes=adb.ExecOut("content read --uri content://mms/part/"+id,60000);var image=ImageChain.ProcessEncodedImage(bytes,maxBytes:ImageChain.DefaultMaxInlineBytes);images.Add(new JsonObject{["type"]="image",["mimeType"]=image.MimeType,["data"]=Convert.ToBase64String(image.Bytes)});item.Labels.Add($"[image {images.Count}]");}
                 catch(Exception e)when(e is IOException or ArgumentException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception){item.Labels.Add("[unreadable image]");}
             }
             else if(mime.StartsWith("application/vnd.gsma.botmessage",StringComparison.Ordinal))

@@ -19,10 +19,10 @@ internal static class Tuning
     /// travel, spread 0) and 11 % faster; `input swipe` flung on to 1,172 px.</summary>
     internal static int SteadyMoves = 2;
     internal static int SteadyHoldMs = 60;
-    /// <summary>Largest image `look` sends: the shared rule of every Nexus product (NexusShared/images.md, 2026-10-27),
-    /// lossless while it fits 500 KB, never more. Not a bench knob: the bench measures bytes and time, not how well the
+    /// <summary>Largest image `look` sends: the shared rule of every Nexus product (NexusShared/images.md, 2026-10-27; 3 MB since 2026-11-06),
+    /// lossless while it fits 3 MB, never more. Not a bench knob: the bench measures bytes and time, not how well the
     /// model reads small text, which is what the rule protects (98.8 % of characters read at full size, lossless).</summary>
-    internal static int LookImageMaxBytes = 500 * 1024;
+    internal static int LookImageMaxBytes = ImageChain.DefaultMaxInlineBytes;
     /// <summary>Lossless format of `look` images: webp (shared rule) or png (until 0.23.19), compared on the bench.</summary>
     internal static string LookLosslessFormat = "webp";
 }

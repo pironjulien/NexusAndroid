@@ -186,7 +186,8 @@ public static class ImageChain
 {
     public const int DefaultMaxEdge = 2000;
     public const int DefaultMaxRawPixels = 2_560_000;
-    public const int DefaultMaxInlineBytes = 500 * 1024;
+    /// <summary>Largest image sent to the AI: 3 MB (NexusShared/images.md, raised from 500 KB on 2026-11-06).</summary>
+    public const int DefaultMaxInlineBytes = 3 * 1024 * 1024;
 
     static ImageChain()
     {
