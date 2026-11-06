@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.21] - 2026-11-06
+
+### Changed
+- A photo-like screen too heavy for lossless WebP now tries WebP with 3 low bits per channel dropped after 2, before JPEG. Measured with Windows OCR on two real Fold screens: 3 bits still read 100 % of the words (488 KB); 4 bits fell to 86 % where JPEG quality 82 kept 100 % at half the size, so WebP stops at 3 bits.
+
+### Added
+- A lossless WebP (VP8L) decoder in the tests, written from Google's specification: CI servers without Windows' WebP codec now read back every image instead of skipping, and it is checked against Windows' decoder where that exists.
+- Bench: `dotnet run -- sizes <screenshot>` measures size, time and OCR legibility of each encoding, offline.
 ## [0.23.20] - 2026-11-06
 
 ### Changed

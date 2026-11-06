@@ -16,6 +16,7 @@ internal static class Program
 
     private static int Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "sizes") return Sizes(args[1]);
         var reps = args.Length > 0 && int.TryParse(args[0], out var r) ? r : 8;
         engine = new NativeEngine(new AdbClient(null));
         var phone = Text(engine.Execute("phone", new JsonObject()));
@@ -44,7 +45,32 @@ internal static class Program
         return 0;
     }
 
-    private static string FindRepo()
+    /// <summary>Offline: size, time and legibility of each encoding of one screenshot (no phone needed). Legibility is
+    /// what Windows OCR still reads compared with the original (words found / words of the original).</summary>
+    private static int Sizes(string path)
+    {
+        var picture = ImageChain.Decode(File.ReadAllBytes(path));
+        static HashSet<string> Words(PixelBuffer pixels) => NativeOcr.Read(ImageChain.EncodePng(pixels)).SelectMany(l => Regex.Split(l.Text.ToLowerInvariant(), @"\W+")).Where(w => w.Length >= 2).ToHashSet();
+        var reference = Words(picture);
+        string Read(PixelBuffer pixels) { var found = Words(pixels); return $"{100.0 * reference.Count(found.Contains) / Math.Max(1, reference.Count):0.0} % of {reference.Count} words"; }
+        Console.WriteLine($"{Path.GetFileName(path)}: {picture.Width}×{picture.Height}");
+        foreach (var bits in new[] { 0, 2, 3, 4, 5 })
+        {
+            var copy = picture.Clone();
+            var mask = (byte)(0xFF << bits);
+            for (var i = 0; i < copy.Bgra.Length; i++) if ((i & 3) != 3) copy.Bgra[i] &= mask;
+            var clock = Stopwatch.StartNew();
+            var webp = WebP.Lossless(copy.Bgra, copy.Width, copy.Height);
+            Console.WriteLine($"WebP, {bits} low bits dropped: {webp.Length / 1024} KB, {clock.ElapsedMilliseconds} ms, OCR {Read(copy)}");
+        }
+        foreach (var q in new[] { 82, 72, 60 })
+        {
+            var clock = Stopwatch.StartNew();
+            var jpeg = ImageChain.EncodeLossyJpeg(picture, q);
+            Console.WriteLine($"JPEG quality {q}: {jpeg.Length / 1024} KB, {clock.ElapsedMilliseconds} ms, OCR {Read(ImageChain.Decode(jpeg))}");
+        }
+        return 0;
+    }    private static string FindRepo()
     {
         // Built outside the sources (Directory.Build.props): look up from the working folder (dotnet run from Banc).
         var dir = new DirectoryInfo(Directory.GetCurrentDirectory());

@@ -469,11 +469,18 @@ public static class ImageChain
             if (maxBytes <= 0 || lossless.Length <= maxBytes) return Encoded(scaled, lossless, webp ? "webp" : "png", false, 100);
             if (webp)
             {
-                var reduced = scaled.Clone();
-                var bgra = reduced.Bgra;
-                for (var i = 0; i < bgra.Length; i++) if ((i & 3) != 3) bgra[i] &= 0xFC;
-                var near = WebP.Lossless(bgra, reduced.Width, reduced.Height);
-                if (near.Length <= maxBytes) return Encoded(reduced, near, "webp", true, 98);
+                // Near-lossless: 2, then 3 low bits per channel. Bench 2026-11-06 (Windows OCR on two real Fold screens,
+                // one with a photo): 3 bits still read 100 % of the words; 4 bits fell to 86 % where JPEG quality 82,
+                // the next step, kept 100 % at half the size. So WebP stops at 3 bits.
+                foreach (var bits in new[] { 2, 3 })
+                {
+                    var reduced = scaled.Clone();
+                    var bgra = reduced.Bgra;
+                    var mask = (byte)(0xFF << bits);
+                    for (var i = 0; i < bgra.Length; i++) if ((i & 3) != 3) bgra[i] &= mask;
+                    var near = WebP.Lossless(bgra, reduced.Width, reduced.Height);
+                    if (near.Length <= maxBytes) return Encoded(reduced, near, "webp", true, 100 - 2 * bits);
+                }
             }
         }
 

@@ -28,13 +28,12 @@ public sealed class WebPTests
         }
     }
 
-    /// <summary>The image a tool sent, decoded: WebP through Windows' decoder (the test is skipped where it is missing),
+    /// <summary>The image a tool sent, decoded: WebP through the tests' own VP8L decoder (runs on CI servers too),
     /// anything else through the engine's own decoder.</summary>
     internal static PixelBuffer DecodeSent(byte[] bytes)
     {
         if (bytes.Length < 12 || System.Text.Encoding.ASCII.GetString(bytes, 8, 4) != "WEBP") return ImageChain.Decode(bytes);
-        var pixels = DecodeWithWindows(bytes, out var width, out var height);
-        if (pixels is null) Assert.Skip("Windows WebP decoder not installed on this machine");
+        var pixels = WebPDecoder.Decode(bytes, out var width, out var height);
         return new PixelBuffer(width, height, pixels);
     }
 
@@ -63,10 +62,12 @@ public sealed class WebPTests
         var webp = WebP.Lossless(picture.Bgra, width, height);
         Assert.Equal("RIFF", System.Text.Encoding.ASCII.GetString(webp, 0, 4));
         Assert.Equal("WEBP", System.Text.Encoding.ASCII.GetString(webp, 8, 4));
-        var decoded = DecodeWithWindows(webp, out var w, out var h);
-        if (decoded is null) Assert.Skip("Windows WebP decoder not installed on this machine");
+        // Our own decoder everywhere (CI included), then Windows' decoder as an independent check where it exists.
+        var ours = WebPDecoder.Decode(webp, out var w, out var h);
         Assert.Equal((width, height), (w, h));
-        Assert.True(picture.Bgra.AsSpan().SequenceEqual(decoded), "decoded pixels differ from the encoded ones");
+        Assert.True(picture.Bgra.AsSpan().SequenceEqual(ours), "test decoder: pixels differ from the encoded ones");
+        var windows = DecodeWithWindows(webp, out _, out _);
+        if (windows is not null) Assert.True(picture.Bgra.AsSpan().SequenceEqual(windows), "Windows decoder: pixels differ from the encoded ones");
     }
 
     [Fact]
@@ -77,6 +78,22 @@ public sealed class WebPTests
         Assert.False(result.IsLossy);
         Assert.NotNull(result.Pixels);
         Assert.Equal((result.Width, result.Height), (result.Pixels!.Width, result.Pixels.Height));
+    }
+
+    [Fact]
+    public void NearLosslessStepsStayWebPAndDecode()
+    {
+        // A photo-like screen too heavy for plain lossless: the 2- or 3-bit step still sends WebP, readable back.
+        var random = new Random(7);
+        var photo = Sample(1248, 1972, 7);
+        for (var i = 0; i < photo.Bgra.Length; i += 4) { var v = (byte)((i / 4 % 1248) / 5 + random.Next(4)); photo.Bgra[i] = v; photo.Bgra[i + 1] = (byte)(v / 2); photo.Bgra[i + 2] = (byte)(255 - v); photo.Bgra[i + 3] = 255; }
+        var lossless = WebP.Lossless(photo.Bgra, photo.Width, photo.Height).Length;
+        var result = ImageChain.ProcessChain(photo, maxBytes: lossless - 1);
+        Assert.Equal("image/webp", result.MimeType);
+        Assert.True(result.IsLossy);
+        Assert.True(result.Bytes.Length < lossless);
+        var back = DecodeSent(result.Bytes);
+        Assert.True(result.Pixels!.Bgra.AsSpan().SequenceEqual(back.Bgra), "near-lossless pixels differ");
     }
 
     [Fact]

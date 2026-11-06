@@ -16,6 +16,19 @@ dotnet run -c Release -- 10 scroll        # one section: settle, scroll, look or
 
 Results land in `benchmarks/results/<date>-fold.md` (table) and `.json`.
 
+Offline, no phone: `dotnet run -c Release -- sizes <screenshot.png>` prints the size, time and legibility (words Windows OCR still reads, against the original) of each image encoding.
+
+2026-11-06, two real Fold screens (an SMS with a photo, the wallpaper home screen), legibility by OCR:
+
+| Encoding | Size | Words read |
+| --- | --- | --- |
+| WebP lossless | 883-983 KB (over the 500 KB cap) | 100 % |
+| WebP, 3 low bits dropped | 488-489 KB | 100 % |
+| WebP, 4 low bits dropped | 342-387 KB | 86-100 % |
+| JPEG quality 82 | 183-219 KB | 100 % |
+
+So the chain is lossless WebP, then WebP with 2 then 3 bits dropped, then JPEG from quality 82 (no lossy WebP encoder on Windows).
+
 ## Scenarios
 
 | Section | What is measured |
