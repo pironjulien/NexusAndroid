@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.14] - 2026-11-06
+
+### Changed
+- `act` is split into short steps (observe, aim, guard, send, settle, verify, remember), one statement per line, so a change to the order of the safety checks shows in review. Behaviour unchanged, except that `scroll` with `amount` > 1 is now verified against the screen before the first swipe.
+- 20 new gesture tests: scroll (direction, amount, accord limit), swipe, drag, long press, double tap (and its refusal on a send button), zoom (guard and directions), `wait` and `gone`, routines recorded and replayed (by id and by description), parameters, unverified taps, locked phone.
+
+### Fixed
+- The guard reads an element's real description, not its masked display, so a description holding a code keeps its verbs.
+- `desc:` targets also match the real description, so a routine recorded on a described icon replays.
+
 ## [0.23.13] - 2026-11-06
 
 ### Fixed
