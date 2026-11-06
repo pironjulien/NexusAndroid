@@ -22,7 +22,7 @@ Results land in `benchmarks/results/<date>-fold.md` (table) and `.json`.
 | --- | --- |
 | settle | Tap a Clock tab: reported ✓, tab really active 1.2 s later, false ✓, missed effects, median time; then open and close the overflow menu |
 | scroll | One notch down and up in Settings: distance moved (median title shift), spread, return to start, time |
-| look | Text only and with image under each size cap: time, image size, text size |
+| look | Text only and with image: time, image size, text size. The image cap is not a bench knob: it follows the shared rule (`NexusShared/images.md`: lossless up to 500 KB), which protects how well the model reads small text, something this bench does not measure. 0.23.18 lowered it to 200 KB (lossy JPEG) by mistake; 0.23.19 restored it. |
 | read | Median time of the read-only tools |
 
 ## Choices it settled (2026-11-06, Galaxy Fold, Android 17, Wi-Fi)
@@ -31,4 +31,3 @@ Results land in `benchmarks/results/<date>-fold.md` (table) and `.json`.
 | --- | --- | --- | --- |
 | Settle after a gesture | two equal reads | first change | 632 ms vs 1,056 ms per tap, 8/8 taps and 4/4 menus really done and reported ✓ in both |
 | Scroll shape | 4 moves, 120 ms hold | 2 moves, 60 ms hold | 633 px for 657 px of travel in 10/10 notches in both, 802 ms vs 929 ms; `input swipe` flung on to ~1,177 px |
-| `look` image cap | 500 KB (376 KB PNG) | 200 KB (140 KB JPEG) | same size in pixels, so the same cost for the model, same time; follows the 200 KB rule for shared images |

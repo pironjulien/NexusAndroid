@@ -19,7 +19,8 @@ internal static class Tuning
     /// travel, spread 0) and 11 % faster; `input swipe` flung on to 1,172 px.</summary>
     internal static int SteadyMoves = 2;
     internal static int SteadyHoldMs = 60;
-    /// <summary>Largest image `look` sends. Bench 2026-11-06: the Settings screen went out as a 376 KB PNG under 500 KB;
-    /// under 200 KB it is a 139 KB JPEG of the same size in pixels (same cost for the model), in the same time.</summary>
-    internal static int LookImageMaxBytes = 200 * 1024;
+    /// <summary>Largest image `look` sends: the shared rule of every Nexus product (NexusShared/images.md, 2026-10-27),
+    /// lossless while it fits 500 KB, never more. Not a bench knob: the bench measures bytes and time, not how well the
+    /// model reads small text, which is what the rule protects (98.8 % of characters read at full size, lossless).</summary>
+    internal static int LookImageMaxBytes = 500 * 1024;
 }

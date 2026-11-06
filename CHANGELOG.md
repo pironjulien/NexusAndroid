@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.19] - 2026-11-06
+
+### Fixed
+- `look` images follow the shared Nexus rule again (NexusShared/images.md): lossless while they fit 500 KB, never more. 0.23.18 lowered the cap to 200 KB, which turned the screen into a lossy JPEG and costs the model legibility on small text; the bench measured only bytes and time, so the cap is no longer a bench knob.
+
 ## [0.23.18] - 2026-11-06
 
 ### Added

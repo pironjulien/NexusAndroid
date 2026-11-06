@@ -232,8 +232,6 @@ internal static class Program
         }
         Measure("text only", new JsonObject());
         Measure("image, product cap", new JsonObject { ["show"] = "both" });
-        Measure("image, 500 KB cap (until 0.23.17)", new JsonObject { ["show"] = "both" }, () => Tuning.LookImageMaxBytes = 500 * 1024);
-        Measure("image, 300 KB cap", new JsonObject { ["show"] = "both" }, () => Tuning.LookImageMaxBytes = 300 * 1024);
         engine.Execute("act", Json("""{"steps": [{"do": "key", "keys": "home"}], "then": "none"}"""));
         Report.AppendLine();
     }
