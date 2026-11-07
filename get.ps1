@@ -86,11 +86,37 @@ function Get-ExpectedHash([byte[]]$Manifest, [string]$Name) {
     return $expected
 }
 
+function Move-StagedFolder([string]$From, [string]$To) {
+    # A folder cannot be renamed while any file inside it is open, whoever holds it. This installer never runs or keeps
+    # open anything in the staged folder, but antivirus and indexing services open freshly written executables for a
+    # moment to scan them ("being used by another process", seen in NexusAGYmail's installer on a fresh Windows runner).
+    # Only that external, transient hold (sharing, lock or access violation while the staged folder is still there) is
+    # waited out, at most 10 s; any other error, or a longer hold, fails.
+    $transient = 0x80070020, 0x80070021, 0x80070005  # ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION, ERROR_ACCESS_DENIED
+    for ($attempt = 1; ; $attempt++) {
+        try { [IO.Directory]::Move($From, $To); return }
+        catch {
+            $failure = $_.Exception
+            while ($failure.InnerException -and $failure -is [Management.Automation.MethodInvocationException]) { $failure = $failure.InnerException }
+            $held = ($failure -is [IO.IOException] -or $failure -is [UnauthorizedAccessException]) -and
+                ($transient -contains $failure.HResult) -and (Test-Path -LiteralPath $From) -and -not (Test-Path -LiteralPath $To)
+            if (-not $held -or $attempt -ge 40) { throw "Cannot move $From to $($To): $($failure.Message)" }
+            Start-Sleep -Milliseconds 250
+        }
+    }
+}
+
 function Install-NexusAndroid {
     $rid = Get-Architecture
     $name = "NexusAndroid-$rid.zip"
     $work = Join-Path ([IO.Path]::GetTempPath()) "nexusandroid-get-$PID"
     New-Item -ItemType Directory -Force -Path $work | Out-Null
+    # Staged next to the releases folder (same volume: the final move is a rename), never inside it: Remove-OldReleases
+    # removes every other folder of releases.
+    $state = Join-Path $UserHome '.nexus\nexus-android'
+    $releases = Join-Path $state 'releases'
+    New-Item -ItemType Directory -Force -Path $releases | Out-Null
+    $staged = Join-Path $state ('staging-' + [guid]::NewGuid().ToString('N'))
     try {
         if ($env:NEXUS_ANDROID_SOURCE) {
             $package = (Resolve-Path -LiteralPath $env:NEXUS_ANDROID_SOURCE).Path
@@ -106,26 +132,36 @@ function Install-NexusAndroid {
             $actual = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($expected -ne $actual) { throw "SHA-256 mismatch for $($name): the download is not the published package." }
         }
-        $unpacked = Join-Path $work 'package'
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [IO.Compression.ZipFile]::ExtractToDirectory($package, $unpacked)
-        $exe = Join-Path $unpacked 'NexusAndroid.exe'
+        [IO.Compression.ZipFile]::ExtractToDirectory($package, $staged)
+        $exe = Join-Path $staged 'NexusAndroid.exe'
         if (-not (Test-Path -LiteralPath $exe)) { throw 'Not a NexusAndroid package.' }
-        $version = (& $exe --version | Select-Object -First 1) -replace '^NexusAndroid v(\S+).*$', '$1'
-        if ($version -notmatch '^\d+\.\d+\.\d+') { throw 'The package does not start on this PC.' }
-        $releases = Join-Path $UserHome '.nexus\nexus-android\releases'
+        Get-ChildItem -LiteralPath $staged -Recurse -File | Unblock-File
+        # The version from the executable's version resource, without running it: a program just run from the staged
+        # folder is what scanners open right after, when the folder has to be renamed.
+        $version = "$((Get-Item -LiteralPath $exe).VersionInfo.ProductVersion)".Split('+')[0].Trim()
+        if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Not a NexusAndroid package (no version).' }
+        # One folder per version, never overwritten: a running server keeps its own executable.
         $target = Join-Path $releases $version
-        if (-not (Test-Path -LiteralPath (Join-Path $target 'NexusAndroid.exe'))) {
-            New-Item -ItemType Directory -Force -Path $releases | Out-Null
-            $part = "$target.part-$PID"
-            Move-Item -LiteralPath $unpacked -Destination $part
-            Get-ChildItem -LiteralPath $part -Recurse -File | Unblock-File
-            Move-Item -LiteralPath $part -Destination $target
+        $installed = Join-Path $target 'NexusAndroid.exe'
+        $moved = $false
+        if (-not (Test-Path -LiteralPath $installed)) {
+            if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }  # an interrupted install
+            Move-StagedFolder $staged $target
+            $moved = $true
+        }
+        # Run once in place: the package must start on this PC's architecture and report the version it carries.
+        $output = @(& $installed --version)
+        $exit = $LASTEXITCODE
+        $answer = "$($output | Select-Object -First 1)" -replace '^NexusAndroid v(\S+).*$', '$1'
+        if ($exit -or $answer -ne $version) {
+            if ($moved) { Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue }
+            throw "The package does not start on this PC ($rid)."
         }
         Say "NexusAndroid $version is in $target." Green
-        return (Join-Path $target 'NexusAndroid.exe')
+        return $installed
     } finally {
-        Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $work, $staged -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-11-07
+
+### Fixed
+- `get.ps1` no longer fails with "being used by another process" when a scanner briefly opens the freshly extracted executable (seen in NexusAGYmail's installer on a fresh Windows runner). The package is staged in `~\.nexus\nexus-android` next to `releases` (same volume) and never run there: its version comes from the executable's version resource, the staged folder is renamed to `releases\<version>`, and only then is `--version` run in place. A rename held by such an external, transient scan (sharing, lock or access violation) is waited out for at most 10 s; any other error still fails the installation. A test holds the fresh executable for 2 s under PowerShell 7 and Windows PowerShell 5.1.
+
 ## [0.24.0] - 2026-11-07
 
 ### Added
