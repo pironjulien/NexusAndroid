@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- Tests: no test can show a Windows error box. The test process sets the error mode (no critical-error, crash or
+  missing-file box) when it loads, and every process it starts inherits it; a test checks it in a child process.
+
 ## [0.24.2] - 2026-11-07
 
 ### Fixed
