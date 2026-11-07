@@ -674,7 +674,13 @@ internal static partial class GdiPlusInterop
     [LibraryImport("gdiplus.dll")]
     private static partial int GdipImageRotateFlip(IntPtr image, int rotateFlipType);
     [StructLayout(LayoutKind.Sequential)]
-    private struct PropertyItem { public int Id; public uint Length; public short Type; public IntPtr Value; }
+    private struct PropertyItem
+    {
+        public int Id;
+        public uint Length;
+        public short Type;
+        public IntPtr Value;
+    }
 
     [LibraryImport("gdiplus.dll")]
     private static partial int GdipGetImageWidth(IntPtr image, out uint width);

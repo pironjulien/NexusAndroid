@@ -2,3 +2,5 @@
 * text=auto eol=lf
 *.cmd text eol=crlf
 *.bat text eol=crlf
+# NuGet writes packages.lock.json with CRLF on Windows: checked out the same way, a restore leaves the tree clean.
+packages.lock.json text eol=crlf

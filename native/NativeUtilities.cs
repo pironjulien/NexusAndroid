@@ -797,7 +797,9 @@ public sealed partial class NativeEngine
     }
     private sealed class CrashBlock
     {
-        public DateTime Stamp; public string Pid = "", Process = "", Kind = "java"; public List<string> Lines = [];
+        public DateTime Stamp;
+        public string Pid = "", Process = "", Kind = "java";
+        public List<string> Lines = [];
     }
     private JsonObject Logs(JsonObject args)
     {
@@ -1088,7 +1090,11 @@ public sealed partial class NativeEngine
     }
     private sealed class ReadMessage
     {
-        public long Date; public string Id = "", Body = "", Sender = "", Kind = "SMS"; public bool Outgoing, Read; public List<(string Id, string Mime)> Attachments = []; public readonly List<string> Labels = [];
+        public long Date;
+        public string Id = "", Body = "", Sender = "", Kind = "SMS";
+        public bool Outgoing, Read;
+        public List<(string Id, string Mime)> Attachments = [];
+        public readonly List<string> Labels = [];
         public string Line() => NativeSafety.Mask($"{LocalDate(Date):dd/MM HH:mm} {(Outgoing ? "me" : Sender.Length > 0 ? Sender : "them")}{(!Read && !Outgoing ? " (unread)" : "")} : {Body} " + string.Join(' ', Labels));
     }
     private JsonObject Messages(JsonObject args)

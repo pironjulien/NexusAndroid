@@ -159,8 +159,25 @@ public sealed class ApkSettingsIndex
             return "";
         return value.Type == 3 && value.Data < global.Length ? global[value.Data] : value.Type == 1 ? Resolve(value.Data, depth + 1) : "";
     }
-    private sealed class Element(string tag) { public readonly string Tag = tag; public Element? Parent; public readonly Dictionary<string, string> Attr = []; public readonly List<Element> Children = []; public string Get(string name) => Attr.GetValueOrDefault(name, "").Trim(); public IEnumerable<Element> All() => new[] { this }.Concat(Children.SelectMany(c => c.All())); }
-    private static bool PreferenceRow(Element row) => row.Get("title").Length > 0 && !row.Tag.Contains("Category", StringComparison.OrdinalIgnoreCase) && System.Text.RegularExpressions.Regex.IsMatch(row.Tag, @"(?i)preference|switch|checkbox|seekbar|list|radio|dropdown|slider|button") && !System.Text.RegularExpressions.Regex.IsMatch(row.Tag, @"(?i)footer|description|caption|illustration|layoutpreference|divider|banner|tips?pref|summarypref|animation|lottie|preview|inset|blank|space|relativelink|contextualcard") && (row.Get("fragment").Length > 0 || !System.Text.RegularExpressions.Regex.IsMatch(row.Get("key"), @"(?i)description|caption(?!ing)|footer|_desc$|_guide|_notice|_info_text|disclaimer"));
+    private sealed class Element(string tag)
+    {
+        public readonly string Tag = tag;
+        public Element? Parent;
+        public readonly Dictionary<string, string> Attr = [];
+        public readonly List<Element> Children = [];
+
+        public string Get(string name) => Attr.GetValueOrDefault(name, "").Trim();
+
+        public IEnumerable<Element> All() => new[] { this }.Concat(Children.SelectMany(c => c.All()));
+    }
+
+    private static bool PreferenceRow(Element row) =>
+        row.Get("title").Length > 0
+        && !row.Tag.Contains("Category", StringComparison.OrdinalIgnoreCase)
+        && System.Text.RegularExpressions.Regex.IsMatch(row.Tag, @"(?i)preference|switch|checkbox|seekbar|list|radio|dropdown|slider|button")
+        && !System.Text.RegularExpressions.Regex.IsMatch(row.Tag, @"(?i)footer|description|caption|illustration|layoutpreference|divider|banner|tips?pref|summarypref|animation|lottie|preview|inset|blank|space|relativelink|contextualcard")
+        && (row.Get("fragment").Length > 0
+            || !System.Text.RegularExpressions.Regex.IsMatch(row.Get("key"), @"(?i)description|caption(?!ing)|footer|_desc$|_guide|_notice|_info_text|disclaimer"));
     private Element Xml(byte[] b)
     {
         string[] strings = [];

@@ -305,7 +305,9 @@ internal static class AdvancedContracts
 
 sealed class FixturePhone : IAndroidQuery
 {
-    public string Package = "com.example.app", Lock = "false"; public int Reads; public bool ChangeOnSecondRead;
+    public string Package = "com.example.app", Lock = "false";
+    public int Reads;
+    public bool ChangeOnSecondRead;
     public string Xml = "<hierarchy><node package='com.example.app' class='android.widget.TextView' text='Bluetooth' bounds='[0,100][200,160]'/><node package='com.example.app' class='android.widget.Switch' text='' checked='true' clickable='true' bounds='[220,100][280,160]'/><node package='com.example.app' class='android.widget.EditText' text='SyntheticPassword' password='true' bounds='[0,200][300,250]'/></hierarchy>";
     public NativeScreen Screen(bool image)
     {
@@ -316,7 +318,9 @@ sealed class FixturePhone : IAndroidQuery
 }
 sealed class FixtureAdb(FixturePhone phone) : AdbClient("offline-fixture-never-started.exe")
 {
-    public readonly List<string> Commands = []; public string Identity = "fixture-device-one", Serial = "fixture-usb", Catalog = "{}", System = "", Packages = "package:com.example.app", PermissionDump = "", Bluetooth = "", Activity = ""; public int Port;
+    public readonly List<string> Commands = [];
+    public string Identity = "fixture-device-one", Serial = "fixture-usb", Catalog = "{}", System = "", Packages = "package:com.example.app", PermissionDump = "", Bluetooth = "", Activity = "";
+    public int Port;
     public override List<DeviceInfo> GetDevices() => [new(Serial, "device", "Fixture", !Serial.Contains(':'))];
     public override bool EnsureDevice() => PickDevice()?.State == "device";
     public override DeviceInfo? PickDevice()
@@ -374,8 +378,12 @@ sealed class FixtureAdb(FixturePhone phone) : AdbClient("offline-fixture-never-s
 }
 sealed class DevToolsFixture : IDisposable
 {
-    private readonly HttpListener listener = new(); private readonly CancellationTokenSource stop = new(); private readonly Task server; public int Port { get; }
-    public int Evaluations; public bool Exception;
+    private readonly HttpListener listener = new();
+    private readonly CancellationTokenSource stop = new();
+    private readonly Task server;
+    public int Port { get; }
+    public int Evaluations;
+    public bool Exception;
     public DevToolsFixture(string catalogUrl, string actualUrl, string text)
     {
         using var ephemeral = new TcpListener(IPAddress.Loopback, 0);

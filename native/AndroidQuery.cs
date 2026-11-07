@@ -49,7 +49,9 @@ public interface IAndroidQuery
 }
 public sealed class AndroidQuery(AdbClient adb) : IAndroidQuery
 {
-    private int port; private string token = ""; private string serial = "";
+    private int port;
+    private string token = "";
+    private string serial = "";
     private readonly byte[] dex = ReadDex();
     private static byte[] ReadDex()
     {

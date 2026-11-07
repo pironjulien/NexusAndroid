@@ -34,6 +34,11 @@ public static class Program
             return Setup.Run(args[1..]);
         }
 
+        if (args[0] == "--bridge")
+        {
+            return await StdioBridge.RunConsoleAsync(args[1..]);
+        }
+
         if (args.Contains("status"))
         {
             return RunStatus();
@@ -99,6 +104,8 @@ public static class Program
         Console.WriteLine("  NexusAndroid.exe --mcp         Start stdio MCP server (18 tools)");
         Console.WriteLine("  NexusAndroid.exe setup         Find or download adb, declare the server to the AI apps found, connect the phone");
         Console.WriteLine("                  [--no-wait] [--no-register] [--apps claude-code,claude-desktop,codex,antigravity]");
+        Console.WriteLine("  NexusAndroid.exe --bridge      Relay stdio to the shared HTTP daemon (Antigravity Marketplace plugin)");
+        Console.WriteLine("                  [--url http://127.0.0.1:16180/mcp] [--product NexusAndroid]");
         Console.WriteLine("  NexusAndroid.exe status        Display connected Android devices");
         Console.WriteLine("  NexusAndroid.exe --version     Print version info");
     }

@@ -1,9 +1,11 @@
 <Project>
-  <!-- Build and test output outside the sources (never OneDrive or AppData): ~\.nexus\build\nexus-android\<project>. -->
+  <!-- Build and test output outside the sources (never OneDrive or AppData): ~\.nexus\build\nexus-android\<project>.
+       The user profile comes from .NET, not $(USERPROFILE): Dependabot restores on Linux, where USERPROFILE is unset
+       and '\.nexus' at the file system root was denied, so its NuGet updates silently found nothing. -->
   <PropertyGroup>
-    <NexusBuild>$(USERPROFILE)\.nexus\build\nexus-android\$(MSBuildProjectName)\</NexusBuild>
-    <BaseIntermediateOutputPath>$(NexusBuild)obj\</BaseIntermediateOutputPath>
-    <BaseOutputPath>$(NexusBuild)bin\</BaseOutputPath>
+    <NexusBuild>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.UserProfile)), '.nexus', 'build', 'nexus-android', '$(MSBuildProjectName)'))$([System.IO.Path]::DirectorySeparatorChar)</NexusBuild>
+    <BaseIntermediateOutputPath>$([System.IO.Path]::Combine('$(NexusBuild)', 'obj'))$([System.IO.Path]::DirectorySeparatorChar)</BaseIntermediateOutputPath>
+    <BaseOutputPath>$([System.IO.Path]::Combine('$(NexusBuild)', 'bin'))$([System.IO.Path]::DirectorySeparatorChar)</BaseOutputPath>
   </PropertyGroup>
   <!-- Compiler and .NET analyzers at the recommended level, style rules of .editorconfig in the build, and every
        warning an error: a new warning fails the build locally and in CI. -->

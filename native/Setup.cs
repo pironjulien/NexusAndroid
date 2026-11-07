@@ -195,6 +195,26 @@ public static class Register
 
     public static JsonObject Entry() => new() { ["command"] = Executable, ["args"] = new JsonArray("--mcp") };
 
+    /// <summary>~\.nexus\nexus-android\engine.txt: this install's executable, for the launcher of the Antigravity
+    /// Marketplace plugin (scripts\start.cmd runs it with --bridge), which can only name its own folder and the user
+    /// profile. Relative to ~\.nexus\nexus-android when the executable is inside (releases\&lt;version&gt; of get.ps1,
+    /// native\&lt;fingerprint&gt; of install.ps1): plain ASCII that cmd.exe reads in any code page. Returns the file.</summary>
+    public static string WriteEnginePointer()
+    {
+        var state = Path.Join(Home, ".nexus", "nexus-android");
+        var file = Path.Join(state, "engine.txt");
+        var relative = Path.GetRelativePath(state, Executable);
+        var text = (Path.IsPathRooted(relative) || relative.StartsWith("..", StringComparison.Ordinal) ? Executable : relative) + "\r\n";
+        if (!File.Exists(file) || File.ReadAllText(file) != text)
+        {
+            Directory.CreateDirectory(state);
+            var temporary = file + ".nexus-tmp";
+            File.WriteAllText(temporary, text, new UTF8Encoding(false));
+            File.Move(temporary, file, true);
+        }
+        return file;
+    }
+
     public static bool Ours(JsonNode? existing)
     {
         if (existing is null)
@@ -600,6 +620,14 @@ public static class Setup
         }
         Console.WriteLine($"adb: {adbPath}");
         Tools.EnsureScrcpy(Console.WriteLine);
+        try
+        {
+            Register.WriteEnginePointer();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.WriteLine($"Engine location not recorded ({e.Message}): the Antigravity Marketplace plugin will not find this install.");
+        }
         Console.WriteLine();
         var failed = new List<string>();
         if (!args.Contains("--no-register"))

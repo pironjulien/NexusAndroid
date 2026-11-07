@@ -624,17 +624,57 @@ internal static class EngineContracts
 
 sealed class FakePhone : IAndroidQuery
 {
-    public string Label = "Open", Context = "recipient A", FieldText = "input", Package = "com.example.app", TargetPackage = "", ContextPackage = "", OverlayXml = "", Clipboard = "Original clipboard"; public bool Changed, ChangeOnInput, Password, Checked, Selected, FailPaste, HintWhenEmpty; public int Pastes; public byte[]? Picture;
-    public NativeScreen Screen(bool image) => new($"mCurrentFocus=Window{{token u0 {Package}/.Main}}\nmWakefulness=Awake\nisKeyguardShowing=false", $"<hierarchy><node text='{(Changed ? "After" : Label)}' resource-id='button' class='android.widget.Button' package='{(TargetPackage.Length > 0 ? TargetPackage : Package)}' bounds='[100,200][200,280]' enabled='true' clickable='true'/><node text='{Context}' resource-id='context' class='android.widget.TextView' package='{(ContextPackage.Length > 0 ? ContextPackage : Package)}' bounds='[0,0][100,50]' enabled='true' checked='{Checked.ToString().ToLowerInvariant()}' selected='{Selected.ToString().ToLowerInvariant()}'/><node text='{System.Security.SecurityElement.Escape(HintWhenEmpty && FieldText.Length == 0 ? "Search here" : FieldText).Replace("\n", "&#10;")}' showing-hint='{(HintWhenEmpty && FieldText.Length == 0).ToString().ToLowerInvariant()}' resource-id='field' class='android.widget.EditText' package='{Package}' bounds='[100,300][400,380]' enabled='true' editable='true' password='{Password.ToString().ToLowerInvariant()}' focused='true'/>{OverlayXml}</hierarchy>", 1080, 1920, image ? Picture : null);
+    public string Label = "Open", Context = "recipient A", FieldText = "input", Package = "com.example.app";
+    public string TargetPackage = "", ContextPackage = "", OverlayXml = "", Clipboard = "Original clipboard";
+    public bool Changed, ChangeOnInput, Password, Checked, Selected, FailPaste, HintWhenEmpty;
+    public int Pastes;
+    public byte[]? Picture;
+    public readonly List<Dictionary<string, string>> ToastRows = [];
+    public readonly List<(string Package, string Text)> ToastsOnInput = [];
+
+    private static string Flag(bool value) => value.ToString().ToLowerInvariant();
+
+    public NativeScreen Screen(bool image)
+    {
+        var emptyField = HintWhenEmpty && FieldText.Length == 0;
+        var fieldText = System.Security.SecurityElement.Escape(emptyField ? "Search here" : FieldText).Replace("\n", "&#10;");
+        var xml = "<hierarchy>"
+            + $"<node text='{(Changed ? "After" : Label)}' resource-id='button' class='android.widget.Button'"
+            + $" package='{(TargetPackage.Length > 0 ? TargetPackage : Package)}' bounds='[100,200][200,280]' enabled='true' clickable='true'/>"
+            + $"<node text='{Context}' resource-id='context' class='android.widget.TextView'"
+            + $" package='{(ContextPackage.Length > 0 ? ContextPackage : Package)}' bounds='[0,0][100,50]' enabled='true'"
+            + $" checked='{Flag(Checked)}' selected='{Flag(Selected)}'/>"
+            + $"<node text='{fieldText}' showing-hint='{Flag(emptyField)}' resource-id='field' class='android.widget.EditText'"
+            + $" package='{Package}' bounds='[100,300][400,380]' enabled='true' editable='true' password='{Flag(Password)}' focused='true'/>"
+            + $"{OverlayXml}</hierarchy>";
+        return new($"mCurrentFocus=Window{{token u0 {Package}/.Main}}\nmWakefulness=Awake\nisKeyguardShowing=false", xml, 1080, 1920, image ? Picture : null);
+    }
+
     public List<Dictionary<string, string>> Query(string uri, string projection = "", string where = "", string sort = "") => [];
-    public readonly List<Dictionary<string, string>> ToastRows = []; public readonly List<(string Package, string Text)> ToastsOnInput = [];
+
     public List<Dictionary<string, string>> Toasts(long after) => ToastRows.Where(t => long.Parse(t["seq"], CultureInfo.InvariantCulture) > after).ToList();
-    public void Input() { foreach (var (package, text) in ToastsOnInput) ToastRows.Add(new() { ["seq"] = (ToastRows.Count + 1).ToString(CultureInfo.InvariantCulture), ["package"] = package, ["text"] = text, ["age_ms"] = "10" }); }
+
+    public void Input()
+    {
+        foreach (var (package, text) in ToastsOnInput)
+            ToastRows.Add(new() { ["seq"] = (ToastRows.Count + 1).ToString(CultureInfo.InvariantCulture), ["package"] = package, ["text"] = text, ["age_ms"] = "10" });
+    }
 }
 sealed class FakeAdb(FakePhone phone) : AdbClient("fake-adb.exe", ConnectionFixtureState.New())
 {
-    public readonly List<string> Commands = []; public readonly List<string[]> ArgumentCalls = []; public bool FailInput; public string VideoRemote = "", Hardware = "fixture-hardware", DeviceSerial = "127.0.0.1:12345"; public int StatusReads; public bool LoseFirstStatus; public bool VideoStopped, HideUntilPicked, Picked; public List<string> Inputs => Commands.Where(c => c.StartsWith("'input'", StringComparison.Ordinal)).ToList();
-    public override List<DeviceInfo> GetDevices() => HideUntilPicked && !Picked ? [] : [new(DeviceSerial, "device", "Fake", !AdbClient.IsWirelessSerial(DeviceSerial))]; public override bool EnsureDevice() => PickDevice()?.State == "device";
+    public readonly List<string> Commands = [];
+    public readonly List<string[]> ArgumentCalls = [];
+    public bool FailInput;
+    public string VideoRemote = "", Hardware = "fixture-hardware", DeviceSerial = "127.0.0.1:12345";
+    public int StatusReads;
+    public bool LoseFirstStatus;
+    public bool VideoStopped, HideUntilPicked, Picked;
+
+    public List<string> Inputs => Commands.Where(c => c.StartsWith("'input'", StringComparison.Ordinal)).ToList();
+
+    public override List<DeviceInfo> GetDevices() => HideUntilPicked && !Picked ? [] : [new(DeviceSerial, "device", "Fake", !AdbClient.IsWirelessSerial(DeviceSerial))];
+
+    public override bool EnsureDevice() => PickDevice()?.State == "device";
     public override DeviceInfo? PickDevice()
     {
         Picked = true;
@@ -733,7 +773,9 @@ sealed class FakeControl(FakePhone phone) : IPhoneControl
 }
 sealed class FakeVideoRecorder(CancellationTokenSource cancel) : IVideoRecorder
 {
-    public bool HasExited => false; public bool WaitForExit(int milliseconds) => true; public Task WaitForExitAsync(CancellationToken cancellation)
+    public bool HasExited => false;
+    public bool WaitForExit(int milliseconds) => true;
+    public Task WaitForExitAsync(CancellationToken cancellation)
     {
         cancel.Cancel();
         return Task.FromCanceled(cancellation);
@@ -749,7 +791,12 @@ sealed class ConfiguredPhone(JsonObject configuration) : IAndroidQuery
     public string Clipboard = "";
     /// <summary>Set once an input command ran: the screen then shows "xml_after_input" when the fixture gives one.</summary>
     public bool InputSeen;
-    public NativeScreen Screen(bool image) => new(Configuration["state"]?.ToString() ?? "mCurrentFocus=Window{fixture u0 com.example.app/.Main}\nmWakefulness=Awake\nisKeyguardShowing=false", (InputSeen ? Configuration["xml_after_input"]?.ToString() : null) ?? Configuration["xml"]?.ToString() ?? "<hierarchy/>", Configuration["width"]?.GetValue<int>() ?? 1080, Configuration["height"]?.GetValue<int>() ?? 1920, Configuration["image_base64"] is not null && image ? Convert.FromBase64String(Configuration["image_base64"]!.ToString()) : null);
+    public NativeScreen Screen(bool image) => new(
+        Configuration["state"]?.ToString() ?? "mCurrentFocus=Window{fixture u0 com.example.app/.Main}\nmWakefulness=Awake\nisKeyguardShowing=false",
+        (InputSeen ? Configuration["xml_after_input"]?.ToString() : null) ?? Configuration["xml"]?.ToString() ?? "<hierarchy/>",
+        Configuration["width"]?.GetValue<int>() ?? 1080,
+        Configuration["height"]?.GetValue<int>() ?? 1920,
+        Configuration["image_base64"] is not null && image ? Convert.FromBase64String(Configuration["image_base64"]!.ToString()) : null);
     public List<Dictionary<string, string>> Query(string uri, string projection = "", string where = "", string sort = "")
     {
         QueryCalls.Add(new JsonObject { ["uri"] = uri, ["projection"] = projection, ["where"] = where, ["sort"] = sort });
@@ -762,7 +809,8 @@ sealed class ConfiguredPhone(JsonObject configuration) : IAndroidQuery
 }
 sealed class ConfiguredAdb(ConfiguredPhone phone) : AdbClient("fixture-adb.exe", ConnectionFixtureState.New())
 {
-    public readonly List<string> Commands = []; public readonly List<string[]> ArgumentCalls = [];
+    public readonly List<string> Commands = [];
+    public readonly List<string[]> ArgumentCalls = [];
     public override List<DeviceInfo> GetDevices() => [new("fixture-device", "device", "Fixture Phone", true)];
     public override bool EnsureDevice() => PickDevice()?.State == "device";
     public override DeviceInfo? PickDevice()
@@ -827,7 +875,11 @@ sealed class ConfiguredControl(ConfiguredPhone phone) : IPhoneControl
 
 sealed class ControlledRecorder(FakeAdb adb) : IVideoRecorder
 {
-    public bool HasExited => adb.VideoStopped; public bool WaitForExit(int milliseconds) => HasExited; public Task WaitForExitAsync(CancellationToken cancellation) => Task.CompletedTask; public void Kill(bool children) => adb.VideoStopped = true; public void Dispose() { }
+    public bool HasExited => adb.VideoStopped;
+    public bool WaitForExit(int milliseconds) => HasExited;
+    public Task WaitForExitAsync(CancellationToken cancellation) => Task.CompletedTask;
+    public void Kill(bool children) => adb.VideoStopped = true;
+    public void Dispose() { }
 }
 
 static class ConnectionFixtureState
@@ -843,7 +895,8 @@ static class ConnectionFixtureState
 }
 sealed class CountingQuery(IAndroidQuery inner) : IAndroidQuery
 {
-    public int Screens; public NativeScreen Screen(bool image)
+    public int Screens;
+    public NativeScreen Screen(bool image)
     {
         Screens++;
         return inner.Screen(image);

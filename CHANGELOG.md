@@ -6,13 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- `NexusAndroid.exe --bridge [--url …] [--product …]`: the stdio relay of the Antigravity Marketplace plugin to the shared service, now part of the engine (C#, tested with a simulated stdio and a loopback service). Same behavior as before: one line per JSON reply or per event of a stream, the session id of the initialize reply, the token of `NEXUS_MCP_TOKEN` or `%USERPROFILE%\.nexus\mcp-token.txt`, a JSON-RPC error saying how to install or start NexusAndroid when the service does not answer, and the session closed when Antigravity stops.
+- `setup` records where the engine is installed in `%USERPROFILE%\.nexus\nexus-android\engine.txt` (relative to that folder), so the Marketplace plugin finds it.
+- CodeQL runs from a workflow file (`.github/workflows/codeql.yml`, same languages and default queries as the former default setup: actions, C#, Java), so OpenSSF Scorecard credits the static analysis.
+
 ### Changed
+- Antigravity Marketplace plugin: `scripts/start.cmd` runs the installed engine with `--bridge` instead of `scripts/bridge.ps1`, which started Windows PowerShell and compiled the same relay in C# at every launch. When NexusAndroid is missing or predates this launcher, it says how to install it.
+- Code layout: the member declarations still compacted on one line are one per line, and long single expressions of member bodies are split (data tables stay on their line).
+- The video recording's foreground watch stops through a signal instead of a disposable field: the engine no longer needs a CA1001 suppression.
 - Code layout: an `.editorconfig` and `dotnet format` put one statement and one block per line (lines over 300 characters: 292 to 75, the rest being data tables and long single expressions); the build now checks formatting (IDE0055).
 - Build quality: .NET analyzers at `latest-recommended`, code style enforced in the build and every warning an error. Culture-dependent string comparisons, parsing and formatting are now explicit (ordinal and invariant culture), the nullable warning of `setup` is fixed at its cause, and the tests no longer silence nullability warnings.
 - Version: the engine reads its version from the assembly, so `<Version>` in the csproj is the single source.
 - NuGet restores are pinned by `packages.lock.json` (locked mode in CI and release); the installer and the release restore both architectures once, then publish without restoring.
 - Tests: only `xunit.v3` 4.0.2 on Microsoft.Testing.Platform; the unused VSTest packages (`xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`) are gone.
 - Release: shared NexusSystem workflows v1.6.54.
+
+### Fixed
+- Dependabot's NuGet updates: the build folder now comes from .NET's user profile instead of `$(USERPROFILE)`, which is unset on Dependabot's Linux runner (the restore wrote to `/.nexus`, was denied, and found nothing).
+- `packages.lock.json` is checked out with CRLF, as NuGet writes it on Windows, so a restore leaves the working tree clean.
 
 ## [0.23.22] - 2026-11-06
 

@@ -1,0 +1,36 @@
+# CodeQL, as a workflow file rather than the default setup (07/11/2026): same languages (actions, csharp, java-kotlin
+# for phone/NexusQuery.java) and default queries, but OpenSSF Scorecard only credits SAST through a workflow when
+# commits land without pull requests (SAST was 0). Actions pinned by commit SHA; Dependabot keeps them up to date.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "41 5 * * 2"
+
+permissions: read-all
+
+jobs:
+  analyze:
+    if: github.repository == 'pironjulien/NexusAndroid'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, csharp, java-kotlin]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
+        with:
+          category: /language:${{ matrix.language }}

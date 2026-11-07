@@ -27,7 +27,11 @@ public sealed class PhoneControl(AdbClient adb, IAndroidQuery query) : IPhoneCon
 }
 public sealed class ScrcpyChannel : IDisposable
 {
-    private readonly AdbClient adb; private readonly Process server; private readonly TcpClient client; private readonly NetworkStream stream; private readonly string port;
+    private readonly AdbClient adb;
+    private readonly Process server;
+    private readonly TcpClient client;
+    private readonly NetworkStream stream;
+    private readonly string port;
     public ScrcpyChannel(AdbClient adb)
     {
         this.adb = adb;

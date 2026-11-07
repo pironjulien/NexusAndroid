@@ -90,7 +90,17 @@ public static class NativeSafety
             throw new InvalidOperationException("Arrêt d'urgence demandé par Julien : plus aucune action pendant 120 secondes ; ne pas contourner.");
     }
     private static readonly Regex CodeWords = new(@"code|\b(?:codigo|codice|clave\b|contrasena|kennwort|passwort|bestatig|token\b|otp\b|pin\b|passcode|mot de passe|password|2fa\b|log[- ]?in\b|login|sign[- ]?in\b|connexion|securit|verif|valid|confirm|authentif|authentic|identifiant|usage unique|one[- ]?time)", RegexOptions.IgnoreCase);
-    private static string CodePlain(string text) => string.Concat(text.Select(c => char.IsSurrogate(c) ? c.ToString() : c is '’' or '‘' or 'ʼ' ? "'" : new string(c.ToString().Normalize(NormalizationForm.FormKD).Where(x => CharUnicodeInfo.GetUnicodeCategory(x) != UnicodeCategory.NonSpacingMark).ToArray()) is { Length: 1 } plain ? plain : c.ToString()));
+    /// <summary>Each character without its accents (one plain character, else unchanged); typographic apostrophes as '.</summary>
+    private static string CodePlain(string text) => string.Concat(text.Select(c =>
+    {
+        if (char.IsSurrogate(c))
+            return c.ToString();
+        if (c is '’' or '‘' or 'ʼ')
+            return "'";
+        var plain = new string(c.ToString().Normalize(NormalizationForm.FormKD)
+            .Where(x => CharUnicodeInfo.GetUnicodeCategory(x) != UnicodeCategory.NonSpacingMark).ToArray());
+        return plain.Length == 1 ? plain : c.ToString();
+    }));
     public static bool HasCodeKeyword(params string[] values) => values.Any(t => CodeWords.IsMatch(CodePlain(t)));
     private static bool OwnAccord(string token) => Accords.TryGetValue(token, out var accord) && accord.Session == (Session.Value ?? "stdio") && accord.Until >= DateTimeOffset.UtcNow;
     // Agreement tokens have a fixed format: never infer their sensitivity from entropy or nearby code words.

@@ -33,16 +33,32 @@ public sealed class AdbVideoRecorder : IVideoRecorder
         output = process.StandardOutput.ReadToEndAsync();
         error = process.StandardError.ReadToEndAsync();
     }
-    public bool HasExited => process.HasExited; public int? ExitCode => process.HasExited ? process.ExitCode : null; public string Error => string.Join('\n', new[] { error.IsCompletedSuccessfully ? error.Result : "", output.IsCompletedSuccessfully ? output.Result : "" }.Where(value => value.Length > 0)); public bool WaitForExit(int milliseconds) => process.WaitForExit(milliseconds); public Task WaitForExitAsync(CancellationToken cancellation) => process.WaitForExitAsync(cancellation); public void Kill(bool children) => process.Kill(children); public void Dispose() => process.Dispose();
+
+    public bool HasExited => process.HasExited;
+
+    public int? ExitCode => process.HasExited ? process.ExitCode : null;
+
+    public string Error => string.Join('\n', new[]
+    {
+        error.IsCompletedSuccessfully ? error.Result : "",
+        output.IsCompletedSuccessfully ? output.Result : "",
+    }.Where(value => value.Length > 0));
+
+    public bool WaitForExit(int milliseconds) => process.WaitForExit(milliseconds);
+
+    public Task WaitForExitAsync(CancellationToken cancellation) => process.WaitForExitAsync(cancellation);
+
+    public void Kill(bool children) => process.Kill(children);
+
+    public void Dispose() => process.Dispose();
 }
-// videoMonitor is owned per recording and disposed by StopVideo (using), the only way a recording ends.
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001", Justification = "videoMonitor is disposed by StopVideo.")]
 public sealed partial class NativeEngine
 {
     private IVideoRecorder? video;
     private string videoRemote = "", videoTarget = "";
     private volatile bool videoRefused;
-    private CancellationTokenSource? videoMonitor;
+    // Ends the foreground watch of the current recording (StopVideo): a signal, so the engine owns nothing disposable.
+    private TaskCompletionSource? videoStop;
     private Task? videoMonitoring;
     private string videoOwner = "";
     private static HashSet<string> ShownMediaPackages(NativeScreen screen)
@@ -133,14 +149,13 @@ public sealed partial class NativeEngine
             throw new InvalidOperationException("Foreground changed to a locked or protected screen; no video started");
         video = recorder(videoRemote, seconds, screen);
         videoRefused = false;
-        videoMonitor = new CancellationTokenSource();
-        var cancellation = videoMonitor.Token;
+        var stop = videoStop = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var running = video;
         var recordingRemote = videoRemote;
         videoMonitoring = Task.Run(async () =>
         {
             NativeSafety.Cancellation.Value = default;
-            while (!cancellation.IsCancellationRequested && !running.HasExited)
+            while (!stop.Task.IsCompleted && !running.HasExited)
             {
                 try
                 {
@@ -163,13 +178,9 @@ public sealed partial class NativeEngine
                     catch (Exception stopFailure) when (NativeSafety.Recoverable(stopFailure)) {/* StopVideo retries the owned producer and refuses delivery. */}
                     break;
                 }
-                try
-                {
-                    await Task.Delay(400, cancellation);
-                }
-                catch (OperationCanceledException) { break; }
+                await Task.WhenAny(stop.Task, Task.Delay(400));
             }
-        }, cancellation);
+        });
         if (video.WaitForExit(1000) && video.ExitCode is not (0 or null))
         {
             videoRefused = true;
@@ -210,7 +221,7 @@ public sealed partial class NativeEngine
             throw new InvalidOperationException("No video recording");
         if (videoOwner != (NativeSafety.Session.Value ?? "stdio"))
             throw new InvalidOperationException("This recording belongs to another MCP session");
-        videoMonitor?.Cancel();
+        videoStop?.TrySetResult();
         videoMonitoring?.Wait(5000);
         var previous = NativeSafety.Cancellation.Value;
         using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -232,7 +243,6 @@ public sealed partial class NativeEngine
         finally
         {
             using (video)
-            using (videoMonitor)
             {
                 try
                 {
@@ -245,7 +255,7 @@ public sealed partial class NativeEngine
                     video = null;
                     videoRemote = "";
                     videoOwner = "";
-                    videoMonitor = null;
+                    videoStop = null;
                     videoMonitoring = null;
                     NativeSafety.Cancellation.Value = previous;
                 }

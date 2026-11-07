@@ -14,7 +14,18 @@ public sealed partial class NativeEngine
     private readonly Func<string, int, NativeScreen, IVideoRecorder> recorder;
     private readonly object gate = new();
     private string verifiedHardwareForOperation = "";
-    private sealed class SessionState { public List<UiElement> Last = []; public NativeScreen? Screen; public DateTime Seen; public double Scale = 1, ScaleY = 1; public ImageChainResult? Image; public int ImageWidth, ImageHeight, NextId = 1; public bool CoordinatesValid = true; public (string Key, byte[] Thumbnail)? Sent; }
+    private sealed class SessionState
+    {
+        public List<UiElement> Last = [];
+        public NativeScreen? Screen;
+        public DateTime Seen;
+        public double Scale = 1, ScaleY = 1;
+        public ImageChainResult? Image;
+        public int ImageWidth, ImageHeight, NextId = 1;
+        public bool CoordinatesValid = true;
+        public (string Key, byte[] Thumbnail)? Sent;
+    }
+
     private readonly Dictionary<string, SessionState> sessions = [];
     private SessionState Current
     {
@@ -64,7 +75,15 @@ public sealed partial class NativeEngine
         };
     }
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
-    private static bool Mutating(string[] args) => args.Length > 0 && args[0] switch { "input" or "wm" or "svc" => true, "am" => args.Skip(1).Any(a => a is "start" or "force-stop" or "broadcast"), "settings" => args.Length > 1 && args[1] == "put", "cmd" => args.Any(a => a is "execute-app-function" or "set-location-enabled" or "set_dnd" or "--set"), "pm" => args.Any(a => a is "clear" or "uninstall"), _ => false };
+    private static bool Mutating(string[] args) => args.Length > 0 && args[0] switch
+    {
+        "input" or "wm" or "svc" => true,
+        "am" => args.Skip(1).Any(a => a is "start" or "force-stop" or "broadcast"),
+        "settings" => args.Length > 1 && args[1] == "put",
+        "cmd" => args.Any(a => a is "execute-app-function" or "set-location-enabled" or "set_dnd" or "--set"),
+        "pm" => args.Any(a => a is "clear" or "uninstall"),
+        _ => false,
+    };
     private string Shell(params string[] args)
     {
         if (Mutating(args))
@@ -208,7 +227,12 @@ public sealed partial class NativeEngine
     private static string Foreground(NativeScreen screen) => Regex.Match(screen.State, @"(?:mCurrentFocus|mFocusedApp)=[^\r\n]*?\s([\w.]+)/").Groups[1].Value;
     private static bool Locked(NativeScreen screen) => Regex.IsMatch(screen.State, @"(?:isKeyguardShowing|mShowingLockscreen|KeyguardShowing|mIsShowing|isStatusBarKeyguard)=true");
     private static bool LockKnown(NativeScreen screen) => Regex.IsMatch(screen.State, @"(?:isKeyguardShowing|mShowingLockscreen|KeyguardShowing|mIsShowing|isStatusBarKeyguard)=(true|false)");
-    private static bool Sensitive(UiElement e) => e.IsPassword || NativeSafety.Mask(e.RawText) != e.RawText || NativeSafety.Mask(e.RawDescription) != e.RawDescription || e.Text.Contains("[masked", StringComparison.OrdinalIgnoreCase) || e.ContentDesc.Contains("[masked", StringComparison.OrdinalIgnoreCase);
+    private static bool Sensitive(UiElement e) =>
+        e.IsPassword
+        || NativeSafety.Mask(e.RawText) != e.RawText
+        || NativeSafety.Mask(e.RawDescription) != e.RawDescription
+        || e.Text.Contains("[masked", StringComparison.OrdinalIgnoreCase)
+        || e.ContentDesc.Contains("[masked", StringComparison.OrdinalIgnoreCase);
     private JsonObject Look(JsonObject args)
     {
         if (args["region"] is JsonArray region)
@@ -385,9 +409,19 @@ public sealed partial class NativeEngine
             functionApps = (serial, counts, DateTime.UtcNow.AddMinutes(10));
         }
         return functionApps.Counts.GetValueOrDefault(package);
-    }    /// <summary>Full print of a screen for "image unchanged": every element, system bar included (a tile or a notification
-         /// that changes state), exact bounds and states, masked text only, plus the text read on the image by OCR.</summary>
-    internal static string ContentPrint(IEnumerable<UiElement> elements, IEnumerable<string> seen, string package) => Hash(string.Join('\n', new[] { package }.Concat(elements.Select(e => $"{e.PackageName}|{e.ClassName}|{e.Text}|{e.ContentDesc}|{e.ResourceId}|{e.Left},{e.Top},{e.Right},{e.Bottom}|{e.Checked},{e.Selected},{e.Focused},{e.Enabled},{e.ShowingHint}|{e.IsOcr}").Order(StringComparer.Ordinal)).Concat(seen.Order(StringComparer.Ordinal))));
+    }
+
+    /// <summary>Full print of a screen for "image unchanged": every element, system bar included (a tile or a notification
+    /// that changes state), exact bounds and states, masked text only, plus the text read on the image by OCR.</summary>
+    internal static string ContentPrint(IEnumerable<UiElement> elements, IEnumerable<string> seen, string package)
+    {
+        var rows = elements
+            .Select(e => $"{e.PackageName}|{e.ClassName}|{e.Text}|{e.ContentDesc}|{e.ResourceId}"
+                + $"|{e.Left},{e.Top},{e.Right},{e.Bottom}"
+                + $"|{e.Checked},{e.Selected},{e.Focused},{e.Enabled},{e.ShowingHint}|{e.IsOcr}")
+            .Order(StringComparer.Ordinal);
+        return Hash(string.Join('\n', new[] { package }.Concat(rows).Concat(seen.Order(StringComparer.Ordinal))));
+    }
     private (int X, int Y, UiElement? Element) Resolve(JsonNode? target, List<UiElement> fresh)
     {
         if (target is null)
@@ -434,7 +468,18 @@ public sealed partial class NativeEngine
             throw new InvalidOperationException("Target is covered by another element: nothing clicked");
         return (element.CenterX, element.CenterY, element);
     }
-    private static JsonObject TargetIdentity(UiElement e) => new() { ["resource_id"] = e.ResourceId, ["class"] = e.ClassName, ["package"] = e.PackageName, ["path"] = e.ZPath, ["bounds"] = new JsonArray(e.Left, e.Top, e.Right, e.Bottom), ["checked"] = e.Checked, ["selected"] = e.Selected, ["text"] = Sensitive(e) ? "[masked]#" + NativeSafety.Seal(e.RawText + "\0" + e.RawDescription) : e.Text, ["description"] = Sensitive(e) ? "[masked]" : e.ContentDesc };
+    private static JsonObject TargetIdentity(UiElement e) => new()
+    {
+        ["resource_id"] = e.ResourceId,
+        ["class"] = e.ClassName,
+        ["package"] = e.PackageName,
+        ["path"] = e.ZPath,
+        ["bounds"] = new JsonArray(e.Left, e.Top, e.Right, e.Bottom),
+        ["checked"] = e.Checked,
+        ["selected"] = e.Selected,
+        ["text"] = Sensitive(e) ? "[masked]#" + NativeSafety.Seal(e.RawText + "\0" + e.RawDescription) : e.Text,
+        ["description"] = Sensitive(e) ? "[masked]" : e.ContentDesc,
+    };
     private static UiElement? AtPoint(List<UiElement> elements, int x, int y) => elements.Where(e => x >= e.Left && x < e.Right && y >= e.Top && y < e.Bottom).OrderByDescending(e => e.ZPath, StringComparer.Ordinal).ThenBy(e => (long)(e.Right - e.Left) * (e.Bottom - e.Top)).FirstOrDefault();
     private static UiElement? FollowTarget(UiElement before, List<UiElement> after)
     {
