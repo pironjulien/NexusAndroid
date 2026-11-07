@@ -17,6 +17,7 @@ public static class Program
 
     public static async Task<int> Main(string[] args)
     {
+        EngineLock.Hold();
         if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
         {
             PrintHelp();

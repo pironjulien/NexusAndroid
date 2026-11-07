@@ -69,6 +69,7 @@ public sealed class UpdateWhileRunningTests : IDisposable
         Dotnet("publish", project, "-c", "Release", "-r", rid, "--self-contained", "true", "-p:PublishSingleFile=true",
             "-p:Version=0.0.1", build, "--no-restore", "-o", output, "--nologo");
         Assert.Empty(Directory.GetFiles(output, "*.dll"));  // single file: no assembly next to the executable
+        File.WriteAllText(Path.Join(output, "README.md"), "readme");  // as the release zip carries it next to the engine
         string zip = Path.Join(work, $"NexusAndroid-{rid}.zip");
         ZipFile.CreateFromDirectory(output, zip);
         return zip;
@@ -180,6 +181,10 @@ public sealed class UpdateWhileRunningTests : IDisposable
         Assert.NotEqual(Path.GetDirectoryName(old), Path.GetDirectoryName(current), StringComparer.OrdinalIgnoreCase);
         Assert.Equal(current, File.ReadAllText(Path.Join(Home, ".nexus", "nexus-android", "engine.txt")).Trim(), ignoreCase: true);
         Assert.True(File.Exists(old), "the running engine's file must survive the clean-up");
+        // Its whole folder too: before 0.24.2 the clean-up deleted every other file (releases\0.24.0 left holding only
+        // NexusAndroid.exe). The engine holds that folder's engine.lock.
+        Assert.True(File.Exists(Path.Join(Path.GetDirectoryName(old)!, "README.md")), "the running engine's folder must stay whole");
+        Assert.Throws<IOException>(() => new FileStream(Path.Join(Path.GetDirectoryName(old)!, "engine.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None).Dispose());
 
         // Calls that load code the session had not used yet: each answers with its real error (the missing adb), never
         // the empty error of an assembly read from a replaced file.

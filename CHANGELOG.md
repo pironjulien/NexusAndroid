@@ -4,7 +4,10 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.24.2] - 2026-11-07
+
+### Fixed
+- `get.ps1` no longer strips the folder of a version still running: its clean-up deleted older `releases\<version>` folders file by file, and Windows refuses only to delete the mapped executable, so a running engine was left with `NexusAndroid.exe` alone (`releases\0.24.0` seen that way). Each installed version now carries an `engine.lock` that every engine holds for its whole life; a folder whose lock is held, that a running engine's image lies in (read by `QueryFullProcessImageNameW`, elevated processes included), or any folder at all while a running engine cannot be read, stays whole. An unused folder is renamed aside (`retired-*`) then deleted, and a `retired-*` folder that did not go at once is removed on a later run. Tests under PowerShell 7 and Windows PowerShell 5.1, each failing without the fix.
 
 ### Added
 - A test proves that an AI session opened before an update keeps working (the failure fixed in NexusFree 1.3.3): the self-contained single-file release build is installed by `get.ps1` and started, a newer version is installed by the same script (its own `releases\<version>` folder, `engine.txt` pointed at it, older folders removed), and the running engine still answers its tools with their real errors, under PowerShell 7 and Windows PowerShell 5.1. Replacing the running file in place instead makes those calls fail with an empty error, which the test catches.

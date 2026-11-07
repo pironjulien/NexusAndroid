@@ -64,6 +64,9 @@ public sealed class InstallerTokenTests
         Assert.True(installer.IndexOf("& $exe @setup", StringComparison.Ordinal) < installer.IndexOf("Remove-OldReleases $exe", StringComparison.Ordinal));
         var start = installer.IndexOf("function Remove-OldReleases(", StringComparison.Ordinal);
         var function = installer[start..installer.IndexOf("function Get-SharedToken(", start, StringComparison.Ordinal)];
+        // With the functions it calls to tell a folder still in use (Get-EngineImages, Test-FolderInUse).
+        var inUse = installer.IndexOf("function Get-EngineImages", StringComparison.Ordinal);
+        function = installer[inUse..installer.IndexOf("function Install-NexusAndroid", inUse, StringComparison.Ordinal)] + "\n" + function;
         var home = Path.Join(TestPaths.Root, "install-releases-" + Guid.NewGuid().ToString("N") + " A&B (x86)");
         var state = Path.Join(home, ".nexus", "nexus-android");
         var exe = Path.Join(state, "releases", "2.0.0", "NexusAndroid.exe");
