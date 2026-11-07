@@ -1,4 +1,5 @@
 global using Xunit;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 
 namespace NexusAndroid.Tests;
@@ -10,8 +11,8 @@ internal static class TestPaths
 {
     public static readonly string Root = Path.Join(
         Environment.GetEnvironmentVariable("USERPROFILE") is { Length: > 0 } home ? home : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".nexus", "build", "nexus-android", "test-data", Environment.ProcessId.ToString());
-    public static readonly string Transfers = Path.Join(Path.GetTempPath(), "nexus-android-tests", Environment.ProcessId.ToString());
+        ".nexus", "build", "nexus-android", "test-data", Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+    public static readonly string Transfers = Path.Join(Path.GetTempPath(), "nexus-android-tests", Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
 
     [ModuleInitializer]
     internal static void Offline()
@@ -24,7 +25,11 @@ internal static class TestPaths
         AppDomain.CurrentDomain.ProcessExit += (_, _) =>
         {
             foreach (var folder in new[] { Root, Transfers })
-                try { Directory.Delete(folder, true); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* best-effort cleanup at process exit */ }
+                try
+                {
+                    Directory.Delete(folder, true);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* best-effort cleanup at process exit */ }
         };
     }
 }
@@ -38,7 +43,11 @@ internal sealed class ContractSuite(Action<Action<string, Action>> run)
         var found = new Dictionary<string, Exception?>(StringComparer.Ordinal);
         run((name, body) =>
         {
-            try { body(); found[name] = null; }
+            try
+            {
+                body();
+                found[name] = null;
+            }
             catch (Exception error) when (NativeSafety.Recoverable(error)) { found[name] = error; } // suite boundary: every failure is recorded against its own test case
         });
         return found;
@@ -49,14 +58,20 @@ internal sealed class ContractSuite(Action<Action<string, Action>> run)
     {
         var names = new TheoryData<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        run((name, _) => { if (!seen.Add(name)) throw new InvalidOperationException("Duplicate contract name: " + name); names.Add(name); });
+        run((name, _) =>
+        {
+            if (!seen.Add(name))
+                throw new InvalidOperationException("Duplicate contract name: " + name);
+            names.Add(name);
+        });
         return names;
     }
 
     public void Check(string name)
     {
         Assert.True(results.Value.TryGetValue(name, out var error), "contract not run: " + name);
-        if (error is not null) Assert.Fail(error.GetType().Name + ": " + error.Message);
+        if (error is not null)
+            Assert.Fail(error.GetType().Name + ": " + error.Message);
     }
 }
 

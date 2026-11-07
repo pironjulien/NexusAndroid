@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -11,7 +12,8 @@ namespace NexusAndroid;
 
 public static class Program
 {
-    public const string Version = "0.23.22";
+    /// <summary>The product version, from the csproj <c>&lt;Version&gt;</c> (single source; the build stamps it).</summary>
+    public static string Version { get; } = typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+')[0];
 
     public static async Task<int> Main(string[] args)
     {
@@ -46,7 +48,11 @@ public static class Program
             PrepareTools();
             var server = new McpServer();
             using var cts = new CancellationTokenSource();
-            Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+            Console.CancelKeyPress += (_, e) =>
+            {
+                e.Cancel = true;
+                cts.Cancel();
+            };
             await server.RunHttpAsync(port, cts.Token);
             return 0;
         }
@@ -68,16 +74,20 @@ public static class Program
     /// to stderr (stdout carries the protocol). NEXUS_ANDROID_ADB_DOWNLOAD=0: nothing is downloaded.</summary>
     private static void PrepareTools()
     {
-        if (Environment.GetEnvironmentVariable("NEXUS_ANDROID_ADB_DOWNLOAD")?.Trim().ToLowerInvariant() is "0" or "off" or "false" or "no") return;
+        if (Environment.GetEnvironmentVariable("NEXUS_ANDROID_ADB_DOWNLOAD")?.Trim().ToLowerInvariant() is "0" or "off" or "false" or "no")
+            return;
         _ = Task.Run(() =>
         {
             try
             {
-                if (Environment.GetEnvironmentVariable("NEXUS_ANDROID_ADB") is not { Length: > 0 } && AdbClient.FindAdb() is null) Tools.FindOrFetchAdb(Console.Error.WriteLine);
+                if (Environment.GetEnvironmentVariable("NEXUS_ANDROID_ADB") is not { Length: > 0 } && AdbClient.FindAdb() is null)
+                    Tools.FindOrFetchAdb(Console.Error.WriteLine);
                 Tools.EnsureScrcpy(Console.Error.WriteLine);
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or HttpRequestException or InvalidDataException)
-            { Console.Error.WriteLine("nexus-android: " + error.Message); }
+            {
+                Console.Error.WriteLine("nexus-android: " + error.Message);
+            }
         });
     }
 

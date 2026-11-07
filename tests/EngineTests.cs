@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
@@ -17,7 +18,13 @@ public sealed class SelfTests
     {
         const int w = 1080, h = 1920;
         var raw = new byte[w * h * 4];
-        for (var i = 0; i < raw.Length; i += 4) { raw[i] = (byte)(i % 255); raw[i + 1] = (byte)(i / 4 % 255); raw[i + 2] = 128; raw[i + 3] = 255; }
+        for (var i = 0; i < raw.Length; i += 4)
+        {
+            raw[i] = (byte)(i % 255);
+            raw[i + 1] = (byte)(i / 4 % 255);
+            raw[i + 2] = 128;
+            raw[i + 3] = 255;
+        }
         var result = ImageChain.ProcessChain(new PixelBuffer(w, h, raw), maxBytes: 200 * 1024);
         Assert.InRange(result.Bytes.Length, 101, 200 * 1024);
         Assert.True(result.Width <= 2000 && result.Height <= 2000);
@@ -123,7 +130,11 @@ public sealed class ExecutableTests
         var deadline = DateTime.UtcNow.AddSeconds(15);
         while (true)
         {
-            try { await http.GetStringAsync($"http://127.0.0.1:{port}/health"); break; }
+            try
+            {
+                await http.GetStringAsync($"http://127.0.0.1:{port}/health");
+                break;
+            }
             catch (HttpRequestException) when (DateTime.UtcNow < deadline) { await Task.Delay(50); }
         }
         using var request = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{port}/mcp") { Content = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}""", Encoding.UTF8, "application/json") };
@@ -147,9 +158,11 @@ public sealed class ExecutableTests
         {
             s.Environment["USERPROFILE"] = home;
             s.Environment["NEXUS_MCP_TOKEN"] = "stale-variable-token";
-            if (declaredFile) s.Environment["NEXUS_MCP_TOKEN_FILE"] = TokenFile("declared-file-token");
-            else s.Environment.Remove("NEXUS_MCP_TOKEN_FILE");
-        }, "--http", port.ToString());
+            if (declaredFile)
+                s.Environment["NEXUS_MCP_TOKEN_FILE"] = TokenFile("declared-file-token");
+            else
+                s.Environment.Remove("NEXUS_MCP_TOKEN_FILE");
+        }, "--http", port.ToString(CultureInfo.InvariantCulture));
         try
         {
             Assert.Equal(HttpStatusCode.OK, await InitializeWith(port, declaredFile ? "declared-file-token" : "shared-file-token"));
@@ -168,7 +181,8 @@ public sealed class ExecutableTests
     private static Process Start(Action<ProcessStartInfo>? configure = null, params string[] args)
     {
         var start = new ProcessStartInfo(Exe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (var a in args) start.ArgumentList.Add(a);
+        foreach (var a in args)
+            start.ArgumentList.Add(a);
         start.Environment["NEXUS_ANDROID_KEEP_AWAKE"] = "0";
         start.Environment["NEXUS_JOURNAL"] = "0";
         start.Environment["NEXUS_ANDROID_ADB_DOWNLOAD"] = "0";  // never a download from a test
@@ -222,18 +236,26 @@ public sealed class ExecutableTests
         var port = ((IPEndPoint)allocation.LocalEndpoint).Port;
         allocation.Stop();
         var request = Path.Join(TestPaths.Root, "restart-own-" + Guid.NewGuid().ToString("N") + ".request");
-        using var process = Start(s => { s.Environment["NEXUS_MCP_TOKEN_FILE"] = TokenFile("synthetic-restart-token"); s.Environment["NEXUS_ANDROID_RESTART_REQUEST"] = request; }, "--http", port.ToString());
+        using var process = Start(s =>
+        {
+            s.Environment["NEXUS_MCP_TOKEN_FILE"] = TokenFile("synthetic-restart-token");
+            s.Environment["NEXUS_ANDROID_RESTART_REQUEST"] = request;
+        }, "--http", port.ToString(CultureInfo.InvariantCulture));
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
             var deadline = DateTime.UtcNow.AddSeconds(15);
             while (true)
             {
-                try { await http.GetStringAsync($"http://127.0.0.1:{port}/health"); break; }
-                catch (HttpRequestException) when (DateTime.UtcNow < deadline) { await Task.Delay(50); }
+                try
+                {
+                    await http.GetStringAsync($"http://127.0.0.1:{port}/health", TestContext.Current.CancellationToken);
+                    break;
+                }
+                catch (HttpRequestException) when (DateTime.UtcNow < deadline) { await Task.Delay(50, TestContext.Current.CancellationToken); }
             }
             File.WriteAllText(request, "force pid:1");  // another process: ignored
-            await Task.Delay(3000);
+            await Task.Delay(3000, TestContext.Current.CancellationToken);
             Assert.False(process.HasExited);
             Assert.True(File.Exists(request));
             File.WriteAllText(request, "force");
@@ -251,7 +273,7 @@ public sealed class ExecutableTests
         var port = ((IPEndPoint)allocation.LocalEndpoint).Port;
         allocation.Stop();
         const string token = "synthetic-native-contract-token";
-        using var process = Start(s => s.Environment["NEXUS_MCP_TOKEN_FILE"] = TokenFile(token), "--http", port.ToString());
+        using var process = Start(s => s.Environment["NEXUS_MCP_TOKEN_FILE"] = TokenFile(token), "--http", port.ToString(CultureInfo.InvariantCulture));
         using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}"), Timeout = TimeSpan.FromSeconds(5) };
         try
         {
@@ -259,8 +281,11 @@ public sealed class ExecutableTests
             var deadline = DateTime.UtcNow.AddSeconds(15);
             while (health is null)
             {
-                try { health = JsonNode.Parse(await http.GetStringAsync("/health")); }
-                catch (HttpRequestException) when (DateTime.UtcNow < deadline) { await Task.Delay(50); }
+                try
+                {
+                    health = JsonNode.Parse(await http.GetStringAsync("/health", TestContext.Current.CancellationToken));
+                }
+                catch (HttpRequestException) when (DateTime.UtcNow < deadline) { await Task.Delay(50, TestContext.Current.CancellationToken); }
             }
             Assert.Equal("nexus-android", health["service"]!.ToString());
             Assert.Equal("native", health["runtime"]!.ToString());
@@ -269,26 +294,29 @@ public sealed class ExecutableTests
             HttpRequestMessage Post(string body, string? session = null, bool auth = true)
             {
                 var request = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = new StringContent(body, Encoding.UTF8, "application/json") };
-                if (auth) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                if (session is not null) request.Headers.Add("Mcp-Session-Id", session);
+                if (auth)
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                if (session is not null)
+                    request.Headers.Add("Mcp-Session-Id", session);
                 return request;
             }
             const string initialize = """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}""";
-            using (var denied = await http.SendAsync(Post(initialize, auth: false))) Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
-            using var opened = await http.SendAsync(Post(initialize));
+            using (var denied = await http.SendAsync(Post(initialize, auth: false), TestContext.Current.CancellationToken))
+                Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+            using var opened = await http.SendAsync(Post(initialize), TestContext.Current.CancellationToken);
             var session = opened.Headers.GetValues("Mcp-Session-Id").Single();
             Assert.False(string.IsNullOrEmpty(session));
-            Assert.Equal("2025-06-18", JsonNode.Parse(await opened.Content.ReadAsStringAsync())!["result"]!["protocolVersion"]!.ToString());
+            Assert.Equal("2025-06-18", JsonNode.Parse(await opened.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))!["result"]!["protocolVersion"]!.ToString());
 
             const string listing = """{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}""";
-            using (var listed = await http.SendAsync(Post(listing, session)))
+            using (var listed = await http.SendAsync(Post(listing, session), TestContext.Current.CancellationToken))
             {
-                var tools = JsonNode.Parse(await listed.Content.ReadAsStringAsync())!["result"]!["tools"]!.AsArray();
+                var tools = JsonNode.Parse(await listed.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))!["result"]!["tools"]!.AsArray();
                 Assert.Equal(Expected, tools.Select(t => t!["name"]!.ToString()).Order().ToArray());
                 Assert.NotNull(tools.Single(t => t!["name"]!.ToString() == "act")!["inputSchema"]!["$defs"]!["Step"]!["properties"]!["do"]);
             }
-            using (var ping = await http.SendAsync(Post("""{"jsonrpc":"2.0","id":3,"method":"ping"}""", session)))
-                Assert.Equal("{}", JsonNode.Parse(await ping.Content.ReadAsStringAsync())!["result"]!.ToJsonString());
+            using (var ping = await http.SendAsync(Post("""{"jsonrpc":"2.0","id":3,"method":"ping"}""", session), TestContext.Current.CancellationToken))
+                Assert.Equal("{}", JsonNode.Parse(await ping.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))!["result"]!.ToJsonString());
 
             HttpRequestMessage Bare(HttpMethod method)
             {
@@ -297,9 +325,12 @@ public sealed class ExecutableTests
                 request.Headers.Add("Mcp-Session-Id", session);
                 return request;
             }
-            using (var get = await http.SendAsync(Bare(HttpMethod.Get))) Assert.Equal(HttpStatusCode.MethodNotAllowed, get.StatusCode);
-            using (var delete = await http.SendAsync(Bare(HttpMethod.Delete))) Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
-            using (var reused = await http.SendAsync(Post(listing, session))) Assert.Equal(HttpStatusCode.NotFound, reused.StatusCode);
+            using (var get = await http.SendAsync(Bare(HttpMethod.Get), TestContext.Current.CancellationToken))
+                Assert.Equal(HttpStatusCode.MethodNotAllowed, get.StatusCode);
+            using (var delete = await http.SendAsync(Bare(HttpMethod.Delete), TestContext.Current.CancellationToken))
+                Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+            using (var reused = await http.SendAsync(Post(listing, session), TestContext.Current.CancellationToken))
+                Assert.Equal(HttpStatusCode.NotFound, reused.StatusCode);
         }
         finally { if (!process.HasExited) process.Kill(true); }
     }

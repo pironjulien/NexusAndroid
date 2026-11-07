@@ -164,13 +164,16 @@ public sealed class PixelBuffer
             for (var ry = 0; ry < rows.Length; ry++)
             {
                 var py = startY + ry;
-                if (py < 0 || py >= Height) continue;
+                if (py < 0 || py >= Height)
+                    continue;
                 var row = rows[ry];
                 for (var rx = 0; rx < row.Length; rx++)
                 {
-                    if (row[rx] != '1') continue;
+                    if (row[rx] != '1')
+                        continue;
                     var px = startX + i * charW + rx;
-                    if (px < 0 || px >= Width) continue;
+                    if (px < 0 || px >= Width)
+                        continue;
                     var idx = (py * Width + px) * 4;
                     Bgra[idx] = 10;
                     Bgra[idx + 1] = 214;
@@ -248,7 +251,8 @@ public static class ImageChain
             var y0 = Math.Clamp((int)Math.Floor(sy), 0, srcH - 1);
             var y1 = Math.Clamp(y0 + 1, 0, srcH - 1);
             var fy = sy - Math.Floor(sy);
-            if (sy < 0) fy = 0;
+            if (sy < 0)
+                fy = 0;
             var ify = 1.0 - fy;
 
             var row0 = y0 * srcW * 4;
@@ -261,7 +265,8 @@ public static class ImageChain
                 var x0 = Math.Clamp((int)Math.Floor(sx), 0, srcW - 1);
                 var x1 = Math.Clamp(x0 + 1, 0, srcW - 1);
                 var fx = sx - Math.Floor(sx);
-                if (sx < 0) fx = 0;
+                if (sx < 0)
+                    fx = 0;
                 var ifx = 1.0 - fx;
 
                 var w00 = ifx * ify;
@@ -398,14 +403,22 @@ public static class ImageChain
     {
         var small = ResizeBilinear(image, ThumbnailEdge, ThumbnailEdge);
         var rgb = new byte[ThumbnailEdge * ThumbnailEdge * 3];
-        for (int i = 0, j = 0; i < small.Bgra.Length; i += 4, j += 3) { rgb[j] = small.Bgra[i + 2]; rgb[j + 1] = small.Bgra[i + 1]; rgb[j + 2] = small.Bgra[i]; }
+        for (int i = 0, j = 0; i < small.Bgra.Length; i += 4, j += 3)
+        {
+            rgb[j] = small.Bgra[i + 2];
+            rgb[j + 1] = small.Bgra[i + 1];
+            rgb[j + 2] = small.Bgra[i];
+        }
         return rgb;
     }
 
     public static bool SameThumbnail(byte[]? a, byte[]? b)
     {
-        if (a is null || b is null || a.Length != b.Length) return false;
-        for (var i = 0; i < a.Length; i++) if (Math.Abs(a[i] - b[i]) > ThumbnailSlack) return false;
+        if (a is null || b is null || a.Length != b.Length)
+            return false;
+        for (var i = 0; i < a.Length; i++)
+            if (Math.Abs(a[i] - b[i]) > ThumbnailSlack)
+                return false;
         return true;
     }
 
@@ -430,8 +443,9 @@ public static class ImageChain
         IReadOnlyList<(int Index, int Cx, int Cy)>? badges = null)
     {
         ArgumentNullException.ThrowIfNull(source);
-        var webp=string.Equals(preferredLosslessFormat,"webp",StringComparison.OrdinalIgnoreCase);
-        if(!webp&&!string.Equals(preferredLosslessFormat,"png",StringComparison.OrdinalIgnoreCase))throw new ArgumentException("Lossless format must be webp (images for the AI) or png (files for the user)");
+        var webp = string.Equals(preferredLosslessFormat, "webp", StringComparison.OrdinalIgnoreCase);
+        if (!webp && !string.Equals(preferredLosslessFormat, "png", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Lossless format must be webp (images for the AI) or png (files for the user)");
         var origW = source.Width;
         var origH = source.Height;
 
@@ -467,7 +481,8 @@ public static class ImageChain
             // Shared Nexus rule (NexusShared/images.md): lossless WebP while it fits, then near-lossless (2 low bits
             // per channel, as NexusWindows), then the lossy ladder below. PNG stays for files written for the user.
             var lossless = webp ? WebP.Lossless(scaled.Bgra, scaled.Width, scaled.Height) : EncodePng(scaled);
-            if (maxBytes <= 0 || lossless.Length <= maxBytes) return Encoded(scaled, lossless, webp ? "webp" : "png", false, 100);
+            if (maxBytes <= 0 || lossless.Length <= maxBytes)
+                return Encoded(scaled, lossless, webp ? "webp" : "png", false, 100);
             if (webp)
             {
                 // Near-lossless: 2, then 3 low bits per channel. Bench 2026-11-06 (Windows OCR on two real Fold screens,
@@ -478,9 +493,12 @@ public static class ImageChain
                     var reduced = scaled.Clone();
                     var bgra = reduced.Bgra;
                     var mask = (byte)(0xFF << bits);
-                    for (var i = 0; i < bgra.Length; i++) if ((i & 3) != 3) bgra[i] &= mask;
+                    for (var i = 0; i < bgra.Length; i++)
+                        if ((i & 3) != 3)
+                            bgra[i] &= mask;
                     var near = WebP.Lossless(bgra, reduced.Width, reduced.Height);
-                    if (near.Length <= maxBytes) return Encoded(reduced, near, "webp", true, 100 - 2 * bits);
+                    if (near.Length <= maxBytes)
+                        return Encoded(reduced, near, "webp", true, 100 - 2 * bits);
                 }
             }
         }
@@ -650,13 +668,13 @@ internal static partial class GdiPlusInterop
     [LibraryImport("gdiplus.dll")]
     private static partial int GdipCreateBitmapFromStream(IntPtr stream, out IntPtr bitmap);
     [LibraryImport("gdiplus.dll")]
-    private static partial int GdipGetPropertyItemSize(IntPtr image,int property,out uint size);
+    private static partial int GdipGetPropertyItemSize(IntPtr image, int property, out uint size);
     [LibraryImport("gdiplus.dll")]
-    private static partial int GdipGetPropertyItem(IntPtr image,int property,uint size,IntPtr item);
+    private static partial int GdipGetPropertyItem(IntPtr image, int property, uint size, IntPtr item);
     [LibraryImport("gdiplus.dll")]
-    private static partial int GdipImageRotateFlip(IntPtr image,int rotateFlipType);
+    private static partial int GdipImageRotateFlip(IntPtr image, int rotateFlipType);
     [StructLayout(LayoutKind.Sequential)]
-    private struct PropertyItem{public int Id;public uint Length;public short Type;public IntPtr Value;}
+    private struct PropertyItem { public int Id; public uint Length; public short Type; public IntPtr Value; }
 
     [LibraryImport("gdiplus.dll")]
     private static partial int GdipGetImageWidth(IntPtr image, out uint width);
@@ -706,10 +724,12 @@ internal static partial class GdiPlusInterop
 
     public static void EnsureInitialized()
     {
-        if (_gdiplusToken != IntPtr.Zero) return;
+        if (_gdiplusToken != IntPtr.Zero)
+            return;
         lock (InitLock)
         {
-            if (_gdiplusToken != IntPtr.Zero) return;
+            if (_gdiplusToken != IntPtr.Zero)
+                return;
             var input = new GdiplusStartupInput { GdiplusVersion = 1 };
             var status = GdiplusStartup(out _gdiplusToken, ref input, out _);
             if (status != 0)
@@ -797,7 +817,7 @@ internal static partial class GdiPlusInterop
             }
             finally
             {
-                GdipDisposeImage(bitmap);
+                _ = GdipDisposeImage(bitmap);
             }
         }
     }
@@ -808,7 +828,7 @@ internal static partial class GdiPlusInterop
         var hGlobal = GlobalAlloc(0x0002 /* GMEM_MOVEABLE */, (UIntPtr)imageBytes.Length);
         if (hGlobal == IntPtr.Zero)
         {
-            throw new OutOfMemoryException("GlobalAlloc failed.");
+            throw new InsufficientMemoryException("GlobalAlloc failed.");
         }
 
         var locked = GlobalLock(hGlobal);
@@ -842,9 +862,24 @@ internal static partial class GdiPlusInterop
             try
             {
                 // Match ImageOps.exif_transpose in the reference image pipeline.
-                if(GdipGetPropertyItemSize(bitmap,0x112,out var orientationSize)==0&&orientationSize>=Marshal.SizeOf<PropertyItem>()&&orientationSize<16384)
+                if (GdipGetPropertyItemSize(bitmap, 0x112, out var orientationSize) == 0 && orientationSize >= Marshal.SizeOf<PropertyItem>() && orientationSize < 16384)
                 {
-                    var item=Marshal.AllocHGlobal((int)orientationSize);try{if(GdipGetPropertyItem(bitmap,0x112,orientationSize,item)==0){var property=Marshal.PtrToStructure<PropertyItem>(item);if(property.Type==3&&property.Length>=2){var orientation=Marshal.ReadInt16(property.Value);int[] transforms=[0,0,4,2,6,5,1,7,3];if(orientation is >=2 and <=8&&GdipImageRotateFlip(bitmap,transforms[orientation])!=0)throw new IOException("Could not apply image EXIF orientation");}}}finally{Marshal.FreeHGlobal(item);}
+                    var item = Marshal.AllocHGlobal((int)orientationSize);
+                    try
+                    {
+                        if (GdipGetPropertyItem(bitmap, 0x112, orientationSize, item) == 0)
+                        {
+                            var property = Marshal.PtrToStructure<PropertyItem>(item);
+                            if (property.Type == 3 && property.Length >= 2)
+                            {
+                                var orientation = Marshal.ReadInt16(property.Value);
+                                int[] transforms = [0, 0, 4, 2, 6, 5, 1, 7, 3];
+                                if (orientation is >= 2 and <= 8 && GdipImageRotateFlip(bitmap, transforms[orientation]) != 0)
+                                    throw new IOException("Could not apply image EXIF orientation");
+                            }
+                        }
+                    }
+                    finally { Marshal.FreeHGlobal(item); }
                 }
                 GdipGetImageWidth(bitmap, out var width);
                 GdipGetImageHeight(bitmap, out var height);
@@ -880,7 +915,7 @@ internal static partial class GdiPlusInterop
             }
             finally
             {
-                GdipDisposeImage(bitmap);
+                _ = GdipDisposeImage(bitmap);
             }
         }
         finally

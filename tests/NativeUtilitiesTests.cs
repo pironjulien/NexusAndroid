@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -50,7 +51,8 @@ public sealed class NativeUtilitiesTests
     private static int Count(string text, string part)
     {
         var count = 0;
-        for (var index = text.IndexOf(part, StringComparison.Ordinal); index >= 0; index = text.IndexOf(part, index + part.Length, StringComparison.Ordinal)) count++;
+        for (var index = text.IndexOf(part, StringComparison.Ordinal); index >= 0; index = text.IndexOf(part, index + part.Length, StringComparison.Ordinal))
+            count++;
         return count;
     }
 
@@ -168,7 +170,11 @@ public sealed class NativeUtilitiesTests
         var longText = string.Concat(Enumerable.Repeat("long text ", 3000));
         Queries(fixture)["content://sms"] = new JsonArray(Enumerable.Range(0, 4).Select(index => (JsonNode?)new JsonObject
         {
-            ["_id"] = index.ToString(), ["thread_id"] = "7", ["date"] = (10000 + index).ToString(), ["type"] = "1", ["body"] = $"message{index}: " + longText,
+            ["_id"] = index.ToString(CultureInfo.InvariantCulture),
+            ["thread_id"] = "7",
+            ["date"] = (10000 + index).ToString(CultureInfo.InvariantCulture),
+            ["type"] = "1",
+            ["body"] = $"message{index}: " + longText,
         }).ToArray());
         var body = Success(Call("messages", Json("""{"conversation": 7, "limit": 4, "images": 0}"""), fixture));
         Assert.True(body.Length <= 60000, "body length " + body.Length);
@@ -252,7 +258,8 @@ public sealed class NativeUtilitiesTests
         var segment = new List<byte> { 0xFF, 0xE1, (byte)(length >> 8), (byte)(length & 0xFF) };
         segment.AddRange(exif);
         var position = 2;
-        if (jpeg[2] == 0xFF && jpeg[3] == 0xE0) position = 4 + (jpeg[4] << 8 | jpeg[5]);
+        if (jpeg[2] == 0xFF && jpeg[3] == 0xE0)
+            position = 4 + (jpeg[4] << 8 | jpeg[5]);
         return [.. jpeg[..position], .. segment, .. jpeg[position..]];
     }
 
@@ -320,9 +327,11 @@ public sealed class NativeUtilitiesTests
             var count = Math.Min(5, data.Length - offset);
             Array.Copy(data, offset, chunk, 0, count);
             var bits = 0UL;
-            foreach (var value in chunk) bits = bits << 8 | value;
+            foreach (var value in chunk)
+                bits = bits << 8 | value;
             var characters = (count * 8 + 4) / 5;
-            for (var i = 0; i < 8; i++) output.Append(i < characters ? alphabet[(int)(bits >> (35 - i * 5) & 31)] : '=');
+            for (var i = 0; i < 8; i++)
+                output.Append(i < characters ? alphabet[(int)(bits >> (35 - i * 5) & 31)] : '=');
         }
         return output.ToString();
     }
@@ -480,8 +489,10 @@ public sealed class NativeUtilitiesTests
     public void DraftNeverConfirmsUnreadOrWrongAppText(string mode)
     {
         var fixture = DraftFixture(body: mode == "wrong text" ? "wrong" : "draft text");
-        if (mode == "wrong package") fixture["state"] = fixture["state"]!.ToString().Replace("com.example.sms", "com.wrong.app");
-        else if (mode == "locked") fixture["state"] = fixture["state"]!.ToString().Replace("isKeyguardShowing=false", "isKeyguardShowing=true");
+        if (mode == "wrong package")
+            fixture["state"] = fixture["state"]!.ToString().Replace("com.example.sms", "com.wrong.app");
+        else if (mode == "locked")
+            fixture["state"] = fixture["state"]!.ToString().Replace("isKeyguardShowing=false", "isKeyguardShowing=true");
         var body = Success(Call("draft", Json("""{"to": "36179", "text": "draft text"}"""), fixture));
         Assert.Contains("Nothing sent", body);
         Assert.DoesNotContain("accord=", body);

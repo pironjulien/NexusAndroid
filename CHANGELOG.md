@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+- Code layout: an `.editorconfig` and `dotnet format` put one statement and one block per line (lines over 300 characters: 292 to 75, the rest being data tables and long single expressions); the build now checks formatting (IDE0055).
+- Build quality: .NET analyzers at `latest-recommended`, code style enforced in the build and every warning an error. Culture-dependent string comparisons, parsing and formatting are now explicit (ordinal and invariant culture), the nullable warning of `setup` is fixed at its cause, and the tests no longer silence nullability warnings.
+- Version: the engine reads its version from the assembly, so `<Version>` in the csproj is the single source.
+- NuGet restores are pinned by `packages.lock.json` (locked mode in CI and release); the installer and the release restore both architectures once, then publish without restoring.
+- Tests: only `xunit.v3` 4.0.2 on Microsoft.Testing.Platform; the unused VSTest packages (`xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`) are gone.
+- Release: shared NexusSystem workflows v1.6.54.
+
 ## [0.23.22] - 2026-11-06
 
 ### Changed

@@ -17,7 +17,8 @@ internal static class WebPDecoder
             var value = 0;
             for (var i = 0; i < count; i++, position++)
             {
-                if (position >> 3 >= data.Length) throw new InvalidDataException("Truncated VP8L stream");
+                if (position >> 3 >= data.Length)
+                    throw new InvalidDataException("Truncated VP8L stream");
                 value |= ((data[position >> 3] >> (position & 7)) & 1) << i;
             }
             return value;
@@ -31,23 +32,38 @@ internal static class WebPDecoder
         public Code(int[] lengths)
         {
             var used = Enumerable.Range(0, lengths.Length).Where(i => lengths[i] > 0).ToList();
-            if (used.Count == 1) { single = used[0]; return; }
-            if (used.Count == 0) throw new InvalidDataException("Empty prefix code");
+            if (used.Count == 1)
+            {
+                single = used[0];
+                return;
+            }
+            if (used.Count == 0)
+                throw new InvalidDataException("Empty prefix code");
             var count = new int[16];
-            foreach (var l in lengths) if (l > 0) count[l]++;
+            foreach (var l in lengths)
+                if (l > 0)
+                    count[l]++;
             var next = new int[16];
             var code = 0;
-            for (var bits = 1; bits <= 15; bits++) { code = (code + count[bits - 1]) << 1; next[bits] = code; }
-            for (var s = 0; s < lengths.Length; s++) if (lengths[s] > 0) symbols[(lengths[s], next[lengths[s]]++)] = s;
+            for (var bits = 1; bits <= 15; bits++)
+            {
+                code = (code + count[bits - 1]) << 1;
+                next[bits] = code;
+            }
+            for (var s = 0; s < lengths.Length; s++)
+                if (lengths[s] > 0)
+                    symbols[(lengths[s], next[lengths[s]]++)] = s;
         }
         public int Read(Bits bits)
         {
-            if (single >= 0) return single;
+            if (single >= 0)
+                return single;
             var code = 0;
             for (var length = 1; length <= 15; length++)
             {
                 code = (code << 1) | bits.Read(1);
-                if (symbols.TryGetValue((length, code), out var symbol)) return symbol;
+                if (symbols.TryGetValue((length, code), out var symbol))
+                    return symbol;
             }
             throw new InvalidDataException("Invalid prefix code");
         }
@@ -63,38 +79,51 @@ internal static class WebPDecoder
             var count = bits.Read(1) + 1;
             var first = bits.Read(bits.Read(1) == 1 ? 8 : 1);
             lengths[first] = 1;
-            if (count == 2) lengths[bits.Read(8)] = 1;
+            if (count == 2)
+                lengths[bits.Read(8)] = 1;
             return new Code(lengths);
         }
         var clLengths = new int[19];
         var numCodes = bits.Read(4) + 4;
-        for (var i = 0; i < numCodes; i++) clLengths[CodeLengthOrder[i]] = bits.Read(3);
+        for (var i = 0; i < numCodes; i++)
+            clLengths[CodeLengthOrder[i]] = bits.Read(3);
         var clCode = new Code(clLengths);
         var maxSymbol = alphabet;
-        if (bits.Read(1) == 1) maxSymbol = 2 + bits.Read(2 + 2 * bits.Read(3));
+        if (bits.Read(1) == 1)
+            maxSymbol = 2 + bits.Read(2 + 2 * bits.Read(3));
         var symbol = 0;
         var previous = 8;
         while (symbol < alphabet && maxSymbol-- > 0)
         {
             var length = clCode.Read(bits);
-            if (length < 16) { lengths[symbol++] = length; if (length != 0) previous = length; continue; }
+            if (length < 16)
+            {
+                lengths[symbol++] = length;
+                if (length != 0)
+                    previous = length;
+                continue;
+            }
             var (repeat, value) = length switch { 16 => (3 + bits.Read(2), previous), 17 => (3 + bits.Read(3), 0), _ => (11 + bits.Read(7), 0) };
-            for (var r = 0; r < repeat; r++) lengths[symbol++] = value;
+            for (var r = 0; r < repeat; r++)
+                lengths[symbol++] = value;
         }
         return new Code(lengths);
     }
 
     private static int PrefixValue(Bits bits, int code)
     {
-        if (code < 4) return code + 1;
+        if (code < 4)
+            return code + 1;
         var extra = (code - 2) >> 1;
         return ((2 + (code & 1)) << extra) + bits.Read(extra) + 1;
     }
 
     private static uint[] ReadImage(Bits bits, int width, int height, bool main)
     {
-        if (bits.Read(1) == 1) throw new NotSupportedException("Colour cache");
-        if (main && bits.Read(1) == 1) throw new NotSupportedException("Meta prefix codes");
+        if (bits.Read(1) == 1)
+            throw new NotSupportedException("Colour cache");
+        if (main && bits.Read(1) == 1)
+            throw new NotSupportedException("Meta prefix codes");
         var green = ReadCode(bits, 256 + 24);
         var red = ReadCode(bits, 256);
         var blue = ReadCode(bits, 256);
@@ -114,10 +143,13 @@ internal static class WebPDecoder
             }
             var length = PrefixValue(bits, g - 256);
             var plane = PrefixValue(bits, distance.Read(bits));
-            if (plane <= 120) throw new NotSupportedException("Short-distance code");
+            if (plane <= 120)
+                throw new NotSupportedException("Short-distance code");
             var from = i - (plane - 120);
-            if (from < 0 || i + length > pixels.Length) throw new InvalidDataException("Copy outside the image");
-            for (var k = 0; k < length; k++) pixels[i + k] = pixels[from + k];
+            if (from < 0 || i + length > pixels.Length)
+                throw new InvalidDataException("Copy outside the image");
+            for (var k = 0; k < length; k++)
+                pixels[i + k] = pixels[from + k];
             i += length;
         }
         return pixels;
@@ -133,17 +165,24 @@ internal static class WebPDecoder
         if (Encoding.ASCII.GetString(file, 0, 4) != "RIFF" || Encoding.ASCII.GetString(file, 8, 4) != "WEBP" || Encoding.ASCII.GetString(file, 12, 4) != "VP8L")
             throw new InvalidDataException("Not a lossless WebP file");
         var bits = new Bits(file, 20);
-        if (bits.Read(8) != 0x2F) throw new InvalidDataException("Bad VP8L signature");
+        if (bits.Read(8) != 0x2F)
+            throw new InvalidDataException("Bad VP8L signature");
         width = bits.Read(14) + 1;
         height = bits.Read(14) + 1;
         bits.Read(1);
-        if (bits.Read(3) != 0) throw new InvalidDataException("Unknown VP8L version");
+        if (bits.Read(3) != 0)
+            throw new InvalidDataException("Unknown VP8L version");
         var transforms = new List<(int Type, int BlockBits, uint[]? Modes)>();
         while (bits.Read(1) == 1)
         {
             var type = bits.Read(2);
-            if (type == 2) { transforms.Add((2, 0, null)); continue; }
-            if (type != 0) throw new NotSupportedException("Colour or colour-indexing transform");
+            if (type == 2)
+            {
+                transforms.Add((2, 0, null));
+                continue;
+            }
+            if (type != 0)
+                throw new NotSupportedException("Colour or colour-indexing transform");
             var blockBits = bits.Read(3) + 2;
             var bw = (width + (1 << blockBits) - 1) >> blockBits;
             var bh = (height + (1 << blockBits) - 1) >> blockBits;
@@ -168,9 +207,12 @@ internal static class WebPDecoder
                 {
                     var i = y * width + x;
                     uint prediction;
-                    if (x == 0 && y == 0) prediction = 0xFF000000u;
-                    else if (y == 0) prediction = argb[i - 1];
-                    else if (x == 0) prediction = argb[i - width];
+                    if (x == 0 && y == 0)
+                        prediction = 0xFF000000u;
+                    else if (y == 0)
+                        prediction = argb[i - 1];
+                    else if (x == 0)
+                        prediction = argb[i - width];
                     else
                     {
                         var mode = (int)((modes![(y >> blockBits) * blocksWide + (x >> blockBits)] >> 8) & 0xF);

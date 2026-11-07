@@ -25,7 +25,8 @@ public sealed class RegisterTests : IDisposable
         Set("APPDATA", Path.Join(home, "AppData", "Roaming"));
         Set("LOCALAPPDATA", Path.Join(home, "AppData", "Local"));
         Set("PATH", noTools);  // never the real `claude` or `codex` CLI
-        foreach (var name in new[] { "NEXUS_PACK", "NEXUS_PACK_APPS", "NEXUS_PACK_TARGETS" }) Set(name, null);
+        foreach (var name in new[] { "NEXUS_PACK", "NEXUS_PACK_APPS", "NEXUS_PACK_TARGETS" })
+            Set(name, null);
         Register.Home = home;
         Register.Executable = executable;
         Register.PluginSource = PluginFiles();
@@ -34,12 +35,14 @@ public sealed class RegisterTests : IDisposable
     public void Dispose()
     {
         (Register.Home, Register.Executable, Register.PluginSource) = saved;
-        foreach (var (name, value) in environment) Environment.SetEnvironmentVariable(name, value);
+        foreach (var (name, value) in environment)
+            Environment.SetEnvironmentVariable(name, value);
     }
 
     private void Set(string name, string? value)
     {
-        if (!environment.ContainsKey(name)) environment[name] = Environment.GetEnvironmentVariable(name);
+        if (!environment.ContainsKey(name))
+            environment[name] = Environment.GetEnvironmentVariable(name);
         Environment.SetEnvironmentVariable(name, value);
     }
 
@@ -47,7 +50,8 @@ public sealed class RegisterTests : IDisposable
     private static string PluginFiles([CallerFilePath] string source = "")
     {
         var shipped = Path.Join(AppContext.BaseDirectory, "plugin");
-        if (File.Exists(Path.Join(shipped, "plugin.json"))) return shipped;
+        if (File.Exists(Path.Join(shipped, "plugin.json")))
+            return shipped;
         var repository = Path.GetFullPath(Path.Join(Path.GetDirectoryName(source)!, "..", "plugin"));
         Assert.True(File.Exists(Path.Join(repository, "plugin.json")), "plugin files not found: " + repository);
         return repository;
@@ -204,8 +208,10 @@ public sealed class RegisterTests : IDisposable
         AssertResults(Register.DeclareAll(new HashSet<string> { "claude-desktop" }), ("Claude Desktop", ours ? "declared" : Register.Kept));
         var config = ReadJson(Path.Join(folder, "claude_desktop_config.json"));
         AssertJson("""{"command": "y"}""", config["mcpServers"]!["x"]);
-        if (ours) Assert.True(JsonNode.DeepEquals(Entry(), config["mcpServers"]!["nexus-android"]));
-        else Assert.Equal(original, ReadText(Path.Join(folder, "claude_desktop_config.json")));
+        if (ours)
+            Assert.True(JsonNode.DeepEquals(Entry(), config["mcpServers"]!["nexus-android"]));
+        else
+            Assert.Equal(original, ReadText(Path.Join(folder, "claude_desktop_config.json")));
     }
 
     [Fact]
@@ -306,11 +312,13 @@ internal static class Toml
             if (header.Success)
             {
                 var name = string.Join(".", Regex.Matches(header.Groups["name"].Value, @"\s*(""[^""]*""|'[^']*'|[A-Za-z0-9_-]+)\s*(\.|$)").Select(m => m.Groups[1].Value.Trim('"', '\'')));
-                if (!tables.TryAdd(name, current = new(StringComparer.Ordinal))) throw new FormatException("duplicate table " + name);
+                if (!tables.TryAdd(name, current = new(StringComparer.Ordinal)))
+                    throw new FormatException("duplicate table " + name);
                 continue;
             }
             var pair = Regex.Match(line, @"^(?<key>[A-Za-z0-9_-]+)\s*=\s*(?<value>.+)$");
-            if (!pair.Success) throw new FormatException("not TOML: " + line);
+            if (!pair.Success)
+                throw new FormatException("not TOML: " + line);
             current.Add(pair.Groups["key"].Value, Value(pair.Groups["value"].Value.Trim()));
         }
         return tables;
@@ -318,14 +326,19 @@ internal static class Toml
 
     private static object Value(string value)
     {
-        if (value.StartsWith('"')) return JsonSerializer.Deserialize<string>(value) ?? throw new FormatException(value);
-        if (value.StartsWith('\'') && value.EndsWith('\'') && value.Length >= 2) return value[1..^1];
-        if (value is "true" or "false") return value == "true";
-        if (long.TryParse(value, out var integer)) return integer;
+        if (value.StartsWith('"'))
+            return JsonSerializer.Deserialize<string>(value) ?? throw new FormatException(value);
+        if (value.StartsWith('\'') && value.EndsWith('\'') && value.Length >= 2)
+            return value[1..^1];
+        if (value is "true" or "false")
+            return value == "true";
+        if (long.TryParse(value, out var integer))
+            return integer;
         if (value.StartsWith('[') && value.EndsWith(']'))
         {
             var items = Regex.Matches(value[1..^1], @"\s*(""(?:[^""\\]|\\.)*""|'[^']*')\s*(,|$)");
-            if (string.Concat(items.Select(m => m.Value)).Trim() != value[1..^1].Trim()) throw new FormatException("array: " + value);
+            if (string.Concat(items.Select(m => m.Value)).Trim() != value[1..^1].Trim())
+                throw new FormatException("array: " + value);
             return items.Select(m => (string)Value(m.Groups[1].Value)).ToList();
         }
         throw new FormatException("value: " + value);

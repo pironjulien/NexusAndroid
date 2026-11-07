@@ -11,6 +11,8 @@ namespace NexusAndroid;
 // contre le decodeur de reference (libwebp, tests).
 internal static class WebP
 {
+    // MemoryStream holds no unmanaged resource: nothing to dispose.
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001", Justification = "MemoryStream only.")]
     sealed class BitWriter
     {
         readonly MemoryStream stream = new();
@@ -18,15 +20,23 @@ internal static class WebP
         int used;
         public void Put(uint value, int count)
         {
-            if (count == 0) return;
+            if (count == 0)
+                return;
             bits |= (ulong)(value & ((1u << count) - 1)) << used;
             used += count;
-            while (used >= 8) { stream.WriteByte((byte)bits); bits >>= 8; used -= 8; }
+            while (used >= 8)
+            {
+                stream.WriteByte((byte)bits);
+                bits >>= 8;
+                used -= 8;
+            }
         }
         public byte[] Finish()
         {
-            if (used > 0) stream.WriteByte((byte)bits);
-            bits = 0; used = 0;
+            if (used > 0)
+                stream.WriteByte((byte)bits);
+            bits = 0;
+            used = 0;
             return stream.ToArray();
         }
     }
@@ -39,7 +49,8 @@ internal static class WebP
     static (int Code, int ExtraBits, int Extra) Prefix(int value)
     {
         var d = value - 1;
-        if (d < 4) return (d, 0, 0);
+        if (d < 4)
+            return (d, 0, 0);
         var high = 31 - System.Numerics.BitOperations.LeadingZeroCount((uint)d);
         var second = (d >> (high - 1)) & 1;
         var extraBits = high - 1;
@@ -52,34 +63,49 @@ internal static class WebP
         var n = freq.Length;
         var lengths = new int[n];
         var used = Enumerable.Range(0, n).Where(i => freq[i] > 0).ToList();
-        if (used.Count == 0) return lengths;
-        if (used.Count == 1) { lengths[used[0]] = 1; return lengths; }
+        if (used.Count == 0)
+            return lengths;
+        if (used.Count == 1)
+        {
+            lengths[used[0]] = 1;
+            return lengths;
+        }
         var f = (long[])freq.Clone();
         while (true)
         {
             var heap = new PriorityQueue<int, long>();
             var parent = new List<int>();
             var weight = new List<long>();
-            foreach (var i in used) { heap.Enqueue(parent.Count, f[i]); parent.Add(-1); weight.Add(f[i]); }
+            foreach (var i in used)
+            {
+                heap.Enqueue(parent.Count, f[i]);
+                parent.Add(-1);
+                weight.Add(f[i]);
+            }
             while (heap.Count > 1)
             {
                 heap.TryDequeue(out var a, out var wa);
                 heap.TryDequeue(out var b, out var wb);
                 var node = parent.Count;
-                parent.Add(-1); weight.Add(wa + wb);
-                parent[a] = node; parent[b] = node;
+                parent.Add(-1);
+                weight.Add(wa + wb);
+                parent[a] = node;
+                parent[b] = node;
                 heap.Enqueue(node, wa + wb);
             }
             var max = 0;
             for (var k = 0; k < used.Count; k++)
             {
                 var depth = 0;
-                for (var p = k; parent[p] >= 0; p = parent[p]) depth++;
+                for (var p = k; parent[p] >= 0; p = parent[p])
+                    depth++;
                 lengths[used[k]] = depth;
                 max = Math.Max(max, depth);
             }
-            if (max <= limit) return lengths;
-            foreach (var i in used) f[i] = Math.Max(1, (f[i] + 1) / 2);
+            if (max <= limit)
+                return lengths;
+            foreach (var i in used)
+                f[i] = Math.Max(1, (f[i] + 1) / 2);
         }
     }
 
@@ -88,17 +114,25 @@ internal static class WebP
     {
         var codes = new uint[lengths.Length];
         var count = new int[16];
-        foreach (var l in lengths) if (l > 0) count[l]++;
+        foreach (var l in lengths)
+            if (l > 0)
+                count[l]++;
         var next = new int[16];
         var code = 0;
-        for (var bitsLen = 1; bitsLen <= 15; bitsLen++) { code = (code + count[bitsLen - 1]) << 1; next[bitsLen] = code; }
+        for (var bitsLen = 1; bitsLen <= 15; bitsLen++)
+        {
+            code = (code + count[bitsLen - 1]) << 1;
+            next[bitsLen] = code;
+        }
         for (var s = 0; s < lengths.Length; s++)
         {
             var l = lengths[s];
-            if (l == 0) continue;
+            if (l == 0)
+                continue;
             var c = (uint)next[l]++;
             uint reversed = 0;
-            for (var i = 0; i < l; i++) reversed |= ((c >> i) & 1) << (l - 1 - i);
+            for (var i = 0; i < l; i++)
+                reversed |= ((c >> i) & 1) << (l - 1 - i);
             codes[s] = reversed;
         }
         return codes;
@@ -123,25 +157,41 @@ internal static class WebP
             var symbol = used.Count == 0 ? 0 : used[0];
             w.Put(1, 1); // code simple
             w.Put(0, 1); // un symbole
-            if (symbol < 2) { w.Put(0, 1); w.Put((uint)symbol, 1); }
-            else { w.Put(1, 1); w.Put((uint)symbol, 8); }
+            if (symbol < 2)
+            {
+                w.Put(0, 1);
+                w.Put((uint)symbol, 1);
+            }
+            else
+            {
+                w.Put(1, 1);
+                w.Put((uint)symbol, 8);
+            }
             return new Code(new int[freq.Length], new uint[freq.Length]);
         }
         var lengths = Lengths(freq, 15);
-        if (used.Count == 1) { lengths[used[0]] = 1; }
+        if (used.Count == 1)
+        {
+            lengths[used[0]] = 1;
+        }
         // Code des longueurs : symboles 0..15, longueurs limitees a 7 bits.
         var clFreq = new long[19];
-        foreach (var l in lengths) clFreq[l]++;
+        foreach (var l in lengths)
+            clFreq[l]++;
         var clLengths = Lengths(clFreq, 7);
-        if (clFreq.Count(c => c > 0) == 1) clLengths[Array.FindIndex(clFreq, c => c > 0)] = 1;
+        if (clFreq.Count(c => c > 0) == 1)
+            clLengths[Array.FindIndex(clFreq, c => c > 0)] = 1;
         var clCode = new Code(clLengths, Codes(clLengths));
         var numCodes = 19;
-        while (numCodes > 4 && clLengths[CodeLengthOrder[numCodes - 1]] == 0) numCodes--;
+        while (numCodes > 4 && clLengths[CodeLengthOrder[numCodes - 1]] == 0)
+            numCodes--;
         w.Put(0, 1); // code normal
         w.Put((uint)(numCodes - 4), 4);
-        for (var i = 0; i < numCodes; i++) w.Put((uint)clLengths[CodeLengthOrder[i]], 3);
+        for (var i = 0; i < numCodes; i++)
+            w.Put((uint)clLengths[CodeLengthOrder[i]], 3);
         w.Put(0, 1); // max_symbol absent : tous les symboles
-        foreach (var l in lengths) clCode.Put(w, l);
+        foreach (var l in lengths)
+            clCode.Put(w, l);
         return new Code(lengths, Codes(lengths));
     }
 
@@ -152,7 +202,8 @@ internal static class WebP
     {
         var tokens = Tokens(argb, width);
         w.Put(0, 1); // pas de cache de couleurs
-        if (main) w.Put(0, 1); // un seul groupe de codes
+        if (main)
+            w.Put(0, 1); // un seul groupe de codes
         var green = new long[256 + NumLengthCodes];
         var red = new long[256];
         var blue = new long[256];
@@ -163,7 +214,10 @@ internal static class WebP
             if (t.Length == 0)
             {
                 var p = (uint)t.Literal;
-                green[(p >> 8) & 0xFF]++; red[(p >> 16) & 0xFF]++; blue[p & 0xFF]++; alpha[p >> 24]++;
+                green[(p >> 8) & 0xFF]++;
+                red[(p >> 16) & 0xFF]++;
+                blue[p & 0xFF]++;
+                alpha[p >> 24]++;
             }
             else
             {
@@ -181,14 +235,19 @@ internal static class WebP
             if (t.Length == 0)
             {
                 var p = (uint)t.Literal;
-                g.Put(w, (int)((p >> 8) & 0xFF)); r.Put(w, (int)((p >> 16) & 0xFF)); b.Put(w, (int)(p & 0xFF)); a.Put(w, (int)(p >> 24));
+                g.Put(w, (int)((p >> 8) & 0xFF));
+                r.Put(w, (int)((p >> 16) & 0xFF));
+                b.Put(w, (int)(p & 0xFF));
+                a.Put(w, (int)(p >> 24));
             }
             else
             {
                 var (lc, lb, le) = Prefix(t.Length);
-                g.Put(w, 256 + lc); w.Put((uint)le, lb);
+                g.Put(w, 256 + lc);
+                w.Put((uint)le, lb);
                 var (dc, db, de) = Prefix(t.Distance + 120);
-                d.Put(w, dc); w.Put((uint)de, db);
+                d.Put(w, dc);
+                w.Put((uint)de, db);
             }
         }
     }
@@ -202,9 +261,11 @@ internal static class WebP
         var table = new Dictionary<ulong, int>();
         int Match(int at, int from)
         {
-            if (from < 0 || from >= at || at - from > MaxDistance) return 0;
+            if (from < 0 || from >= at || at - from > MaxDistance)
+                return 0;
             var len = 0;
-            while (at + len < n && len < MaxLength && p[from + len] == p[at + len]) len++;
+            while (at + len < n && len < MaxLength && p[from + len] == p[at + len])
+                len++;
             return len;
         }
         var i = 0;
@@ -214,7 +275,11 @@ internal static class WebP
             foreach (var cand in new[] { i - 1, i - width })
             {
                 var len = Match(i, cand);
-                if (len > bestLen) { bestLen = len; bestDist = i - cand; }
+                if (len > bestLen)
+                {
+                    bestLen = len;
+                    bestDist = i - cand;
+                }
             }
             ulong key = 0;
             if (i + 2 < n)
@@ -223,20 +288,26 @@ internal static class WebP
                 if (table.TryGetValue(key, out var prev))
                 {
                     var len = Match(i, prev);
-                    if (len > bestLen) { bestLen = len; bestDist = i - prev; }
+                    if (len > bestLen)
+                    {
+                        bestLen = len;
+                        bestDist = i - prev;
+                    }
                 }
             }
             if (bestLen >= MinMatch)
             {
                 tokens.Add(new Token(0, bestLen, bestDist));
                 for (var k = 0; k < bestLen; k += 16)
-                    if (i + k + 2 < n) table[((ulong)p[i + k] * 0x9E3779B97F4A7C15UL) ^ ((ulong)p[i + k + 1] << 21) ^ ((ulong)p[i + k + 2] * 0xC2B2AE3D27D4EB4FUL)] = i + k;
+                    if (i + k + 2 < n)
+                        table[((ulong)p[i + k] * 0x9E3779B97F4A7C15UL) ^ ((ulong)p[i + k + 1] << 21) ^ ((ulong)p[i + k + 2] * 0xC2B2AE3D27D4EB4FUL)] = i + k;
                 i += bestLen;
             }
             else
             {
                 tokens.Add(new Token((int)p[i], 0, 0));
-                if (i + 2 < n) table[key] = i;
+                if (i + 2 < n)
+                    table[key] = i;
                 i++;
             }
         }
@@ -249,14 +320,19 @@ internal static class WebP
 
     static int Cost(uint residual)
     {
-        int c(uint v) { var x = (int)(v & 0xFF); return x > 127 ? 256 - x : x; }
+        int c(uint v)
+        {
+            var x = (int)(v & 0xFF);
+            return x > 127 ? 256 - x : x;
+        }
         return c(residual) + c(residual >> 8) + c(residual >> 16) + c(residual >> 24);
     }
 
     // BGRA (capture) → WebP sans perte. `alpha` : la capture est opaque, l'alpha ecrit est 255.
     public static byte[] Lossless(byte[] bgra, int width, int height)
     {
-        if (width < 1 || height < 1 || width > 16384 || height > 16384) throw new ArgumentOutOfRangeException(nameof(width));
+        if (width < 1 || height < 1 || width > 16384 || height > 16384)
+            throw new ArgumentOutOfRangeException(nameof(width));
         var n = width * height;
         var argb = new uint[n];
         for (var i = 0; i < n; i++)
@@ -277,8 +353,10 @@ internal static class WebP
                     for (var x = bx * block; x < Math.Min(width, (bx + 1) * block); x++)
                     {
                         var i = y * width + x;
-                        if (x > 0) left += Cost(Sub(argb[i], argb[i - 1]));
-                        if (y > 0) top += Cost(Sub(argb[i], argb[i - width]));
+                        if (x > 0)
+                            left += Cost(Sub(argb[i], argb[i - 1]));
+                        if (y > 0)
+                            top += Cost(Sub(argb[i], argb[i - width]));
                     }
                 modes[by * bw + bx] = top < left ? 2 : 1;
             }
@@ -288,10 +366,14 @@ internal static class WebP
             {
                 var i = y * width + x;
                 uint pred;
-                if (x == 0 && y == 0) pred = 0xFF000000u;
-                else if (y == 0) pred = argb[i - 1];
-                else if (x == 0) pred = argb[i - width];
-                else pred = modes[(y >> BlockBits) * bw + (x >> BlockBits)] == 2 ? argb[i - width] : argb[i - 1];
+                if (x == 0 && y == 0)
+                    pred = 0xFF000000u;
+                else if (y == 0)
+                    pred = argb[i - 1];
+                else if (x == 0)
+                    pred = argb[i - width];
+                else
+                    pred = modes[(y >> BlockBits) * bw + (x >> BlockBits)] == 2 ? argb[i - width] : argb[i - 1];
                 residual[i] = Sub(argb[i], pred);
             }
         var w = new BitWriter();
@@ -301,8 +383,10 @@ internal static class WebP
         w.Put(0, 1); // alpha non utilise
         w.Put(0, 3); // version 0
         // Transformations, dans l'ordre d'application : soustraction du vert, puis prediction.
-        w.Put(1, 1); w.Put(2, 2); // SUBTRACT_GREEN
-        w.Put(1, 1); w.Put(0, 2); // PREDICTOR
+        w.Put(1, 1);
+        w.Put(2, 2); // SUBTRACT_GREEN
+        w.Put(1, 1);
+        w.Put(0, 2); // PREDICTOR
         w.Put(BlockBits - 2, 3);
         var predictorImage = modes.Select(m => 0xFF000000u | ((uint)m << 8)).ToArray();
         WriteImage(w, predictorImage, bw, main: false);
@@ -313,9 +397,14 @@ internal static class WebP
         void Ascii(string s) => file.Write(System.Text.Encoding.ASCII.GetBytes(s));
         void U32(int v) => file.Write(BitConverter.GetBytes(v));
         var padded = data.Length + (data.Length & 1);
-        Ascii("RIFF"); U32(4 + 8 + padded); Ascii("WEBP"); Ascii("VP8L"); U32(data.Length);
+        Ascii("RIFF");
+        U32(4 + 8 + padded);
+        Ascii("WEBP");
+        Ascii("VP8L");
+        U32(data.Length);
         file.Write(data);
-        if ((data.Length & 1) != 0) file.WriteByte(0);
+        if ((data.Length & 1) != 0)
+            file.WriteByte(0);
         return file.ToArray();
     }
 }

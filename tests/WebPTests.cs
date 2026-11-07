@@ -32,7 +32,8 @@ public sealed class WebPTests
     /// anything else through the engine's own decoder.</summary>
     internal static PixelBuffer DecodeSent(byte[] bytes)
     {
-        if (bytes.Length < 12 || System.Text.Encoding.ASCII.GetString(bytes, 8, 4) != "WEBP") return ImageChain.Decode(bytes);
+        if (bytes.Length < 12 || System.Text.Encoding.ASCII.GetString(bytes, 8, 4) != "WEBP")
+            return ImageChain.Decode(bytes);
         var pixels = WebPDecoder.Decode(bytes, out var width, out var height);
         return new PixelBuffer(width, height, pixels);
     }
@@ -47,7 +48,10 @@ public sealed class WebPTests
             for (var x = 0; x < width; x++)
             {
                 var i = (y * width + x) * 4;
-                bgra[i] = (byte)random.Next(256); bgra[i + 1] = (byte)(x * 255 / width); bgra[i + 2] = (byte)(y & 0xFF); bgra[i + 3] = 255;
+                bgra[i] = (byte)random.Next(256);
+                bgra[i + 1] = (byte)(x * 255 / width);
+                bgra[i + 2] = (byte)(y & 0xFF);
+                bgra[i + 3] = 255;
             }
         return picture;
     }
@@ -67,7 +71,8 @@ public sealed class WebPTests
         Assert.Equal((width, height), (w, h));
         Assert.True(picture.Bgra.AsSpan().SequenceEqual(ours), "test decoder: pixels differ from the encoded ones");
         var windows = DecodeWithWindows(webp, out _, out _);
-        if (windows is not null) Assert.True(picture.Bgra.AsSpan().SequenceEqual(windows), "Windows decoder: pixels differ from the encoded ones");
+        if (windows is not null)
+            Assert.True(picture.Bgra.AsSpan().SequenceEqual(windows), "Windows decoder: pixels differ from the encoded ones");
     }
 
     [Fact]
@@ -94,7 +99,14 @@ public sealed class WebPTests
         // A photo-like screen too heavy for plain lossless: the 2- or 3-bit step still sends WebP, readable back.
         var random = new Random(7);
         var photo = Sample(1248, 1972, 7);
-        for (var i = 0; i < photo.Bgra.Length; i += 4) { var v = (byte)((i / 4 % 1248) / 5 + random.Next(4)); photo.Bgra[i] = v; photo.Bgra[i + 1] = (byte)(v / 2); photo.Bgra[i + 2] = (byte)(255 - v); photo.Bgra[i + 3] = 255; }
+        for (var i = 0; i < photo.Bgra.Length; i += 4)
+        {
+            var v = (byte)((i / 4 % 1248) / 5 + random.Next(4));
+            photo.Bgra[i] = v;
+            photo.Bgra[i + 1] = (byte)(v / 2);
+            photo.Bgra[i + 2] = (byte)(255 - v);
+            photo.Bgra[i + 3] = 255;
+        }
         var lossless = WebP.Lossless(photo.Bgra, photo.Width, photo.Height).Length;
         var result = ImageChain.ProcessChain(photo, maxBytes: lossless - 1);
         Assert.Equal("image/webp", result.MimeType);
@@ -110,7 +122,8 @@ public sealed class WebPTests
         // A busy screen: a noise band heavy enough to exceed the old 500 KB cap, well under 3 MB.
         var random = new Random(8);
         var picture = PixelBuffer.CreateSyntheticScreen(1248, 1972);
-        for (var i = 0; i < 1248 * 300 * 4; i++) picture.Bgra[i] = (i & 3) == 3 ? (byte)255 : (byte)random.Next(256);
+        for (var i = 0; i < 1248 * 300 * 4; i++)
+            picture.Bgra[i] = (i & 3) == 3 ? (byte)255 : (byte)random.Next(256);
         var lossless = WebP.Lossless(picture.Bgra, picture.Width, picture.Height).Length;
         Assert.InRange(lossless, 500 * 1024 + 1, ImageChain.DefaultMaxInlineBytes);
         var result = ImageChain.ProcessChain(picture);
@@ -127,7 +140,8 @@ public sealed class WebPTests
         var random = new Random(5);
         var noise = new PixelBuffer(1600, 1600);
         random.NextBytes(noise.Bgra);
-        for (var i = 3; i < noise.Bgra.Length; i += 4) noise.Bgra[i] = 255;
+        for (var i = 3; i < noise.Bgra.Length; i += 4)
+            noise.Bgra[i] = 255;
         Assert.True(WebP.Lossless(noise.Bgra, noise.Width, noise.Height).Length > ImageChain.DefaultMaxInlineBytes);
         var result = ImageChain.ProcessChain(noise);
         Assert.True(result.Bytes.Length <= ImageChain.DefaultMaxInlineBytes, result.Bytes.Length + " bytes");

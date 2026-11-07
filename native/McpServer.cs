@@ -20,19 +20,19 @@ namespace NexusAndroid;
 public sealed class McpServer
 {
     private readonly NativeEngine _engine;
-    private readonly string stdioSession=Guid.NewGuid().ToString("N");
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string,DateTimeOffset> httpSessions=new();
-    private static readonly HashSet<string> Protocols=["2024-11-05","2025-03-26","2025-06-18","2025-11-25"];
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string,CancellationTokenSource> requests=new();
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string,bool> cancelledRequests=new();
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string,string> agents=new();
+    private readonly string stdioSession = Guid.NewGuid().ToString("N");
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> httpSessions = new();
+    private static readonly HashSet<string> Protocols = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource> requests = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> cancelledRequests = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> agents = new();
 
     public McpServer(string? customAdbPath = null)
     {
         _engine = new NativeEngine(new AdbClient(customAdbPath));
     }
 
-    public McpServer(NativeEngine engine) { _engine=engine; }
+    public McpServer(NativeEngine engine) { _engine = engine; }
 
     public void RunStdio()
     {
@@ -40,10 +40,12 @@ public sealed class McpServer
         using var reader = new StreamReader(Console.OpenStandardInput(), utf8NoBom);
         using var writer = new StreamWriter(Console.OpenStandardOutput(), utf8NoBom) { AutoFlush = true };
 
-        var pending=new List<Task>();var outputLock=new object();
+        var pending = new List<Task>();
+        var outputLock = new object();
         while (reader.ReadLine() is { } line)
         {
-            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
 
             JsonObject? request;
             try
@@ -55,33 +57,51 @@ public sealed class McpServer
                 continue;
             }
 
-            if (request == null) continue;
-            if(request["method"]?.ToString()=="notifications/cancelled"){HandleRequest(request);continue;}
-            var captured=request;pending.Add(Task.Run(()=>{var response=HandleRequest(captured);if(response is not null)lock(outputLock)writer.WriteLine(response.ToJsonString(new JsonSerializerOptions{WriteIndented=false}));}));
-            pending.RemoveAll(t=>t.IsCompleted);
+            if (request == null)
+                continue;
+            if (request["method"]?.ToString() == "notifications/cancelled")
+            {
+                HandleRequest(request);
+                continue;
+            }
+            var captured = request;
+            pending.Add(Task.Run(() =>
+            {
+                var response = HandleRequest(captured);
+                if (response is not null)
+                    lock (outputLock)
+                        writer.WriteLine(response.ToJsonString(new JsonSerializerOptions { WriteIndented = false }));
+            }));
+            pending.RemoveAll(t => t.IsCompleted);
         }
-        foreach(var request in requests.Where(p=>p.Key.StartsWith(stdioSession+":",StringComparison.Ordinal)))request.Value.Cancel();
-        Task.WaitAll(pending.ToArray());_engine.CloseSession(stdioSession);_engine.Shutdown();
+        foreach (var request in requests.Where(p => p.Key.StartsWith(stdioSession + ":", StringComparison.Ordinal)))
+            request.Value.Cancel();
+        Task.WaitAll(pending.ToArray());
+        _engine.CloseSession(stdioSession);
+        _engine.Shutdown();
     }
 
     public JsonObject? HandleRequest(JsonObject req)
     {
-        NativeSafety.Session.Value??=stdioSession;
+        NativeSafety.Session.Value ??= stdioSession;
         string? method = req["method"]?.GetValue<string>();
         var id = req["id"];
 
-        if (string.IsNullOrEmpty(method)) return null;
+        if (string.IsNullOrEmpty(method))
+            return null;
 
         if (method == "initialize")
         {
-            var agent=NativeJournal.Identify(req["params"]?["clientInfo"]?["name"]?.ToString());if(agent is not null)agents[NativeSafety.Session.Value!]=agent;
+            var agent = NativeJournal.Identify(req["params"]?["clientInfo"]?["name"]?.ToString());
+            if (agent is not null)
+                agents[NativeSafety.Session.Value!] = agent;
             return new JsonObject
             {
                 ["jsonrpc"] = "2.0",
                 ["id"] = id?.DeepClone(),
                 ["result"] = new JsonObject
                 {
-                    ["protocolVersion"] = Protocols.Contains(req["params"]?["protocolVersion"]?.ToString()??"")?req["params"]!["protocolVersion"]!.ToString():"2025-11-25",
+                    ["protocolVersion"] = Protocols.Contains(req["params"]?["protocolVersion"]?.ToString() ?? "") ? req["params"]!["protocolVersion"]!.ToString() : "2025-11-25",
                     ["capabilities"] = new JsonObject
                     {
                         ["tools"] = new JsonObject(),
@@ -95,11 +115,22 @@ public sealed class McpServer
             };
         }
 
-        if (method == "notifications/initialized") return null;
-        if(method=="ping")return new JsonObject{["jsonrpc"]="2.0",["id"]=id?.DeepClone(),["result"]=new JsonObject()};
-        if(method=="notifications/cancelled")
+        if (method == "notifications/initialized")
+            return null;
+        if (method == "ping")
+            return new JsonObject { ["jsonrpc"] = "2.0", ["id"] = id?.DeepClone(), ["result"] = new JsonObject() };
+        if (method == "notifications/cancelled")
         {
-            var requestKey=(NativeSafety.Session.Value??stdioSession)+":"+req["params"]?["requestId"]?.ToJsonString();if(requests.TryGetValue(requestKey,out var pending)){pending.Cancel();}else {cancelledRequests[requestKey]=true;}return null;
+            var requestKey = (NativeSafety.Session.Value ?? stdioSession) + ":" + req["params"]?["requestId"]?.ToJsonString();
+            if (requests.TryGetValue(requestKey, out var pending))
+            {
+                pending.Cancel();
+            }
+            else
+            {
+                cancelledRequests[requestKey] = true;
+            }
+            return null;
         }
 
         if (method == "tools/list")
@@ -123,12 +154,31 @@ public sealed class McpServer
 
             try
             {
-                NativeJournal.Agent.Value=agents.GetValueOrDefault(NativeSafety.Session.Value??stdioSession)??(NativeSafety.Session.Value==stdioSession?NativeJournal.Identify(Environment.GetEnvironmentVariable("NEXUS_AGENT")):null);
-                var requestKey=(NativeSafety.Session.Value??stdioSession)+":"+id?.ToJsonString();using var cancellation=new CancellationTokenSource();requests[requestKey]=cancellation;if(cancelledRequests.TryRemove(requestKey,out _)){cancellation.Cancel();}NativeSafety.Cancellation.Value=cancellation.Token;
-                JsonObject toolResult;try{toolResult=_engine.Execute(toolName,args);}finally{requests.TryRemove(requestKey,out _);NativeSafety.Cancellation.Value=default;if(httpSessions.ContainsKey(NativeSafety.Session.Value!))httpSessions[NativeSafety.Session.Value!]=DateTimeOffset.UtcNow;}
+                NativeJournal.Agent.Value = agents.GetValueOrDefault(NativeSafety.Session.Value ?? stdioSession) ?? (NativeSafety.Session.Value == stdioSession ? NativeJournal.Identify(Environment.GetEnvironmentVariable("NEXUS_AGENT")) : null);
+                var requestKey = (NativeSafety.Session.Value ?? stdioSession) + ":" + id?.ToJsonString();
+                using var cancellation = new CancellationTokenSource();
+                requests[requestKey] = cancellation;
+                if (cancelledRequests.TryRemove(requestKey, out _))
+                {
+                    cancellation.Cancel();
+                }
+                NativeSafety.Cancellation.Value = cancellation.Token;
+                JsonObject toolResult;
+                try
+                {
+                    toolResult = _engine.Execute(toolName, args);
+                }
+                finally
+                {
+                    requests.TryRemove(requestKey, out _);
+                    NativeSafety.Cancellation.Value = default;
+                    if (httpSessions.ContainsKey(NativeSafety.Session.Value!))
+                        httpSessions[NativeSafety.Session.Value!] = DateTimeOffset.UtcNow;
+                }
                 var result = new JsonObject { ["content"] = toolResult["content"]?.DeepClone() };
                 // MCP: structuredContent is an object or absent; null is rejected by clients (map, apps... without one).
-                if (toolResult["structuredContent"] is JsonObject structured) result["structuredContent"] = structured.DeepClone();
+                if (toolResult["structuredContent"] is JsonObject structured)
+                    result["structuredContent"] = structured.DeepClone();
                 return new JsonObject
                 {
                     ["jsonrpc"] = "2.0",
@@ -180,15 +230,23 @@ public sealed class McpServer
     {
         static string? Read(string? path)
         {
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
-            try { var text = File.ReadAllText(path).Trim(); return text.Length > 0 ? text : null; }
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                return null;
+            try
+            {
+                var text = File.ReadAllText(path).Trim();
+                return text.Length > 0 ? text : null;
+            }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
         }
         var declared = Environment.GetEnvironmentVariable("NEXUS_MCP_TOKEN_FILE");
-        if (!string.IsNullOrWhiteSpace(declared)) return Read(declared);
-        if (Read(Path.Join(Tools.Home, ".nexus", "mcp-token.txt")) is { } shared) return shared;
+        if (!string.IsNullOrWhiteSpace(declared))
+            return Read(declared);
+        if (Read(Path.Join(Tools.Home, ".nexus", "mcp-token.txt")) is { } shared)
+            return shared;
         var env = Environment.GetEnvironmentVariable("NEXUS_MCP_TOKEN");
-        if (!string.IsNullOrWhiteSpace(env)) return env.Trim();
+        if (!string.IsNullOrWhiteSpace(env))
+            return env.Trim();
         return Read(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "NexusSecure", "agents", "nexus-mcp-token.txt"));
     }
 
@@ -221,7 +279,7 @@ public sealed class McpServer
             503 => "Service Unavailable",
             _ => "Status"
         };
-        var sessionHeader=NativeSafety.Session.Value is {Length:>0} session?$"Mcp-Session-Id: {session}\r\n":"";
+        var sessionHeader = NativeSafety.Session.Value is { Length: > 0 } session ? $"Mcp-Session-Id: {session}\r\n" : "";
         var header = $"HTTP/1.1 {status} {statusText}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\n{sessionHeader}Connection: close\r\n\r\n";
         var headerBytes = Encoding.ASCII.GetBytes(header);
         await stream.WriteAsync(headerBytes);
@@ -232,7 +290,8 @@ public sealed class McpServer
     public async Task RunHttpAsync(int port = 16180, CancellationToken cancellationToken = default)
     {
         var expectedToken = ConfiguredToken();
-        if(string.IsNullOrWhiteSpace(expectedToken))throw new InvalidOperationException("NEXUS_MCP_TOKEN or NEXUS_MCP_TOKEN_FILE required: HTTP daemon refuses unauthenticated startup");
+        if (string.IsNullOrWhiteSpace(expectedToken))
+            throw new InvalidOperationException("NEXUS_MCP_TOKEN or NEXUS_MCP_TOKEN_FILE required: HTTP daemon refuses unauthenticated startup");
         using var listener = new TcpListener(IPAddress.Loopback, port);
         listener.Start();
         try
@@ -240,7 +299,14 @@ public sealed class McpServer
             using var restart = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _ = WatchRestartRequestAsync(restart, restart.Token);
             cancellationToken = restart.Token;
-            using var reg = cancellationToken.Register(() => { try { listener.Stop(); } catch (SocketException) { /* best-effort stop inside a cancellation callback: must never throw */ } });
+            using var reg = cancellationToken.Register(() =>
+            {
+                try
+                {
+                    listener.Stop();
+                }
+                catch (SocketException) { /* best-effort stop inside a cancellation callback: must never throw */ }
+            });
             while (!cancellationToken.IsCancellationRequested)
             {
                 TcpClient client;
@@ -251,14 +317,26 @@ public sealed class McpServer
                 catch (OperationCanceledException) { break; }
                 catch (SocketException) when (cancellationToken.IsCancellationRequested) { break; }
                 Interlocked.Increment(ref activeConnections);
-                _ = Task.Run(async () => { try { await HandleHttpClientAsync(client, expectedToken); } finally { Interlocked.Decrement(ref activeConnections); } }, CancellationToken.None);
-                var stale=httpSessions.Where(p=>DateTimeOffset.UtcNow-p.Value>TimeSpan.FromSeconds(1618)&&!requests.Keys.Any(k=>k.StartsWith(p.Key+":",StringComparison.Ordinal))).Select(p=>p.Key).ToList();
-                foreach(var key in stale)_ = httpSessions.TryRemove(key,out _)?Task.Run(()=>CloseSession(key)):Task.CompletedTask;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await HandleHttpClientAsync(client, expectedToken);
+                    }
+                    finally { Interlocked.Decrement(ref activeConnections); }
+                }, CancellationToken.None);
+                var stale = httpSessions.Where(p => DateTimeOffset.UtcNow - p.Value > TimeSpan.FromSeconds(1618) && !requests.Keys.Any(k => k.StartsWith(p.Key + ":", StringComparison.Ordinal))).Select(p => p.Key).ToList();
+                foreach (var key in stale)
+                    _ = httpSessions.TryRemove(key, out _) ? Task.Run(() => CloseSession(key), cancellationToken) : Task.CompletedTask;
             }
         }
         finally
         {
-            try { listener.Stop(); } catch (SocketException) { /* best-effort cleanup: listener may already be stopped */ }
+            try
+            {
+                listener.Stop();
+            }
+            catch (SocketException) { /* best-effort cleanup: listener may already be stopped */ }
         }
     }
 
@@ -271,9 +349,9 @@ public sealed class McpServer
 
     /// <summary>Antigravity's MCP client never initializes again after a 404 ("session not found" until the app restarts):
     /// its own expired or pre-restart session id (daemon format, ?agent=antigravity) is opened again. Others get 404.</summary>
-    internal static bool ResumesStaleSession(string target,string session)=>
-        session.Length==32&&session.All(char.IsAsciiHexDigitLower)&&
-        target.Split('?',2).ElementAtOrDefault(1)?.Split('&').Contains("agent=antigravity",StringComparer.OrdinalIgnoreCase)==true;
+    internal static bool ResumesStaleSession(string target, string session) =>
+        session.Length == 32 && session.All(char.IsAsciiHexDigitLower) &&
+        target.Split('?', 2).ElementAtOrDefault(1)?.Split('&').Contains("agent=antigravity", StringComparer.OrdinalIgnoreCase) == true;
 
     private async Task WatchRestartRequestAsync(CancellationTokenSource stop, CancellationToken token)
     {
@@ -293,11 +371,19 @@ public sealed class McpServer
                         Console.Error.WriteLine("nexus-android: restart requested, stopping once idle");
                     }
                 }
-                if (wanted && Volatile.Read(ref activeConnections) == 0) { stop.Cancel(); return; }
+                if (wanted && Volatile.Read(ref activeConnections) == 0)
+                {
+                    stop.Cancel();
+                    return;
+                }
                 await Task.Delay(TimeSpan.FromSeconds(2), token);
             }
             catch (OperationCanceledException) { return; }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Console.Error.WriteLine("nexus-android: restart request: " + error.Message); await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                Console.Error.WriteLine("nexus-android: restart request: " + error.Message);
+                await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None);
+            }
         }
     }
 
@@ -307,21 +393,24 @@ public sealed class McpServer
         {
             try
             {
-                using var stream = client.GetStream();using var receiving=new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                using var stream = client.GetStream();
+                using var receiving = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 var headerBytes = new List<byte>(1024);
                 var buf = new byte[1];
                 int matchState = 0;
                 while (headerBytes.Count < 65536)
                 {
-                    int n = await stream.ReadAsync(buf.AsMemory(0, 1),receiving.Token);
-                    if (n == 0) return;
+                    int n = await stream.ReadAsync(buf.AsMemory(0, 1), receiving.Token);
+                    if (n == 0)
+                        return;
                     byte b = buf[0];
                     headerBytes.Add(b);
                     // Looking for \r\n\r\n: even states expect \r, odd states \n.
                     if (b == (matchState % 2 == 0 ? '\r' : '\n'))
                     {
                         matchState++;
-                        if (matchState == 4) break;
+                        if (matchState == 4)
+                            break;
                     }
                     else
                     {
@@ -331,10 +420,12 @@ public sealed class McpServer
 
                 var headerText = Encoding.ASCII.GetString(headerBytes.ToArray());
                 var lines = headerText.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
-                if (lines.Length == 0) return;
+                if (lines.Length == 0)
+                    return;
 
                 var reqParts = lines[0].Split(' ', 3);
-                if (reqParts.Length < 2) return;
+                if (reqParts.Length < 2)
+                    return;
                 var method = reqParts[0].ToUpperInvariant();
                 var rawTarget = reqParts[1];
 
@@ -350,13 +441,18 @@ public sealed class McpServer
                 if (headers.TryGetValue("content-length", out var clStr))
                     int.TryParse(clStr, NumberStyles.None, CultureInfo.InvariantCulture, out contentLength);
 
-                if(contentLength<0||contentLength>4*1024*1024){await WriteHttpResponseAsync(stream,400,"text/plain",Encoding.UTF8.GetBytes("Request too large"));return;}
+                if (contentLength < 0 || contentLength > 4 * 1024 * 1024)
+                {
+                    await WriteHttpResponseAsync(stream, 400, "text/plain", Encoding.UTF8.GetBytes("Request too large"));
+                    return;
+                }
                 var bodyBytes = new byte[contentLength];
                 int offset = 0;
                 while (offset < contentLength)
                 {
-                    int read = await stream.ReadAsync(bodyBytes.AsMemory(offset, contentLength - offset),receiving.Token);
-                    if (read == 0) break;
+                    int read = await stream.ReadAsync(bodyBytes.AsMemory(offset, contentLength - offset), receiving.Token);
+                    if (read == 0)
+                        break;
                     offset += read;
                 }
 
@@ -406,27 +502,57 @@ public sealed class McpServer
                     return;
                 }
 
-                if(method=="DELETE")
+                if (method == "DELETE")
                 {
-                    if(!headers.TryGetValue("mcp-session-id",out var deleted)||!httpSessions.TryRemove(deleted,out _)){await WriteHttpResponseAsync(stream,404,"text/plain",Encoding.UTF8.GetBytes("Unknown or expired session"));return;}
-                    CloseSession(deleted);await WriteHttpResponseAsync(stream,204,"application/json",[]);return;
+                    if (!headers.TryGetValue("mcp-session-id", out var deleted) || !httpSessions.TryRemove(deleted, out _))
+                    {
+                        await WriteHttpResponseAsync(stream, 404, "text/plain", Encoding.UTF8.GetBytes("Unknown or expired session"));
+                        return;
+                    }
+                    CloseSession(deleted);
+                    await WriteHttpResponseAsync(stream, 204, "application/json", []);
+                    return;
                 }
-                if(method!="POST"){await WriteHttpResponseAsync(stream,405,"text/plain",Encoding.UTF8.GetBytes("POST or DELETE required"));return;}
-                if(offset!=contentLength){await WriteHttpResponseAsync(stream,400,"text/plain",Encoding.UTF8.GetBytes("Truncated body"));return;}
+                if (method != "POST")
+                {
+                    await WriteHttpResponseAsync(stream, 405, "text/plain", Encoding.UTF8.GetBytes("POST or DELETE required"));
+                    return;
+                }
+                if (offset != contentLength)
+                {
+                    await WriteHttpResponseAsync(stream, 400, "text/plain", Encoding.UTF8.GetBytes("Truncated body"));
+                    return;
+                }
 
                 var bodyStr = Encoding.UTF8.GetString(bodyBytes, 0, offset);
                 var reqNode = JsonNode.Parse(bodyStr);
                 if (reqNode is JsonObject reqObj)
                 {
-                    if(reqObj["method"]?.ToString()=="initialize")
+                    if (reqObj["method"]?.ToString() == "initialize")
                     {
-                        NativeSafety.Session.Value=Guid.NewGuid().ToString("N");httpSessions[NativeSafety.Session.Value]=DateTimeOffset.UtcNow;
+                        NativeSafety.Session.Value = Guid.NewGuid().ToString("N");
+                        httpSessions[NativeSafety.Session.Value] = DateTimeOffset.UtcNow;
                     }
                     else
                     {
-                        if(!headers.TryGetValue("mcp-session-id",out var session)){await WriteHttpResponseAsync(stream,400,"text/plain",Encoding.UTF8.GetBytes("Initialize an MCP session first, then send its Mcp-Session-Id header"));return;}if(!httpSessions.ContainsKey(session)&&ResumesStaleSession(rawTarget,session)){httpSessions[session]=DateTimeOffset.UtcNow;agents[session]="antigravity";Console.Error.WriteLine("nexus-android: Antigravity session "+session[..8]+" resumed: its client never initializes again after a 404");}
-                        if(!httpSessions.ContainsKey(session)){await WriteHttpResponseAsync(stream,404,"text/plain",Encoding.UTF8.GetBytes("Unknown or expired MCP session; initialize again"));return;}
-                        NativeSafety.Session.Value=session;httpSessions[session]=DateTimeOffset.UtcNow;
+                        if (!headers.TryGetValue("mcp-session-id", out var session))
+                        {
+                            await WriteHttpResponseAsync(stream, 400, "text/plain", Encoding.UTF8.GetBytes("Initialize an MCP session first, then send its Mcp-Session-Id header"));
+                            return;
+                        }
+                        if (!httpSessions.ContainsKey(session) && ResumesStaleSession(rawTarget, session))
+                        {
+                            httpSessions[session] = DateTimeOffset.UtcNow;
+                            agents[session] = "antigravity";
+                            Console.Error.WriteLine("nexus-android: Antigravity session " + session[..8] + " resumed: its client never initializes again after a 404");
+                        }
+                        if (!httpSessions.ContainsKey(session))
+                        {
+                            await WriteHttpResponseAsync(stream, 404, "text/plain", Encoding.UTF8.GetBytes("Unknown or expired MCP session; initialize again"));
+                            return;
+                        }
+                        NativeSafety.Session.Value = session;
+                        httpSessions[session] = DateTimeOffset.UtcNow;
                     }
                     var resp = HandleRequest(reqObj);
                     if (resp is null)
@@ -451,7 +577,17 @@ public sealed class McpServer
     }
     private void CloseSession(string session)
     {
-        foreach(var request in requests.Where(p=>p.Key.StartsWith(session+":",StringComparison.Ordinal)))request.Value.Cancel();
-        try{_engine.CloseSession(session);}finally{agents.TryRemove(session,out _);foreach(var item in cancelledRequests.Keys.Where(k=>k.StartsWith(session+":",StringComparison.Ordinal)))cancelledRequests.TryRemove(item,out _);}
+        foreach (var request in requests.Where(p => p.Key.StartsWith(session + ":", StringComparison.Ordinal)))
+            request.Value.Cancel();
+        try
+        {
+            _engine.CloseSession(session);
+        }
+        finally
+        {
+            agents.TryRemove(session, out _);
+            foreach (var item in cancelledRequests.Keys.Where(k => k.StartsWith(session + ":", StringComparison.Ordinal)))
+                cancelledRequests.TryRemove(item, out _);
+        }
     }
 }

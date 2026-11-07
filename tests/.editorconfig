@@ -1,0 +1,5 @@
+[*.cs]
+# Test fixtures: constant argument arrays read best inline (CA1861), and the contract harness reports a failed check
+# with a plain Exception that no production catch filter treats as recoverable (CA2201).
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA2201.severity = none

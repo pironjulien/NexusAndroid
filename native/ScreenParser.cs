@@ -1,3 +1,4 @@
+using System.Globalization;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -48,7 +49,8 @@ public static class ScreenParser
     public static List<UiElement> ParseXml(string xmlContent)
     {
         var elements = new List<UiElement>();
-        if (string.IsNullOrWhiteSpace(xmlContent)) return elements;
+        if (string.IsNullOrWhiteSpace(xmlContent))
+            return elements;
 
         try
         {
@@ -67,13 +69,17 @@ public static class ScreenParser
                 bool enabled = !bool.TryParse(node.Attribute("enabled")?.Value, out bool e) || e;
                 bool focused = bool.TryParse(node.Attribute("focused")?.Value, out bool f) && f;
                 bool isPassword = bool.TryParse(node.Attribute("password")?.Value, out bool p) && p;
-                bool editable=node.Attribute("editable")?.Value=="true"||cls.EndsWith("EditText")||cls.EndsWith("AutoCompleteTextView");
+                bool editable = node.Attribute("editable")?.Value == "true" || cls.EndsWith("EditText", StringComparison.Ordinal) || cls.EndsWith("AutoCompleteTextView", StringComparison.Ordinal);
 
-                var showingHint=node.Attribute("showing-hint")?.Value=="true";var rawText = showingHint?"":text;var rawDescription=desc;
+                var showingHint = node.Attribute("showing-hint")?.Value == "true";
+                var rawText = showingHint ? "" : text;
+                var rawDescription = desc;
                 if (isPassword || SensitiveKeywordRegex.IsMatch(resId))
                 {
-                    if (!string.IsNullOrEmpty(text)) text = "[MASKED]";
-                    if (!string.IsNullOrEmpty(desc)) desc = "[MASKED]";
+                    if (!string.IsNullOrEmpty(text))
+                        text = "[MASKED]";
+                    if (!string.IsNullOrEmpty(desc))
+                        desc = "[MASKED]";
                 }
 
                 var (left, top, right, bottom) = ParseBounds(bounds);
@@ -107,8 +113,8 @@ public static class ScreenParser
                         resId,
                         rawDescription,
                         false,
-                        string.Join('/',node.AncestorsAndSelf().Reverse().Where(e=>e.Name=="node").Select(e=>Math.Max(0,int.TryParse(e.Attribute("drawing-order")?.Value,out var order)?order:0).ToString("D8")+":"+e.ElementsBeforeSelf("node").Count().ToString("D8"))),
-                        node.Attribute("selected")?.Value=="true",
+                        string.Join('/', node.AncestorsAndSelf().Reverse().Where(e => e.Name == "node").Select(e => Math.Max(0, int.TryParse(e.Attribute("drawing-order")?.Value, out var order) ? order : 0).ToString("D8", CultureInfo.InvariantCulture) + ":" + e.ElementsBeforeSelf("node").Count().ToString("D8", CultureInfo.InvariantCulture))),
+                        node.Attribute("selected")?.Value == "true",
                         showingHint
                     ));
                 }
@@ -119,8 +125,9 @@ public static class ScreenParser
             // Fallback: return empty on unparseable xml or bounds
         }
 
-        var context=NativeSafety.HasCodeKeyword(string.Join(' ',elements.Select(e=>e.RawText+" "+e.RawDescription)));
-        for(var i=0;i<elements.Count;i++)elements[i]=elements[i] with {Text=NativeSafety.MaskCodes(NativeSafety.Mask(elements[i].Text),context),ContentDesc=NativeSafety.MaskCodes(NativeSafety.Mask(elements[i].ContentDesc),context)};
+        var context = NativeSafety.HasCodeKeyword(string.Join(' ', elements.Select(e => e.RawText + " " + e.RawDescription)));
+        for (var i = 0; i < elements.Count; i++)
+            elements[i] = elements[i] with { Text = NativeSafety.MaskCodes(NativeSafety.Mask(elements[i].Text), context), ContentDesc = NativeSafety.MaskCodes(NativeSafety.Mask(elements[i].ContentDesc), context) };
         return elements;
     }
 
@@ -129,31 +136,35 @@ public static class ScreenParser
         var m = BoundsRegex.Match(boundsStr ?? "");
         if (m.Success)
         {
-            int l = int.Parse(m.Groups[1].Value);
-            int t = int.Parse(m.Groups[2].Value);
-            int r = int.Parse(m.Groups[3].Value);
-            int b = int.Parse(m.Groups[4].Value);
+            int l = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+            int t = int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture);
+            int r = int.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture);
+            int b = int.Parse(m.Groups[4].Value, CultureInfo.InvariantCulture);
             return (l, t, r, b);
         }
         return (0, 0, 0, 0);
     }
 
-    public static string FormatCompactTree(IEnumerable<UiElement> elements,double scaleX=1,double scaleY=1)
+    public static string FormatCompactTree(IEnumerable<UiElement> elements, double scaleX = 1, double scaleY = 1)
     {
         var sb = new StringBuilder();
         foreach (var el in elements)
         {
             var flags = new List<string>();
-            if (el.Clickable) flags.Add("click");
-            if (el.Scrollable) flags.Add("scroll");
-            if (el.Focused) flags.Add("focus");
-            if (el.IsPassword) flags.Add("pwd");
+            if (el.Clickable)
+                flags.Add("click");
+            if (el.Scrollable)
+                flags.Add("scroll");
+            if (el.Focused)
+                flags.Add("focus");
+            if (el.IsPassword)
+                flags.Add("pwd");
 
             string flagStr = flags.Count > 0 ? $" [{string.Join(",", flags)}]" : "";
             string label = !string.IsNullOrEmpty(el.Text) ? $"\"{el.Text}\"" : (!string.IsNullOrEmpty(el.ContentDesc) ? $"desc:\"{el.ContentDesc}\"" : el.ClassName);
 
             label = NativeSafety.Mask(label);
-            sb.AppendLine($"[{el.Id.TrimStart('e')}] {el.ClassName.Split('.').Last()} {label}{flagStr} @{(int)Math.Round(el.CenterX*scaleX)},{(int)Math.Round(el.CenterY*scaleY)}" + (el.ResourceId.Length > 0 ? $" #{el.ResourceId}" : ""));
+            sb.AppendLine($"[{el.Id.TrimStart('e')}] {el.ClassName.Split('.').Last()} {label}{flagStr} @{(int)Math.Round(el.CenterX * scaleX)},{(int)Math.Round(el.CenterY * scaleY)}" + (el.ResourceId.Length > 0 ? $" #{el.ResourceId}" : ""));
         }
         return sb.ToString();
     }

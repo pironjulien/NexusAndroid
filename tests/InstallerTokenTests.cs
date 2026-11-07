@@ -35,14 +35,18 @@ public sealed class InstallerTokenTests
         Assert.True(Directory.Exists(coreModules), "PowerShell 7 is required for the inherited-module regression fixture.");
         var start = new ProcessStartInfo(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe"))
         { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
-        foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script }) start.ArgumentList.Add(arg);
+        foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script })
+            start.ArgumentList.Add(arg);
         start.Environment["PSModulePath"] = coreModules + ";" + desktopModules;
         start.Environment["NEXUS_TEST_READY"] = input;
         start.Environment["NEXUS_TEST_RESULT"] = result;
         using var process = Process.Start(start)!;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
-        try { await process.WaitForExitAsync(timeout.Token); }
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+        }
         finally { if (!process.HasExited) process.Kill(true); }
         Assert.True(process.ExitCode == 0, await process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken));
         Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(input))), File.ReadAllText(result).Trim());
@@ -52,7 +56,8 @@ public sealed class InstallerTokenTests
     {
         var executable = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script }) start.ArgumentList.Add(arg);
+        foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script })
+            start.ArgumentList.Add(arg);
         start.Environment["NEXUS_TEST_HOME"] = home;
         start.Environment["NEXUS_TEST_READY"] = ready;
         start.Environment["NEXUS_TEST_GO"] = go;
@@ -64,7 +69,8 @@ public sealed class InstallerTokenTests
     private static async Task WaitForFile(string file)
     {
         var deadline = DateTime.UtcNow.AddSeconds(30);
-        while (!File.Exists(file) && DateTime.UtcNow < deadline) await Task.Delay(10, TestContext.Current.CancellationToken);
+        while (!File.Exists(file) && DateTime.UtcNow < deadline)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         Assert.True(File.Exists(file), "PowerShell fixture did not reach the initialization barrier.");
     }
 
@@ -78,7 +84,8 @@ public sealed class InstallerTokenTests
         var home = Path.Join(TestPaths.Root, "install-token-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Join(home, ".nexus"));
         var file = Path.Join(home, ".nexus", "mcp-token.txt");
-        if (existing is not null) File.WriteAllText(file, existing);
+        if (existing is not null)
+            File.WriteAllText(file, existing);
         // A daemon or caller may read the existing token while another installer resolves that same path.
         using var daemonRead = daemonReading ? File.Open(file, FileMode.Open, FileAccess.Read, FileShare.Read) : null;
         var script = Path.Join(home, "token-fixture.ps1");
@@ -111,13 +118,16 @@ public sealed class InstallerTokenTests
             foreach (var process in new[] { first, second })
                 Assert.True(process.ExitCode == 0, await process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken));
             var token = File.ReadAllText(file);
-            if (!string.IsNullOrEmpty(existing)) Assert.Equal(existing, token);
-            else Assert.Matches("^[a-f0-9]{64}$", token);
+            if (!string.IsNullOrEmpty(existing))
+                Assert.Equal(existing, token);
+            else
+                Assert.Matches("^[a-f0-9]{64}$", token);
             Assert.All(results, result => Assert.Equal(token, File.ReadAllText(result)));
         }
         finally
         {
-            foreach (var process in new[] { first, second }.Where(p => !p.HasExited)) process.Kill(true);
+            foreach (var process in new[] { first, second }.Where(p => !p.HasExited))
+                process.Kill(true);
         }
     }
 }

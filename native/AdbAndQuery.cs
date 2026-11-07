@@ -24,12 +24,12 @@ public partial class AdbClient
     public string AdbPath => adbPath ?? (Environment.GetEnvironmentVariable("NEXUS_ANDROID_ADB") is { Length: > 0 } set ? adbPath = set
         : FindAdb() is { } found ? adbPath = found : "adb.exe");
     public string? SelectedSerial { get; set; }
-    public readonly string ConnectionStatePath;
+    public string ConnectionStatePath { get; }
 
-    public AdbClient(string? customAdbPath = null,string? connectionStatePath=null)
+    public AdbClient(string? customAdbPath = null, string? connectionStatePath = null)
     {
         adbPath = customAdbPath;
-        ConnectionStatePath=connectionStatePath??Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".nexus","nexus-android","wifi.json");
+        ConnectionStatePath = connectionStatePath ?? Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nexus", "nexus-android", "wifi.json");
     }
 
     public static string? FindAdb()
@@ -41,7 +41,8 @@ public partial class AdbClient
             try
             {
                 string cand = Path.Join(p.Trim(), OperatingSystem.IsWindows() ? "adb.exe" : "adb");
-                if (File.Exists(cand)) return cand;
+                if (File.Exists(cand))
+                    return cand;
             }
             catch (ArgumentException) { /* PATH entry with invalid characters: skip it */ }
         }
@@ -58,7 +59,8 @@ public partial class AdbClient
 
         foreach (var c in candidates)
         {
-            if (File.Exists(c)) return c;
+            if (File.Exists(c))
+                return c;
         }
 
         var winget = Path.Join(localAppData, "Microsoft", "WinGet", "Packages");
@@ -77,7 +79,8 @@ public partial class AdbClient
         {
             string serial = m.Groups[1].Value;
             string state = m.Groups[2].Value;
-            var modelMatch=Regex.Match(m.Groups[3].Value,@"(?:^|\s)model:(\S+)");string model=modelMatch.Success?modelMatch.Groups[1].Value.Replace('_',' '):"Android";
+            var modelMatch = Regex.Match(m.Groups[3].Value, @"(?:^|\s)model:(\S+)");
+            string model = modelMatch.Success ? modelMatch.Groups[1].Value.Replace('_', ' ') : "Android";
             bool isUsb = !IsWirelessSerial(serial);
             list.Add(new DeviceInfo(serial, state, model, isUsb));
         }
@@ -85,40 +88,89 @@ public partial class AdbClient
         return list;
     }
 
-    public virtual DeviceInfo? PickDevice()=>ConnectRemembered();
+    public virtual DeviceInfo? PickDevice() => ConnectRemembered();
 
     public virtual (string Stdout, string Stderr) RunAdb(string arguments, int timeoutMs = 15000)
     {
         string fullArgs = arguments;
-        if (!string.IsNullOrEmpty(SelectedSerial) && !arguments.StartsWith("devices") && !arguments.StartsWith("-s"))
+        if (!string.IsNullOrEmpty(SelectedSerial) && !arguments.StartsWith("devices", StringComparison.Ordinal) && !arguments.StartsWith("-s", StringComparison.Ordinal))
         {
             fullArgs = $"-s {SelectedSerial} {arguments}";
         }
 
-        var selected=SelectedSerial;try{return RunProcess(fullArgs,timeoutMs);}catch(TimeoutException){ConnectionLost(selected);throw;}catch(InvalidOperationException e)when(Regex.IsMatch(e.Message,@"(?im)(?:device .*not found|device offline|no devices|protocol fault|connection reset|transport.*closed)")){ConnectionLost(selected);throw;}
+        var selected = SelectedSerial;
+        try
+        {
+            return RunProcess(fullArgs, timeoutMs);
+        }
+        catch (TimeoutException)
+        {
+            ConnectionLost(selected);
+            throw;
+        }
+        catch (InvalidOperationException e) when (Regex.IsMatch(e.Message, @"(?im)(?:device .*not found|device offline|no devices|protocol fault|connection reset|transport.*closed)"))
+        {
+            ConnectionLost(selected);
+            throw;
+        }
     }
-    public virtual (string Stdout,string Stderr) RunHost(string arguments,int timeoutMs=15000)=>RunProcess(arguments,timeoutMs);
-    public virtual (string Stdout,string Stderr) RunAdbArgs(IReadOnlyList<string> arguments,int timeoutMs=15000)
+    public virtual (string Stdout, string Stderr) RunHost(string arguments, int timeoutMs = 15000) => RunProcess(arguments, timeoutMs);
+    public virtual (string Stdout, string Stderr) RunAdbArgs(IReadOnlyList<string> arguments, int timeoutMs = 15000)
     {
-        var psi=new ProcessStartInfo(AdbPath);if(SelectedSerial is {Length:>0} serial){psi.ArgumentList.Add("-s");psi.ArgumentList.Add(serial);}foreach(var argument in arguments)psi.ArgumentList.Add(argument);
-        var selected=SelectedSerial;try{return RunProcess(psi,timeoutMs);}catch(TimeoutException){ConnectionLost(selected);throw;}catch(InvalidOperationException e)when(Regex.IsMatch(e.Message,@"(?im)(?:device .*not found|device offline|no devices|protocol fault|connection reset|transport.*closed)")){ConnectionLost(selected);throw;}
+        var psi = new ProcessStartInfo(AdbPath);
+        if (SelectedSerial is { Length: > 0 } serial)
+        {
+            psi.ArgumentList.Add("-s");
+            psi.ArgumentList.Add(serial);
+        }
+        foreach (var argument in arguments)
+            psi.ArgumentList.Add(argument);
+        var selected = SelectedSerial;
+        try
+        {
+            return RunProcess(psi, timeoutMs);
+        }
+        catch (TimeoutException)
+        {
+            ConnectionLost(selected);
+            throw;
+        }
+        catch (InvalidOperationException e) when (Regex.IsMatch(e.Message, @"(?im)(?:device .*not found|device offline|no devices|protocol fault|connection reset|transport.*closed)"))
+        {
+            ConnectionLost(selected);
+            throw;
+        }
     }
-    private (string Stdout,string Stderr) RunProcess(string fullArgs,int timeoutMs)
-        =>RunProcess(new ProcessStartInfo(AdbPath,fullArgs),timeoutMs);
-    private (string Stdout,string Stderr) RunProcess(ProcessStartInfo psi,int timeoutMs)
+    private (string Stdout, string Stderr) RunProcess(string fullArgs, int timeoutMs)
+        => RunProcess(new ProcessStartInfo(AdbPath, fullArgs), timeoutMs);
+    private static (string Stdout, string Stderr) RunProcess(ProcessStartInfo psi, int timeoutMs)
     {
-        psi.RedirectStandardOutput=true;psi.RedirectStandardError=true;psi.UseShellExecute=false;psi.CreateNoWindow=true;psi.StandardOutputEncoding=Encoding.UTF8;psi.StandardErrorEncoding=Encoding.UTF8;
+        psi.RedirectStandardOutput = true;
+        psi.RedirectStandardError = true;
+        psi.UseShellExecute = false;
+        psi.CreateNoWindow = true;
+        psi.StandardOutputEncoding = Encoding.UTF8;
+        psi.StandardErrorEncoding = Encoding.UTF8;
 
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start ADB process");
         var stdoutTask = proc.StandardOutput.ReadToEndAsync();
         var stderrTask = proc.StandardError.ReadToEndAsync();
 
-        using var timeout=new CancellationTokenSource(timeoutMs);using var cancellation=CancellationTokenSource.CreateLinkedTokenSource(timeout.Token,NativeSafety.Cancellation.Value);
-        try { proc.WaitForExitAsync(cancellation.Token).GetAwaiter().GetResult(); }
-        catch(OperationCanceledException)
+        using var timeout = new CancellationTokenSource(timeoutMs);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, NativeSafety.Cancellation.Value);
+        try
         {
-            try { proc.Kill(); } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { /* best-effort: the process may already be gone */ }
-            if(NativeSafety.Cancellation.Value.IsCancellationRequested)throw new IOException("ADB call cancelled during transport; input outcome may be unknown, observe before any new decision");
+            proc.WaitForExitAsync(cancellation.Token).GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException)
+        {
+            try
+            {
+                proc.Kill();
+            }
+            catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { /* best-effort: the process may already be gone */ }
+            if (NativeSafety.Cancellation.Value.IsCancellationRequested)
+                throw new IOException("ADB call cancelled during transport; input outcome may be unknown, observe before any new decision");
             throw new TimeoutException($"ADB command timed out after {timeoutMs}ms; input outcome may be unknown");
         }
 
@@ -131,15 +183,27 @@ public partial class AdbClient
 
     public byte[] CaptureScreenPng(int timeoutMs = 10000)
     {
-        var physical=CaptureDisplayId();return ExecOut("screencap -p"+(physical is not null?" -d "+physical:""),timeoutMs);
+        var physical = CaptureDisplayId();
+        return ExecOut("screencap -p" + (physical is not null ? " -d " + physical : ""), timeoutMs);
     }
-    public string? CaptureDisplayId(){var displays=Shell("dumpsys SurfaceFlinger --display-id");if(System.Text.RegularExpressions.Regex.Matches(displays,@"(?m)^Display \d+").Count<=1)return null;return ParseLogicalDisplay(Shell("dumpsys display"))??throw new IOException("Multiple displays exist but the active logical display cannot be identified; no arbitrary display captured");}
+    public string? CaptureDisplayId()
+    {
+        var displays = Shell("dumpsys SurfaceFlinger --display-id");
+        if (Regex.Count(displays, @"(?m)^Display \d+") <= 1)
+            return null;
+        return ParseLogicalDisplay(Shell("dumpsys display")) ?? throw new IOException("Multiple displays exist but the active logical display cannot be identified; no arbitrary display captured");
+    }
     public static string? ParseLogicalDisplay(string dump)
     {
-        var match=System.Text.RegularExpressions.Regex.Match(dump,@"mDisplayId=0\s*\n\s*mPrimaryDisplayDevice=[^\n]*\(local:(\d+)\)");if(!match.Success){match=System.Text.RegularExpressions.Regex.Match(dump,"mDisplayId=0\\s*\\n\\s*mBaseDisplayInfo=DisplayInfo\\{[^\\r\\n]*?uniqueId \\\"local:(\\d+)\\\"");}return match.Success?match.Groups[1].Value:null;
+        var match = System.Text.RegularExpressions.Regex.Match(dump, @"mDisplayId=0\s*\n\s*mPrimaryDisplayDevice=[^\n]*\(local:(\d+)\)");
+        if (!match.Success)
+        {
+            match = System.Text.RegularExpressions.Regex.Match(dump, "mDisplayId=0\\s*\\n\\s*mBaseDisplayInfo=DisplayInfo\\{[^\\r\\n]*?uniqueId \\\"local:(\\d+)\\\"");
+        }
+        return match.Success ? match.Groups[1].Value : null;
     }
 
-    public virtual byte[] ExecOut(string command,int timeoutMs=15000)
+    public virtual byte[] ExecOut(string command, int timeoutMs = 15000)
     {
         string fullArgs = "exec-out " + command;
         if (!string.IsNullOrEmpty(SelectedSerial))
@@ -157,16 +221,24 @@ public partial class AdbClient
 
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start ADB screencap");
         using var ms = new MemoryStream();
-        var output=proc.StandardOutput.BaseStream.CopyToAsync(ms);var errors=proc.StandardError.ReadToEndAsync();
+        var output = proc.StandardOutput.BaseStream.CopyToAsync(ms);
+        var errors = proc.StandardError.ReadToEndAsync();
 
         if (!proc.WaitForExit(timeoutMs))
         {
-            try { proc.Kill(); } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { /* best-effort: the process may already be gone */ }
+            try
+            {
+                proc.Kill();
+            }
+            catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { /* best-effort: the process may already be gone */ }
             ConnectionLost(SelectedSerial);
             throw new TimeoutException($"ADB screencap timed out after {timeoutMs}ms");
         }
 
-        output.GetAwaiter().GetResult();var error=errors.GetAwaiter().GetResult();if(proc.ExitCode!=0)throw new IOException("ADB binary read failed: "+NativeSafety.Mask(error));
+        output.GetAwaiter().GetResult();
+        var error = errors.GetAwaiter().GetResult();
+        if (proc.ExitCode != 0)
+            throw new IOException("ADB binary read failed: " + NativeSafety.Mask(error));
         return ms.ToArray();
     }
 

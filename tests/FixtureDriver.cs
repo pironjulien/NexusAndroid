@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 
 namespace NexusAndroid.Tests.Engine;
@@ -17,14 +18,16 @@ internal static class FixtureDriver
         var number = Interlocked.Increment(ref caseNumber);
         var phone = new ConfiguredPhone(command["fixture"]?.DeepClone().AsObject() ?? new());
         var transport = new ConfiguredAdb(phone);
-        var directory = Path.Join(TestPaths.Root, "fixture-cases", number.ToString());
+        var directory = Path.Join(TestPaths.Root, "fixture-cases", number.ToString(CultureInfo.InvariantCulture));
         var server = new McpServer(new NativeEngine(transport, phone, directory, () => new ConfiguredControl(phone)));
         foreach (var (tool, args) in before)
             server.HandleRequest(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = number, ["method"] = "tools/call", ["params"] = new JsonObject { ["name"] = tool, ["arguments"] = args } });
         transport.Commands.Clear();
         var request = command["rpc"]?.DeepClone().AsObject() ?? new JsonObject
         {
-            ["jsonrpc"] = "2.0", ["id"] = number, ["method"] = "tools/call",
+            ["jsonrpc"] = "2.0",
+            ["id"] = number,
+            ["method"] = "tools/call",
             ["params"] = new JsonObject { ["name"] = command["tool"]?.DeepClone(), ["arguments"] = command["args"]?.DeepClone() ?? new JsonObject() },
         };
         var result = server.HandleRequest(request);

@@ -59,8 +59,9 @@ public static class AndroidPolicy
 
     public static bool IsProtectedPackage(string? packageName)
     {
-        if (string.IsNullOrWhiteSpace(packageName)) return false;
-        return ProtectedPackages.Contains(packageName.Trim()) || System.Text.RegularExpressions.Regex.IsMatch(packageName,@"(?i)bank|banque|wallet|crypto|authenticator|binance|(?:^|[._])(?:pay|auth)");
+        if (string.IsNullOrWhiteSpace(packageName))
+            return false;
+        return ProtectedPackages.Contains(packageName.Trim()) || System.Text.RegularExpressions.Regex.IsMatch(packageName, @"(?i)bank|banque|wallet|crypto|authenticator|binance|(?:^|[._])(?:pay|auth)");
     }
 
 }

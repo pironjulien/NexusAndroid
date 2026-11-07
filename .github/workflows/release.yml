@@ -52,7 +52,6 @@ jobs:
           $version = ([xml](Get-Content native/NexusAndroid.csproj -Raw)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "native/NexusAndroid.csproj: no X.Y.Z version ($version)." }
           $found = [ordered]@{
-            'native/Program.cs' = [regex]::Match((Get-Content native/Program.cs -Raw), 'Version = "([^"]+)"').Groups[1].Value
             'mcpb/manifest.json' = (Get-Content mcpb/manifest.json -Raw | ConvertFrom-Json).version
             'plugin/plugin.json' = (Get-Content plugin/plugin.json -Raw | ConvertFrom-Json).version
             'plugin/antigravity/plugin.json' = (Get-Content plugin/antigravity/plugin.json -Raw | ConvertFrom-Json).version
@@ -70,9 +69,12 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory dist | Out-Null
+          # One locked restore for both architectures (packages.lock.json), runtime packs included; then no restore.
+          dotnet restore native/NexusAndroid.csproj -p:SelfContained=true
+          if ($LASTEXITCODE) { throw 'dotnet restore failed.' }
           foreach ($rid in 'win-x64', 'win-arm64') {
             $out = Join-Path $env:RUNNER_TEMP "publish-$rid"
-            dotnet publish native/NexusAndroid.csproj -c Release -r $rid --self-contained true -p:PublishSingleFile=true -o $out
+            dotnet publish native/NexusAndroid.csproj -c Release -r $rid --self-contained true -p:PublishSingleFile=true --no-restore -o $out
             if ($LASTEXITCODE) { throw "dotnet publish $rid failed." }
             if (-not (Test-Path "$out/NexusAndroid.exe") -or -not (Test-Path "$out/plugin/skills/nexus-android/SKILL.md")) { throw "$rid output incomplete." }
             Copy-Item LICENSE, README.md $out
@@ -108,7 +110,7 @@ jobs:
       contents: write
       id-token: write
       attestations: write
-    uses: pironjulien/NexusSystem/.github/workflows/product-dev-release.yml@9cf03f2ac93e207307351b393130ff1cfe2aef7b  # v1.6.40
+    uses: pironjulien/NexusSystem/.github/workflows/product-dev-release.yml@585aa435089995a78b7c3a4c457ba727c9f89840  # v1.6.54
     with:
       product: NexusAndroid
       version: ${{ needs.build.outputs.version }}
@@ -120,7 +122,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    uses: pironjulien/NexusSystem/.github/workflows/product-promote.yml@9cf03f2ac93e207307351b393130ff1cfe2aef7b  # v1.6.40
+    uses: pironjulien/NexusSystem/.github/workflows/product-promote.yml@585aa435089995a78b7c3a4c457ba727c9f89840  # v1.6.54
     with:
       product: NexusAndroid
       promote: ${{ inputs.promote || needs.dev.outputs.tag }}

@@ -31,7 +31,8 @@ public sealed class GestureTests
     private static JsonObject Fixture(string before, string? after = null)
     {
         var fixture = new JsonObject { ["xml"] = before, ["shell"] = new JsonObject() };
-        if (after is not null) fixture["xml_after_input"] = after;
+        if (after is not null)
+            fixture["xml_after_input"] = after;
         return fixture;
     }
 
@@ -260,6 +261,6 @@ public sealed class GestureTests
         fixture["state"] = $"mCurrentFocus=Window{{fixture u0 {App}/.Main}}\nmWakefulness=Awake\nisKeyguardShowing=true";
         fixture["shell"]!["dumpsys trust"] = "(current): deviceLocked=1";
         var result = Act(fixture, """{"steps": [{"do": "tap", "target": "Open"}]}""");
-        Assert.Empty(Inputs(result).Where(i => i.StartsWith("input tap", StringComparison.Ordinal)));
+        Assert.DoesNotContain(Inputs(result), i => i.StartsWith("input tap", StringComparison.Ordinal));
     }
 }

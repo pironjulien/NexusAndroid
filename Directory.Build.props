@@ -5,4 +5,17 @@
     <BaseIntermediateOutputPath>$(NexusBuild)obj\</BaseIntermediateOutputPath>
     <BaseOutputPath>$(NexusBuild)bin\</BaseOutputPath>
   </PropertyGroup>
+  <!-- Compiler and .NET analyzers at the recommended level, style rules of .editorconfig in the build, and every
+       warning an error: a new warning fails the build locally and in CI. -->
+  <PropertyGroup>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <!-- NuGet restore pinned by packages.lock.json (direct and transitive packages, content hashes); CI and release
+       restore in locked mode, so a dependency never changes without a committed lock file. -->
+  <PropertyGroup>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+  </PropertyGroup>
 </Project>

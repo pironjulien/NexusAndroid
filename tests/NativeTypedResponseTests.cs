@@ -55,7 +55,9 @@ public sealed class NativeTypedResponseTests
         {
             ["rpc"] = new JsonObject
             {
-                ["jsonrpc"] = "2.0", ["id"] = 1, ["method"] = "initialize",
+                ["jsonrpc"] = "2.0",
+                ["id"] = 1,
+                ["method"] = "initialize",
                 ["params"] = new JsonObject { ["protocolVersion"] = "2025-06-18", ["capabilities"] = new JsonObject(), ["clientInfo"] = new JsonObject { ["name"] = "offline-typed", ["version"] = "1" } },
             },
         });
@@ -105,7 +107,8 @@ public sealed class NativeTypedResponseTests
     private static JsonObject Shell(params (string Key, string Value)[] pairs)
     {
         var shell = new JsonObject();
-        foreach (var (key, value) in pairs) shell[key] = value;
+        foreach (var (key, value) in pairs)
+            shell[key] = value;
         return shell;
     }
 
@@ -127,7 +130,8 @@ public sealed class NativeTypedResponseTests
     {
         var tool = Contracts.Value[name];
         var subset = new JsonObject();
-        foreach (var field in ContractFields.Where(tool.ContainsKey)) subset[field] = tool[field]!.DeepClone();
+        foreach (var field in ContractFields.Where(tool.ContainsKey))
+            subset[field] = tool[field]!.DeepClone();
         Assert.Equal(TypedTools.Contains(name), subset.ContainsKey("outputSchema"));
         var canonical = Canonical.Serialize(subset);
         var digest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
@@ -169,13 +173,24 @@ public sealed class NativeTypedResponseTests
         var data = Validated(result, "phone");
         var expectedFields = new JsonObject
         {
-            ["model"] = "Fixture Fold", ["android"] = "17", ["serial"] = "fixture-device", ["transport"] = "usb",
-            ["foreground"] = "com.example.app", ["posture"] = expected, ["screen_on"] = true,
-            ["locked"] = locked, ["code_required"] = locked && !trusted,
-            ["kept_awake_until"] = null, ["rebooted"] = false,
+            ["model"] = "Fixture Fold",
+            ["android"] = "17",
+            ["serial"] = "fixture-device",
+            ["transport"] = "usb",
+            ["foreground"] = "com.example.app",
+            ["posture"] = expected,
+            ["screen_on"] = true,
+            ["locked"] = locked,
+            ["code_required"] = locked && !trusted,
+            ["kept_awake_until"] = null,
+            ["rebooted"] = false,
         };
         var actual = new JsonObject();
-        foreach (var (key, _) in expectedFields) { Assert.True(data.TryGetPropertyValue(key, out var value), "missing " + key); actual[key] = value?.DeepClone(); }
+        foreach (var (key, _) in expectedFields)
+        {
+            Assert.True(data.TryGetPropertyValue(key, out var value), "missing " + key);
+            actual[key] = value?.DeepClone();
+        }
         AssertJson(expectedFields, actual);
         AssertReadOnly(result);
     }
@@ -239,8 +254,12 @@ public sealed class NativeTypedResponseTests
         var data = Validated(result, "info");
         AssertJson(new JsonObject
         {
-            ["kind"] = "location", ["text"] = text, ["location"] = JsonNode.Parse(location),
-            ["calls"] = new JsonArray(), ["contacts"] = new JsonArray(), ["events"] = new JsonArray(),
+            ["kind"] = "location",
+            ["text"] = text,
+            ["location"] = JsonNode.Parse(location),
+            ["calls"] = new JsonArray(),
+            ["contacts"] = new JsonArray(),
+            ["events"] = new JsonArray(),
         }, data);
         AssertReadOnly(result);
     }
@@ -267,8 +286,11 @@ public sealed class NativeTypedResponseTests
         var data = Validated(result, "info");
         AssertJson(new JsonArray(new JsonObject
         {
-            ["date"] = IsoSeconds(timestamp), ["type"] = expectedType, ["who"] = $"Fixture Contact ({number})",
-            ["number"] = number, ["duration_s"] = 65,
+            ["date"] = IsoSeconds(timestamp),
+            ["type"] = expectedType,
+            ["who"] = $"Fixture Contact ({number})",
+            ["number"] = number,
+            ["duration_s"] = 65,
         }), data["calls"]);
         Assert.Equal("calls", data["kind"]?.ToString());
         Assert.Null(data["location"]);
@@ -291,7 +313,11 @@ public sealed class NativeTypedResponseTests
         var kept = dates.Take(expectedLimit).ToList();
         var referenceRows = new JsonArray(kept.Select(date => (JsonNode?)new JsonObject
         {
-            ["date"] = IsoSeconds(date), ["type"] = "missed", ["who"] = "private number", ["number"] = "", ["duration_s"] = 0,
+            ["date"] = IsoSeconds(date),
+            ["type"] = "missed",
+            ["who"] = "private number",
+            ["number"] = "",
+            ["duration_s"] = 0,
         }).ToArray());
         var referenceText = "Recent calls:\n" + string.Join("\n", kept.Select(date => Local(date).ToString("dd'/'MM HH':'mm", CultureInfo.InvariantCulture) + " · missed · private number"));
         var result = FixtureCall("info", new JsonObject { ["kind"] = "calls", ["limit"] = requested }, new JsonObject { ["queries"] = new JsonObject { ["content://call_log/calls"] = rows } });
@@ -370,13 +396,16 @@ internal static class Canonical
     {
         switch (node)
         {
-            case null: builder.Append("null"); break;
+            case null:
+                builder.Append("null");
+                break;
             case JsonObject obj:
                 builder.Append('{');
                 var first = true;
                 foreach (var (key, value) in obj.OrderBy(p => p.Key, StringComparer.Ordinal))
                 {
-                    if (!first) builder.Append(',');
+                    if (!first)
+                        builder.Append(',');
                     first = false;
                     String(builder, key);
                     builder.Append(':');
@@ -386,23 +415,40 @@ internal static class Canonical
                 break;
             case JsonArray array:
                 builder.Append('[');
-                for (var i = 0; i < array.Count; i++) { if (i > 0) {builder.Append(',');} Write(builder, array[i]); }
+                for (var i = 0; i < array.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        builder.Append(',');
+                    }
+
+                    Write(builder, array[i]);
+                }
                 builder.Append(']');
                 break;
             case JsonValue value:
                 var element = System.Text.Json.JsonDocument.Parse(value.ToJsonString()).RootElement;
                 switch (element.ValueKind)
                 {
-                    case System.Text.Json.JsonValueKind.String: String(builder, element.GetString()!); break;
-                    case System.Text.Json.JsonValueKind.True: builder.Append("true"); break;
-                    case System.Text.Json.JsonValueKind.False: builder.Append("false"); break;
-                    case System.Text.Json.JsonValueKind.Null: builder.Append("null"); break;
+                    case System.Text.Json.JsonValueKind.String:
+                        String(builder, element.GetString()!);
+                        break;
+                    case System.Text.Json.JsonValueKind.True:
+                        builder.Append("true");
+                        break;
+                    case System.Text.Json.JsonValueKind.False:
+                        builder.Append("false");
+                        break;
+                    case System.Text.Json.JsonValueKind.Null:
+                        builder.Append("null");
+                        break;
                     case System.Text.Json.JsonValueKind.Number:
                         builder.Append(element.TryGetInt64(out var integer) && !element.GetRawText().Contains('.')
                             ? integer.ToString(CultureInfo.InvariantCulture)
                             : PythonFloat(element.GetDouble()));
                         break;
-                    default: throw new InvalidOperationException("unexpected JSON value " + element.ValueKind);
+                    default:
+                        throw new InvalidOperationException("unexpected JSON value " + element.ValueKind);
                 }
                 break;
         }
@@ -421,16 +467,32 @@ internal static class Canonical
         {
             switch (c)
             {
-                case '"': builder.Append("\\\""); break;
-                case '\\': builder.Append("\\\\"); break;
-                case '\n': builder.Append("\\n"); break;
-                case '\r': builder.Append("\\r"); break;
-                case '\t': builder.Append("\\t"); break;
-                case '\b': builder.Append("\\b"); break;
-                case '\f': builder.Append("\\f"); break;
+                case '"':
+                    builder.Append("\\\"");
+                    break;
+                case '\\':
+                    builder.Append("\\\\");
+                    break;
+                case '\n':
+                    builder.Append("\\n");
+                    break;
+                case '\r':
+                    builder.Append("\\r");
+                    break;
+                case '\t':
+                    builder.Append("\\t");
+                    break;
+                case '\b':
+                    builder.Append("\\b");
+                    break;
+                case '\f':
+                    builder.Append("\\f");
+                    break;
                 default:
-                    if (c < 0x20 || c > 0x7e) builder.Append("\\u").Append(((int)c).ToString("x4", CultureInfo.InvariantCulture));
-                    else builder.Append(c);
+                    if (c < 0x20 || c > 0x7e)
+                        builder.Append("\\u").Append(((int)c).ToString("x4", CultureInfo.InvariantCulture));
+                    else
+                        builder.Append(c);
                     break;
             }
         }
@@ -448,13 +510,15 @@ internal static class SchemaValidator
     public static void Validate(JsonObject root, JsonObject schema, JsonNode? data, string path, List<string> errors)
     {
         foreach (var (keyword, _) in schema)
-            if (!Known.Contains(keyword)) errors.Add($"{path}: unsupported schema keyword {keyword}");
+            if (!Known.Contains(keyword))
+                errors.Add($"{path}: unsupported schema keyword {keyword}");
         if (schema["$ref"] is JsonNode reference)
         {
             var target = reference.ToString();
             if (!target.StartsWith("#/$defs/", StringComparison.Ordinal) || root["$defs"]?[target["#/$defs/".Length..]] is not JsonObject definition)
                 errors.Add($"{path}: unresolvable $ref {target}");
-            else Validate(root, definition, data, path, errors);
+            else
+                Validate(root, definition, data, path, errors);
         }
         if (schema["anyOf"] is JsonArray anyOf)
         {
@@ -464,12 +528,14 @@ internal static class SchemaValidator
                 Validate(root, option!.AsObject(), data, path, local);
                 return local.Count == 0;
             });
-            if (!matched) errors.Add($"{path}: matches no anyOf option ({data?.ToJsonString() ?? "null"})");
+            if (!matched)
+                errors.Add($"{path}: matches no anyOf option ({data?.ToJsonString() ?? "null"})");
         }
         if (schema["type"] is JsonNode type)
         {
             var types = type is JsonArray list ? list.Select(t => t!.ToString()).ToList() : [type.ToString()];
-            if (!types.Any(t => IsType(data, t))) errors.Add($"{path}: {data?.ToJsonString() ?? "null"} is not of type {string.Join("|", types)}");
+            if (!types.Any(t => IsType(data, t)))
+                errors.Add($"{path}: {data?.ToJsonString() ?? "null"} is not of type {string.Join("|", types)}");
         }
         if (schema["enum"] is JsonArray choices && !choices.Any(choice => JsonNode.DeepEquals(choice, data)))
             errors.Add($"{path}: {data?.ToJsonString() ?? "null"} is not one of {choices.ToJsonString()}");
@@ -480,21 +546,27 @@ internal static class SchemaValidator
             var properties = schema["properties"] as JsonObject;
             foreach (var (key, value) in obj)
             {
-                if (properties?[key] is JsonObject property) Validate(root, property, value, path + "." + key, errors);
+                if (properties?[key] is JsonObject property)
+                    Validate(root, property, value, path + "." + key, errors);
                 else if (schema["additionalProperties"] is JsonValue additional && additional.TryGetValue<bool>(out var allowed) && !allowed)
                     errors.Add($"{path}: additional property '{key}' not allowed");
-                else if (schema["additionalProperties"] is JsonObject additionalSchema) Validate(root, additionalSchema, value, path + "." + key, errors);
+                else if (schema["additionalProperties"] is JsonObject additionalSchema)
+                    Validate(root, additionalSchema, value, path + "." + key, errors);
             }
         }
         if (data is JsonArray array && schema["items"] is JsonObject items)
-            for (var i = 0; i < array.Count; i++) Validate(root, items, array[i], $"{path}[{i}]", errors);
+            for (var i = 0; i < array.Count; i++)
+                Validate(root, items, array[i], $"{path}[{i}]", errors);
     }
 
     private static bool IsType(JsonNode? data, string type)
     {
-        if (data is null) return type == "null";
-        if (data is JsonObject) return type == "object";
-        if (data is JsonArray) return type == "array";
+        if (data is null)
+            return type == "null";
+        if (data is JsonObject)
+            return type == "object";
+        if (data is JsonArray)
+            return type == "array";
         var element = System.Text.Json.JsonDocument.Parse(data.ToJsonString()).RootElement;
         return type switch
         {

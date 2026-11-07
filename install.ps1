@@ -26,7 +26,11 @@ if (-not (Test-Path -LiteralPath $exe)) {
     $rid = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'win-arm64' } else { 'win-x64' }
     $part = "$target.part"
     Remove-Item -LiteralPath $part -Recurse -Force -ErrorAction SilentlyContinue
-    & dotnet publish (Join-Path $project 'native\NexusAndroid.csproj') -c Release -r $rid --self-contained false -p:PublishSingleFile=true -o $part
+    # Restore for both architectures (the RuntimeIdentifiers of packages.lock.json), then publish one without restoring:
+    # a single-RID restore would rewrite the committed lock file.
+    & dotnet restore (Join-Path $project 'native\NexusAndroid.csproj')
+    if ($LASTEXITCODE) { throw 'dotnet restore failed: nothing installed.' }
+    & dotnet publish (Join-Path $project 'native\NexusAndroid.csproj') -c Release -r $rid --self-contained false -p:PublishSingleFile=true --no-restore -o $part
     if ($LASTEXITCODE) { throw 'dotnet publish failed: nothing installed.' }
     Get-ChildItem -LiteralPath $part -Filter *.pdb | Remove-Item
     Move-Item -LiteralPath $part -Destination $target

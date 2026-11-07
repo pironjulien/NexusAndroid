@@ -12,7 +12,7 @@ internal static class Tuning
     internal static int SettlePollMs = 60;
     /// <summary>A changed screen is returned at the first change (false) or once two reads agree (true). Bench 2026-11-06:
     /// first change 650 ms vs 1,030 ms per tap, same 8/8 taps and 4/4 menus really done and reported ✓.</summary>
-    internal static bool SettleTwoReads = false;
+    internal static bool SettleTwoReads;
     /// <summary>scroll stops where the finger stops (motion events with a hold) instead of `input swipe`.</summary>
     internal static bool SteadyScroll = true;
     /// <summary>Bench 2026-11-06: 2 moves and a 60 ms hold scroll exactly as far as 4 or 8 moves (633 px for 657 px of

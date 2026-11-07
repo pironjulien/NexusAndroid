@@ -37,7 +37,8 @@ public sealed class UnchangedImageTests
             NativeSafety.Session.Value = "unchanged-a";
             phone.Label = "Changed"; // tree content changed
             Assert.Equal(1, Images(engine.Execute("look", both)));
-            var drawn = PixelBuffer.CreateSyntheticScreen(1080, 1920); drawn.FillRect(0, 600, 1080, 1500, 255, 255, 255);
+            var drawn = PixelBuffer.CreateSyntheticScreen(1080, 1920);
+            drawn.FillRect(0, 600, 1080, 1500, 255, 255, 255);
             phone.Picture = ImageChain.EncodePng(drawn); // pixels only (a map, a video): the tree did not change
             Assert.Equal(1, Images(engine.Execute("look", both)));
             Assert.Equal(0, Images(engine.Execute("look", both)));
@@ -68,7 +69,8 @@ public sealed class UnchangedImageTests
     {
         var a = ImageChain.Thumbnail(PixelBuffer.CreateSyntheticScreen(1080, 1920));
         var noisy = (byte[])a.Clone();
-        for (var i = 0; i < noisy.Length; i += 7) noisy[i] = (byte)Math.Min(255, noisy[i] + ImageChain.ThumbnailSlack);
+        for (var i = 0; i < noisy.Length; i += 7)
+            noisy[i] = (byte)Math.Min(255, noisy[i] + ImageChain.ThumbnailSlack);
         Assert.True(ImageChain.SameThumbnail(a, noisy));
         noisy[0] = (byte)(a[0] > 127 ? 0 : 255);
         Assert.False(ImageChain.SameThumbnail(a, noisy));

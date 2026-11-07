@@ -16,25 +16,34 @@ internal static class Program
 
     private static int Main(string[] args)
     {
-        if (args.Length == 2 && args[0] == "sizes") return Sizes(args[1]);
+        if (args.Length == 2 && args[0] == "sizes")
+            return Sizes(args[1]);
         var reps = args.Length > 0 && int.TryParse(args[0], out var r) ? r : 8;
         engine = new NativeEngine(new AdbClient(null));
         var phone = Text(engine.Execute("phone", new JsonObject()));
         Console.WriteLine(phone);
-        Report.AppendLine($"# NexusAndroid bench — {DateTime.Now:yyyy-MM-dd HH:mm}, {reps} repetitions\n\n{phone}\n");
+        Report.AppendLine(CultureInfo.InvariantCulture, $"# NexusAndroid bench — {DateTime.Now:yyyy-MM-dd HH:mm}, {reps} repetitions\n\n{phone}\n");
         try
         {
             // Optional second argument: the sections to run (settle,scroll,look,read), all by default.
             var only = args.Length > 1 ? args[1].Split(',') : ["settle", "scroll", "look", "read"];
-            if (only.Contains("settle")) Settle(reps);
-            if (only.Contains("scroll")) Scrolls(only.Length == 1 ? reps : Math.Max(3, reps / 2));
-            if (only.Contains("look")) Looks(Math.Max(3, reps / 2));
-            if (only.Contains("read")) Reads(Math.Max(3, reps / 2));
+            if (only.Contains("settle"))
+                Settle(reps);
+            if (only.Contains("scroll"))
+                Scrolls(only.Length == 1 ? reps : Math.Max(3, reps / 2));
+            if (only.Contains("look"))
+                Looks(Math.Max(3, reps / 2));
+            if (only.Contains("read"))
+                Reads(Math.Max(3, reps / 2));
         }
         finally
         {
             Defaults();
-            try { engine.Execute("act", Json("""{"steps": [{"do": "key", "keys": "home"}], "then": "none"}""")); } catch (Exception e) { Console.WriteLine("home: " + e.Message); }
+            try
+            {
+                engine.Execute("act", Json("""{"steps": [{"do": "key", "keys": "home"}], "then": "none"}"""));
+            }
+            catch (Exception e) { Console.WriteLine("home: " + e.Message); }
         }
         var folder = Path.GetFullPath(Path.Join(FindRepo(), "benchmarks", "results"));
         Directory.CreateDirectory(folder);
@@ -52,13 +61,19 @@ internal static class Program
         var picture = ImageChain.Decode(File.ReadAllBytes(path));
         static HashSet<string> Words(PixelBuffer pixels) => NativeOcr.Read(ImageChain.EncodePng(pixels)).SelectMany(l => Regex.Split(l.Text.ToLowerInvariant(), @"\W+")).Where(w => w.Length >= 2).ToHashSet();
         var reference = Words(picture);
-        string Read(PixelBuffer pixels) { var found = Words(pixels); return $"{100.0 * reference.Count(found.Contains) / Math.Max(1, reference.Count):0.0} % of {reference.Count} words"; }
+        string Read(PixelBuffer pixels)
+        {
+            var found = Words(pixels);
+            return $"{100.0 * reference.Count(found.Contains) / Math.Max(1, reference.Count):0.0} % of {reference.Count} words";
+        }
         Console.WriteLine($"{Path.GetFileName(path)}: {picture.Width}×{picture.Height}");
         foreach (var bits in new[] { 0, 2, 3, 4, 5 })
         {
             var copy = picture.Clone();
             var mask = (byte)(0xFF << bits);
-            for (var i = 0; i < copy.Bgra.Length; i++) if ((i & 3) != 3) copy.Bgra[i] &= mask;
+            for (var i = 0; i < copy.Bgra.Length; i++)
+                if ((i & 3) != 3)
+                    copy.Bgra[i] &= mask;
             var clock = Stopwatch.StartNew();
             var webp = WebP.Lossless(copy.Bgra, copy.Width, copy.Height);
             Console.WriteLine($"WebP, {bits} low bits dropped: {webp.Length / 1024} KB, {clock.ElapsedMilliseconds} ms, OCR {Read(copy)}");
@@ -70,11 +85,13 @@ internal static class Program
             Console.WriteLine($"JPEG quality {q}: {jpeg.Length / 1024} KB, {clock.ElapsedMilliseconds} ms, OCR {Read(ImageChain.Decode(jpeg))}");
         }
         return 0;
-    }    private static string FindRepo()
+    }
+    private static string FindRepo()
     {
         // Built outside the sources (Directory.Build.props): look up from the working folder (dotnet run from Banc).
         var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
-        while (dir is not null && !File.Exists(Path.Join(dir.FullName, "test.ps1"))) dir = dir.Parent;
+        while (dir is not null && !File.Exists(Path.Join(dir.FullName, "test.ps1")))
+            dir = dir.Parent;
         return dir?.FullName ?? Directory.GetCurrentDirectory();
     }
 
@@ -93,17 +110,27 @@ internal static class Program
     private static (JsonObject Result, double Ms, string? Error) Timed(string tool, JsonObject args)
     {
         var clock = Stopwatch.StartNew();
-        try { var result = engine.Execute(tool, args); return (result, clock.Elapsed.TotalMilliseconds, null); }
+        try
+        {
+            var result = engine.Execute(tool, args);
+            return (result, clock.Elapsed.TotalMilliseconds, null);
+        }
         catch (Exception e) { return (new JsonObject(), clock.Elapsed.TotalMilliseconds, e.Message); }
     }
 
     private static string Look(string? query = null) => Text(engine.Execute("look", query is null ? new JsonObject() : new JsonObject { ["query"] = query }));
 
-    private static double Median(IEnumerable<double> values) { var v = values.OrderBy(x => x).ToList(); return v.Count == 0 ? double.NaN : v.Count % 2 == 1 ? v[v.Count / 2] : (v[v.Count / 2 - 1] + v[v.Count / 2]) / 2; }
+    private static double Median(IEnumerable<double> values)
+    {
+        var v = values.OrderBy(x => x).ToList();
+        return v.Count == 0 ? double.NaN : v.Count % 2 == 1 ? v[v.Count / 2] : (v[v.Count / 2 - 1] + v[v.Count / 2]) / 2;
+    }
 
     private static void Row(string scenario, string variant, JsonObject values)
     {
-        values["scenario"] = scenario; values["variant"] = variant; Rows.Add(values);
+        values["scenario"] = scenario;
+        values["variant"] = variant;
+        Rows.Add(values);
     }
 
     // ------------------------------------------------------------------ settle after a gesture
@@ -133,7 +160,8 @@ internal static class Program
         foreach (var (name, set) in SettleVariants)
         {
             set();
-            int verified = 0, done = 0, falseOk = 0, missed = 0; var times = new List<double>();
+            int verified = 0, done = 0, falseOk = 0, missed = 0;
+            var times = new List<double>();
             for (var i = 0; i < reps; i++)
             {
                 var tab = i % 2 == 0 ? "Chronomètre" : "Minuteur";
@@ -141,10 +169,16 @@ internal static class Program
                 var ok = error is null && result["structuredContent"]?["verified"]?.GetValue<bool>() == true;
                 Thread.Sleep(1200);
                 var real = TabActive(tab);
-                verified += ok ? 1 : 0; done += real ? 1 : 0; falseOk += ok && !real ? 1 : 0; missed += !ok && real ? 1 : 0; times.Add(ms);
-                if (error is not null) Console.WriteLine($"{name} tap: {error}");
+                verified += ok ? 1 : 0;
+                done += real ? 1 : 0;
+                falseOk += ok && !real ? 1 : 0;
+                missed += !ok && real ? 1 : 0;
+                times.Add(ms);
+                if (error is not null)
+                    Console.WriteLine($"{name} tap: {error}");
             }
-            int menuOk = 0, menuDone = 0; var menuTimes = new List<double>();
+            int menuOk = 0, menuDone = 0;
+            var menuTimes = new List<double>();
             for (var i = 0; i < Math.Max(2, reps / 2); i++)
             {
                 var before = Look();
@@ -153,11 +187,13 @@ internal static class Program
                 Thread.Sleep(1000);
                 var after = Look();
                 var real = after.Split('\n').Length != before.Split('\n').Length;
-                menuOk += ok ? 1 : 0; menuDone += real ? 1 : 0; menuTimes.Add(ms);
+                menuOk += ok ? 1 : 0;
+                menuDone += real ? 1 : 0;
+                menuTimes.Add(ms);
                 engine.Execute("act", Json("""{"steps": [{"do": "key", "keys": "back"}], "then": "none"}"""));
                 Thread.Sleep(600);
             }
-            Report.AppendLine($"| {name} | {reps} | {verified} | {done} | {falseOk} | {missed} | {Median(times):0} | {menuOk} / {menuDone} | {Median(menuTimes):0} |");
+            Report.AppendLine(CultureInfo.InvariantCulture, $"| {name} | {reps} | {verified} | {done} | {falseOk} | {missed} | {Median(times):0} | {menuOk} / {menuDone} | {Median(menuTimes):0} |");
             Row("settle", name, new JsonObject { ["taps"] = reps, ["verified"] = verified, ["done"] = done, ["false_ok"] = falseOk, ["missed"] = missed, ["median_ms"] = Median(times), ["menu_verified"] = menuOk, ["menu_done"] = menuDone, ["menu_median_ms"] = Median(menuTimes) });
             Console.WriteLine($"settle {name}: {verified}/{reps} ✓, {done} done, median {Median(times):0} ms");
         }
@@ -197,7 +233,7 @@ internal static class Program
         engine.Execute("launch", Json("""{"app": "com.android.settings", "then": "none"}"""));
         var height = int.Parse(Regex.Match(Look("zzz-none"), @"×(\d+)").Groups[1].Value, CultureInfo.InvariantCulture);
         var expected = height / 3;
-        Report.AppendLine($"## Scroll precision (Settings, one notch = {expected} px of finger travel)\n");
+        Report.AppendLine(CultureInfo.InvariantCulture, $"## Scroll precision (Settings, one notch = {expected} px of finger travel)\n");
         Report.AppendLine("| Variant | Notches | ✓ reported | Median moved px | Spread px (max-min) | Back to start (median px off) | Median ms |");
         Report.AppendLine("|---|---|---|---|---|---|---|");
         foreach (var (name, set) in ScrollVariants)
@@ -205,7 +241,10 @@ internal static class Program
             set();
             engine.Execute("act", Json("""{"steps": [{"do": "scroll", "direction": "up", "amount": 4}], "then": "none"}"""));
             Thread.Sleep(800);
-            var moved = new List<double>(); var off = new List<double>(); var times = new List<double>(); var verified = 0;
+            var moved = new List<double>();
+            var off = new List<double>();
+            var times = new List<double>();
+            var verified = 0;
             for (var i = 0; i < reps; i++)
             {
                 var start = Titles(Look());
@@ -215,14 +254,18 @@ internal static class Program
                 Timed("act", Json("""{"steps": [{"do": "scroll", "direction": "up"}], "then": "none"}"""));
                 Thread.Sleep(1200);
                 var end = Titles(Look());
-                if (error is not null) Console.WriteLine($"{name} scroll: {error}");
-                verified += down["structuredContent"]?["verified"]?.GetValue<bool>() == true ? 1 : 0; times.Add(ms);
-                if (Moved(start, mid) is double m) moved.Add(m);
-                if (Moved(start, end) is double back) off.Add(Math.Abs(back));
+                if (error is not null)
+                    Console.WriteLine($"{name} scroll: {error}");
+                verified += down["structuredContent"]?["verified"]?.GetValue<bool>() == true ? 1 : 0;
+                times.Add(ms);
+                if (Moved(start, mid) is double m)
+                    moved.Add(m);
+                if (Moved(start, end) is double back)
+                    off.Add(Math.Abs(back));
             }
             var spread = moved.Count > 0 ? moved.Max() - moved.Min() : double.NaN;
             Console.WriteLine($"{name} moved: {string.Join(", ", moved.Select(m => m.ToString("0", CultureInfo.InvariantCulture)))}");
-            Report.AppendLine($"| {name} | {reps} | {verified} | {Median(moved):0} | {spread:0} | {Median(off):0} | {Median(times):0} |");
+            Report.AppendLine(CultureInfo.InvariantCulture, $"| {name} | {reps} | {verified} | {Median(moved):0} | {spread:0} | {Median(off):0} | {Median(times):0} |");
             Row("scroll", name, new JsonObject { ["notches"] = reps, ["verified"] = verified, ["median_moved_px"] = Median(moved), ["spread_px"] = spread, ["back_off_px"] = Median(off), ["median_ms"] = Median(times), ["expected_px"] = expected });
             Console.WriteLine($"scroll {name}: moved {Median(moved):0} px, spread {spread:0}, {Median(times):0} ms");
         }
@@ -242,16 +285,24 @@ internal static class Program
         void Measure(string name, JsonObject args, Action? set = null)
         {
             set?.Invoke();
-            var times = new List<double>(); var bytes = new List<double>(); var chars = new List<double>();
+            var times = new List<double>();
+            var bytes = new List<double>();
+            var chars = new List<double>();
             for (var i = 0; i < reps; i++)
             {
                 // A different screen each time, so "image unchanged" never skips the image.
                 engine.Execute("act", Json($$"""{"steps": [{"do": "scroll", "direction": "{{(i % 2 == 0 ? "down" : "up")}}"}], "then": "none"}"""));
                 var (result, ms, error) = Timed("look", args.DeepClone().AsObject());
-                if (error is not null) { Console.WriteLine($"{name}: {error}"); continue; }
-                times.Add(ms); bytes.Add(ImageBytes(result) / 1024.0); chars.Add(Text(result).Length);
+                if (error is not null)
+                {
+                    Console.WriteLine($"{name}: {error}");
+                    continue;
+                }
+                times.Add(ms);
+                bytes.Add(ImageBytes(result) / 1024.0);
+                chars.Add(Text(result).Length);
             }
-            Report.AppendLine($"| {name} | {reps} | {Median(times):0} | {Median(bytes):0} | {Median(chars):0} |");
+            Report.AppendLine(CultureInfo.InvariantCulture, $"| {name} | {reps} | {Median(times):0} | {Median(bytes):0} | {Median(chars):0} |");
             Row("look", name, new JsonObject { ["runs"] = reps, ["median_ms"] = Median(times), ["image_kb"] = Median(bytes), ["text_chars"] = Median(chars) });
             Console.WriteLine($"look {name}: {Median(times):0} ms, {Median(bytes):0} KB");
             Defaults();
@@ -281,8 +332,15 @@ internal static class Program
         })
         {
             var times = new List<double>();
-            for (var i = 0; i < reps; i++) { var (_, ms, error) = Timed(tool, args.DeepClone().AsObject()); if (error is null) times.Add(ms); else Console.WriteLine($"{name}: {error}"); }
-            Report.AppendLine($"| {name} | {times.Count} | {Median(times):0} | {times.DefaultIfEmpty(double.NaN).Min():0} | {times.DefaultIfEmpty(double.NaN).Max():0} |");
+            for (var i = 0; i < reps; i++)
+            {
+                var (_, ms, error) = Timed(tool, args.DeepClone().AsObject());
+                if (error is null)
+                    times.Add(ms);
+                else
+                    Console.WriteLine($"{name}: {error}");
+            }
+            Report.AppendLine(CultureInfo.InvariantCulture, $"| {name} | {times.Count} | {Median(times):0} | {times.DefaultIfEmpty(double.NaN).Min():0} | {times.DefaultIfEmpty(double.NaN).Max():0} |");
             Row("read", name, new JsonObject { ["runs"] = times.Count, ["median_ms"] = Median(times) });
         }
         Report.AppendLine();
