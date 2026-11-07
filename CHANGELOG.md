@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- A test proves that an AI session opened before an update keeps working (the failure fixed in NexusFree 1.3.3): the self-contained single-file release build is installed by `get.ps1` and started, a newer version is installed by the same script (its own `releases\<version>` folder, `engine.txt` pointed at it, older folders removed), and the running engine still answers its tools with their real errors, under PowerShell 7 and Windows PowerShell 5.1. Replacing the running file in place instead makes those calls fail with an empty error, which the test catches.
+
 ## [0.24.1] - 2026-11-07
 
 ### Fixed
