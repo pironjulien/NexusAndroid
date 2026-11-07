@@ -87,7 +87,7 @@ public static class NativeSafety
         Cancellation.Value.ThrowIfCancellationRequested();
         var stop = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nexus", "stop");
         if (File.Exists(stop) && DateTime.UtcNow - File.GetLastWriteTimeUtc(stop) < TimeSpan.FromSeconds(120))
-            throw new InvalidOperationException("Arrêt d'urgence demandé par Julien : plus aucune action pendant 120 secondes ; ne pas contourner.");
+            throw new InvalidOperationException("Emergency stop requested by the user: no action for 120 seconds; do not bypass.");
     }
     private static readonly Regex CodeWords = new(@"code|\b(?:codigo|codice|clave\b|contrasena|kennwort|passwort|bestatig|token\b|otp\b|pin\b|passcode|mot de passe|password|2fa\b|log[- ]?in\b|login|sign[- ]?in\b|connexion|securit|verif|valid|confirm|authentif|authentic|identifiant|usage unique|one[- ]?time)", RegexOptions.IgnoreCase);
     /// <summary>Each character without its accents (one plain character, else unchanged); typographic apostrophes as '.</summary>

@@ -420,7 +420,7 @@ listed as tested has been run here. Report your device in an
 
 | Device or system | Status |
 | --- | --- |
-| Samsung Galaxy Fold `SM-F971B`, One UI, Android 17, USB and wireless debugging | **Tested** (real-phone qualification, [NATIVE-QUALIFICATION.md](NATIVE-QUALIFICATION.md)) |
+| Samsung Galaxy Fold `SM-F971B`, One UI, Android 17, USB and wireless debugging | **Tested** (real-phone bench, [benchmarks](benchmarks/README.md)) |
 | Windows 11 PC | **Tested** |
 | Other Samsung phones (One UI) | Expected: same system and apps as the tested phone |
 | Pixel, Motorola, Nothing, OnePlus, Sony, Fairphone and other near-stock Android | Expected, not tested |
@@ -587,8 +587,8 @@ pwsh -NoProfile -File install.ps1 -NoWait  # same, without waiting for the phone
 
 The executable goes to `~\.nexus\nexus-android\native\<source fingerprint>` (a new folder for new sources, never
 overwritten while an AI app runs it). `-SkipTests` skips the tests, `-NoRegister` leaves the AI apps alone. Build
-output goes to `~\.nexus\build\nexus-android`, never into the clone. The engine, its verification and its exact limits
-are documented in [NATIVE-QUALIFICATION.md](NATIVE-QUALIFICATION.md).
+output goes to `~\.nexus\build\nexus-android`, never into the clone. The engine is checked offline by the xUnit suite
+of `tests/` (`test.ps1`, also run by the CI) and on a real phone by the [bench](benchmarks/README.md).
 
 Each client then starts its own server over stdio. They share the phone lock and the screen-awake state through
 `~\.nexus`; for a single process shared by all clients, see [Shared daemon](#-shared-daemon-optional).

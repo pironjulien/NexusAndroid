@@ -3,3 +3,6 @@ obj/
 TestResults/
 dist/
 build/
+
+# Raw bench results describe the tester's own phone (model, lock state, foreground app): kept local, never published.
+benchmarks/results/

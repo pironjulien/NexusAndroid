@@ -9,6 +9,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 - Tests: no test can show a Windows error box. The test process sets the error mode (no critical-error, crash or
   missing-file box) when it loads, and every process it starts inherits it; a test checks it in a child process.
+- The emergency stop message is plain English and names no one ("Emergency stop requested by the user: ...").
+- `test.ps1` (so the CI) also builds the real-phone bench `benchmarks/Banc`, which uses the engine's internals: an
+  engine change can no longer break it unseen. It is built, never run.
+
+### Changed
+- Raw bench results (`benchmarks/results`) are no longer published: their header describes the tester's own phone
+  (lock state, foreground app). The folder is ignored by Git and stays local; `benchmarks/README.md` keeps the
+  conclusions.
+
+### Removed
+- `NATIVE-QUALIFICATION.md`: it described the Python-era checks (Ruff, Pyright, removed test folders, an
+  `install.ps1 -Runtime` switch that no longer exists). The README now points to the xUnit suite and the bench.
 
 ## [0.24.2] - 2026-11-07
 

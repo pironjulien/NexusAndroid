@@ -10,5 +10,9 @@ Push-Location $PSScriptRoot  # dotnet test reads global.json (Microsoft.Testing.
 try {
     dotnet test --project tests/NexusAndroid.Tests.csproj -c Release
     if ($LASTEXITCODE) { throw 'Tests failed.' }
+    # The real-phone bench uses the engine's internals: build it (never run it, no phone here) so an engine change
+    # cannot break it unseen.
+    dotnet build benchmarks/Banc/Banc.csproj -c Release
+    if ($LASTEXITCODE) { throw 'Bench build failed.' }
 } finally { Pop-Location }
 exit 0

@@ -14,7 +14,9 @@ dotnet run -c Release -- 8                # 8 repetitions, every section
 dotnet run -c Release -- 10 scroll        # one section: settle, scroll, look or read
 ```
 
-Results land in `benchmarks/results/<date>-fold.md` (table) and `.json`.
+Results land in `benchmarks/results/<date>-fold.md` (table) and `.json`. That folder is ignored by Git and stays on
+your PC: its header describes your own phone (model, lock state, foreground app). Only the conclusions below are
+published.
 
 Offline, no phone: `dotnet run -c Release -- sizes <screenshot.png>` prints the size, time and legibility (words Windows OCR still reads, against the original) of each image encoding.
 
