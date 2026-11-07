@@ -11,6 +11,7 @@ phone. No root, no app on the phone, no cloud relay: a USB cable or the local Wi
 
 [![Tests](https://github.com/pironjulien/NexusAndroid/actions/workflows/tests.yml/badge.svg)](https://github.com/pironjulien/NexusAndroid/actions/workflows/tests.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pironjulien/NexusAndroid/badge)](https://scorecard.dev/viewer/?uri=github.com/pironjulien/NexusAndroid)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16432/badge)](https://www.bestpractices.dev/projects/16432)
 [![release](https://img.shields.io/github/v/release/pironjulien/NexusAndroid?style=flat-square&label=release)](https://github.com/pironjulien/NexusAndroid/releases/latest)
 [![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#-quick-start)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square&logo=dotnet&logoColor=white)](native/NexusAndroid.csproj)
