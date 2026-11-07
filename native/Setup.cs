@@ -566,6 +566,8 @@ public static class Register
 public static class Setup
 {
     public const int PhoneFailed = 1, AppFailed = 2;
+    /// <summary>adb lookup of setup (settable for tests).</summary>
+    public static Func<Action<string>, string> FindAdb { get; set; } = Tools.FindOrFetchAdb;
     public const string FirstPlug =
         "1. On the phone: Settings > About phone (Samsung: About phone > Software information) > tap \"Build number\" 7 times, until \"Developer mode has been turned on\".\n" +
         "2. Settings > Developer options (Samsung: at the bottom of Settings) > turn on \"USB debugging\".\n" +
@@ -606,10 +608,20 @@ public static class Setup
             return AppFailed;
         }
         Console.WriteLine($"NexusAndroid {Program.Version}: setup on this PC" + (noWait ? "" : " (Ctrl+C to stop)") + ".\n");
+        // The engine pointer first: it depends on this install only, and get.ps1 removes older versions once it names
+        // this one, so a setup that stops on adb never leaves the Marketplace launcher on a deleted folder.
+        try
+        {
+            Register.WriteEnginePointer();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.WriteLine($"Engine location not recorded ({e.Message}): the Antigravity Marketplace plugin will not find this install.");
+        }
         string adbPath;
         try
         {
-            adbPath = Tools.FindOrFetchAdb(Console.WriteLine);
+            adbPath = FindAdb(Console.WriteLine);
         }
         catch (IOException e)
         {
@@ -620,14 +632,6 @@ public static class Setup
         }
         Console.WriteLine($"adb: {adbPath}");
         Tools.EnsureScrcpy(Console.WriteLine);
-        try
-        {
-            Register.WriteEnginePointer();
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            Console.WriteLine($"Engine location not recorded ({e.Message}): the Antigravity Marketplace plugin will not find this install.");
-        }
         Console.WriteLine();
         var failed = new List<string>();
         if (!args.Contains("--no-register"))

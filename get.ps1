@@ -122,14 +122,28 @@ function Install-NexusAndroid {
             Get-ChildItem -LiteralPath $part -Recurse -File | Unblock-File
             Move-Item -LiteralPath $part -Destination $target
         }
-        # Older versions: removed once no AI app runs them any more (a running one stays until next time).
-        Get-ChildItem -LiteralPath $releases -Directory | Where-Object { $_.Name -ne $version } |
-            ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
         Say "NexusAndroid $version is in $target." Green
         return (Join-Path $target 'NexusAndroid.exe')
     } finally {
         Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Remove-OldReleases([string]$Exe) {
+    # Older versions go only once ~\.nexus\nexus-android\engine.txt (written by setup, read by the Antigravity
+    # Marketplace launcher) names this install: removing them earlier would leave that pointer on a deleted folder
+    # whenever setup stops first. A version an AI app still runs stays until next time.
+    $state = Join-Path $UserHome '.nexus\nexus-android'
+    $pointer = Join-Path $state 'engine.txt'
+    $recorded = if (Test-Path -LiteralPath $pointer) { ([IO.File]::ReadAllText($pointer)).Trim() } else { '' }
+    if ($recorded -and -not [IO.Path]::IsPathRooted($recorded)) { $recorded = Join-Path $state $recorded }
+    if (-not $recorded -or [IO.Path]::GetFullPath($recorded) -ine [IO.Path]::GetFullPath($Exe)) {
+        Say 'Older NexusAndroid versions kept: engine.txt does not name this install yet (run setup again).' Yellow
+        return
+    }
+    $keep = Split-Path -Leaf (Split-Path -Parent $Exe)
+    Get-ChildItem -LiteralPath (Join-Path $state 'releases') -Directory | Where-Object { $_.Name -ne $keep } |
+        ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 function Get-SharedToken([bool]$Workstation) {
@@ -255,6 +269,7 @@ try {
     if (-not $Sandbox -and -not $NoDaemon) {
         try { Install-Daemon $exe } catch { Write-Warning "Shared daemon not installed ($($_.Exception.Message)); the stdio servers still work."; $Results['Daemon'] = 'failed' }
     }
+    try { Remove-OldReleases $exe } catch { Write-Warning "Older versions not removed ($($_.Exception.Message))." }
 } catch {
     Write-Host "NexusAndroid: $($_.Exception.Message)" -ForegroundColor Red
     if ($Pack) { Write-Output 'NEXUS_PACK_RESULT NexusAndroid=failed' }

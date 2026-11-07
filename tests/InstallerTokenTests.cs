@@ -52,6 +52,54 @@ public sealed class InstallerTokenTests
         Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(input))), File.ReadAllText(result).Trim());
     }
 
+    [Theory]
+    [InlineData("releases\\2.0.0\\NexusAndroid.exe", true)]
+    [InlineData("ABSOLUTE", true)]
+    [InlineData("releases\\1.0.0\\NexusAndroid.exe", false)]  // setup stopped before recording the new engine
+    [InlineData(null, false)]
+    public async Task OlderReleasesGoOnlyOnceTheEnginePointerNamesTheNewOne(string? recorded, bool removed)
+    {
+        var installer = InstallerSource();
+        // Order in the installer: setup (which writes engine.txt) runs before the older versions are removed.
+        Assert.True(installer.IndexOf("& $exe @setup", StringComparison.Ordinal) < installer.IndexOf("Remove-OldReleases $exe", StringComparison.Ordinal));
+        var start = installer.IndexOf("function Remove-OldReleases(", StringComparison.Ordinal);
+        var function = installer[start..installer.IndexOf("function Get-SharedToken(", start, StringComparison.Ordinal)];
+        var home = Path.Join(TestPaths.Root, "install-releases-" + Guid.NewGuid().ToString("N") + " A&B (x86)");
+        var state = Path.Join(home, ".nexus", "nexus-android");
+        var exe = Path.Join(state, "releases", "2.0.0", "NexusAndroid.exe");
+        foreach (var version in new[] { "1.0.0", "2.0.0" })
+        {
+            Directory.CreateDirectory(Path.Join(state, "releases", version));
+            File.WriteAllText(Path.Join(state, "releases", version, "NexusAndroid.exe"), "fixture");
+        }
+        if (recorded is not null)
+            File.WriteAllText(Path.Join(state, "engine.txt"), (recorded == "ABSOLUTE" ? exe : recorded) + "\r\n");
+        var script = Path.Join(home, "releases-fixture.ps1");
+        File.WriteAllText(script, """
+            $ErrorActionPreference = 'Stop'
+            $Pack = $true
+            $UserHome = $env:NEXUS_TEST_HOME
+            function Say([string]$Text, [string]$Color = 'Gray') { }
+            """ + "\n" + function + "\nRemove-OldReleases $env:NEXUS_TEST_EXE\n");
+        var executable = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
+        var info = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
+        foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script })
+            info.ArgumentList.Add(arg);
+        info.Environment["NEXUS_TEST_HOME"] = home;
+        info.Environment["NEXUS_TEST_EXE"] = exe;
+        using var process = Process.Start(info)!;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        finally { if (!process.HasExited) process.Kill(true); }
+        Assert.True(process.ExitCode == 0, await process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken));
+        Assert.True(File.Exists(exe));
+        Assert.Equal(!removed, Directory.Exists(Path.Join(state, "releases", "1.0.0")));
+    }
+
     private static Process Start(string script, string home, string ready, string go, string result)
     {
         var executable = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");

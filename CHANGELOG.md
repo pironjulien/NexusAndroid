@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-07
+
 ### Added
 - `NexusAndroid.exe --bridge [--url …] [--product …]`: the stdio relay of the Antigravity Marketplace plugin to the shared service, now part of the engine (C#, tested with a simulated stdio and a loopback service). Same behavior as before: one line per JSON reply or per event of a stream, the session id of the initialize reply, the token of `NEXUS_MCP_TOKEN` or `%USERPROFILE%\.nexus\mcp-token.txt`, a JSON-RPC error saying how to install or start NexusAndroid when the service does not answer, and the session closed when Antigravity stops.
 - `setup` records where the engine is installed in `%USERPROFILE%\.nexus\nexus-android\engine.txt` (relative to that folder), so the Marketplace plugin finds it.
@@ -23,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Release: shared NexusSystem workflows v1.6.54.
 
 ### Fixed
+- The Antigravity Marketplace launcher could be left on a deleted version: `get.ps1` removed older versions before `setup` recorded the new engine in `engine.txt`, and `setup` recorded it only after finding adb. `setup` now records the engine first, and `get.ps1` removes older versions only once `engine.txt` names the new install (tested with a setup stopped on adb and with stale pointers).
+- Tests: the Marketplace launcher runs the engine from a profile path holding cmd.exe special characters (`&`, parentheses, `^`, `!`, `%`, `;`, `,`).
 - Dependabot's NuGet updates: the build folder now comes from .NET's user profile instead of `$(USERPROFILE)`, which is unset on Dependabot's Linux runner (the restore wrote to `/.nexus`, was denied, and found nothing).
 - `packages.lock.json` is checked out with CRLF, as NuGet writes it on Windows, so a restore leaves the working tree clean.
 
@@ -1604,7 +1608,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.23.22...v0.24.0
 [0.23.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.22.10...v0.23.0
 [0.22.10]: https://github.com/pironjulien/NexusAndroid/compare/v0.22.9...v0.22.10
 [0.22.9]: https://github.com/pironjulien/NexusAndroid/compare/v0.22.8...v0.22.9

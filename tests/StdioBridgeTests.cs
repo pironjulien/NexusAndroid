@@ -175,6 +175,30 @@ public sealed class StdioBridgeTests
         }
     }
 
+    [Fact]
+    public void SetupRecordsTheEngineBeforeLookingForAdb()
+    {
+        // get.ps1 removes older versions once engine.txt names the new one: a setup that stops on adb must still
+        // record it, or the Marketplace launcher keeps pointing at a version about to be (or already) removed.
+        var saved = (Register.Home, Register.Executable, Setup.FindAdb);
+        var home = Path.Join(TestPaths.Root, "bridge-noadb-" + Guid.NewGuid().ToString("N"));
+        var state = Path.Join(home, ".nexus", "nexus-android");
+        Directory.CreateDirectory(state);
+        File.WriteAllText(Path.Join(state, "engine.txt"), "releases\\1.0.0\\NexusAndroid.exe\r\n");
+        try
+        {
+            Register.Home = home;
+            Register.Executable = Path.Join(state, "releases", "2.0.0", "NexusAndroid.exe");
+            Setup.FindAdb = _ => throw new IOException("adb not found (test)");
+            Assert.Equal(Setup.PhoneFailed, Setup.Run(["setup", "--no-wait", "--no-register"]));
+            Assert.Equal("releases\\2.0.0\\NexusAndroid.exe\r\n", File.ReadAllText(Path.Join(state, "engine.txt")));
+        }
+        finally
+        {
+            (Register.Home, Register.Executable, Setup.FindAdb) = saved;
+        }
+    }
+
     // ---- End to end: Antigravity's command line (cmd.exe /d /c start.cmd ...) on real stdio, to a loopback service.
 
     private static string Launcher([CallerFilePath] string source = "") =>
@@ -199,15 +223,21 @@ public sealed class StdioBridgeTests
         return Process.Start(start)!;
     }
 
-    [Fact]
-    public async Task TheMarketplaceLauncherRunsTheInstalledEngineAsTheBridge()
+    [Theory]
+    [InlineData("", false)]
+    [InlineData("", true)]
+    // cmd.exe special characters in the profile path: & ( ) ^ ! % ; , and spaces stay inside quotes.
+    [InlineData(" A&B (x86) ^!100% ;,", false)]
+    [InlineData(" A&B (x86) ^!100% ;,", true)]
+    public async Task TheMarketplaceLauncherRunsTheInstalledEngineAsTheBridge(string suffix, bool relative)
     {
         var engine = Path.Join(AppContext.BaseDirectory, "NexusAndroid.exe");
         Assert.True(File.Exists(engine), "engine not built next to the tests: " + engine);
-        var home = Path.Join(TestPaths.Root, "bridge-e2e-" + Guid.NewGuid().ToString("N"));
+        var home = Path.Join(TestPaths.Root, "bridge-e2e-" + Guid.NewGuid().ToString("N") + suffix);
         var state = Path.Join(home, ".nexus", "nexus-android");
         Directory.CreateDirectory(state);
-        File.WriteAllText(Path.Join(state, "engine.txt"), engine + "\r\n");
+        // Relative: the launcher joins the profile folder and the recorded path (get.ps1's releases\<version>).
+        File.WriteAllText(Path.Join(state, "engine.txt"), (relative ? Path.GetRelativePath(state, engine) : engine) + "\r\n");
 
         var cancel = TestContext.Current.CancellationToken;
         using var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -254,11 +284,19 @@ public sealed class StdioBridgeTests
         Assert.Contains("Mcp-Session-Id: e2e-session", seen[1], StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task TheMarketplaceLauncherSaysHowToInstallWhenNoEngineIsRecorded()
+    [Theory]
+    [InlineData("", null)]
+    [InlineData(" A&B (x86) ^!100% ;,", null)]
+    [InlineData(" A&B (x86) ^!100% ;,", "releases\\0.0.1\\NexusAndroid.exe")]  // pointer on a removed version
+    public async Task TheMarketplaceLauncherSaysHowToInstallWhenNoEngineIsRecorded(string suffix, string? recorded)
     {
-        var home = Path.Join(TestPaths.Root, "bridge-none-" + Guid.NewGuid().ToString("N"));
+        var home = Path.Join(TestPaths.Root, "bridge-none-" + Guid.NewGuid().ToString("N") + suffix);
         Directory.CreateDirectory(home);
+        if (recorded is not null)
+        {
+            Directory.CreateDirectory(Path.Join(home, ".nexus", "nexus-android"));
+            File.WriteAllText(Path.Join(home, ".nexus", "nexus-android", "engine.txt"), recorded + "\r\n");
+        }
         using var process = StartLauncher(home, "http://127.0.0.1:9/mcp");
         process.StandardInput.Close();
         var output = await process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
