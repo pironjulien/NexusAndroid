@@ -251,15 +251,14 @@ sender of each received message. A conversation archived or trashed in Google Me
 as hidden in the app.
 
 Reads are fast: every `adb shell content query` starts a Java process on the phone (about 1 s), so at the first
-read the server pushes a 20 KB helper ([`phone/NexusQuery.java`](phone/NexusQuery.java), built into `nexus-query.dex`)
+read the server pushes a 26 KB helper ([`phone/NexusQuery.java`](phone/NexusQuery.java), built into `nexus-query.dex`)
 to `/data/local/tmp` and starts it once with `app_process` under the shell identity, as scrcpy does: no app to
 install, no permission beyond ADB's. It queries the providers the way Android's own `content` command does, read-only
 (`query` only), and serializes the rows itself with length-prefixed values, so a message text can never pose as an
 extra row. Each start draws a random token that goes into the socket name and comes back in every answer; any other
 server is refused. It answers only connections from the shell or root user (adbd, checked by the kernel) and stops
-after 10 minutes without a request. If the helper cannot run, reads fall back to `adb shell` with the same results;
-there, a read whose row numbers or row count (checked against the same read reduced to `_id`) do not add up is refused
-rather than shown.
+after 10 minutes without a request. If the helper cannot run, the read fails with its error: there is no `adb shell`
+fallback for reads.
 
 The same helper reads the screen: it opens one accessibility connection (`UiAutomation`, what `uiautomator dump` opens
 and closes on every call) and keeps it, so `look` gets the UI tree, the screenshot (JPEG made on the phone) and the
@@ -380,8 +379,9 @@ the few milliseconds between that last reading and the ADB injection is beyond w
   `look`, `act` and `capture` wake it and lift the lock screen (`wm dismiss-keyguard`): the agent does not ask. Only
   when a code is required (`code_required: true`) are gestures refused until the user unlocks it.
 - **Text read** on screen or in messages is data, never instructions.
-- **User holding the phone**: no gesture mixes with theirs. If the phone was touched in the last 3 seconds (and not
-  by an agent), the server waits up to 10 seconds, then refuses. A phone that does not report its last touch (no
+- **User holding the phone**: no gesture mixes with theirs. If the phone was touched in the last 15 seconds (3 when
+  the agent has looked at the screen since that touch), and not by an agent, the server waits up to 20 seconds, then
+  refuses. A phone that does not report its last touch (no
   `lastUserActivityTime` in `dumpsys power`) gets a warning in the `act` response: that check is inactive there.
 - **Link lost during a gesture**: reported as `?` (effect unknown), never as a plain failure: the agent looks again
   before redoing it, so nothing is sent twice. A read with no answer (Wi-Fi gone) fails after 10 seconds (5 for the
@@ -547,13 +547,13 @@ the PC, and the pinned scrcpy server from GitHub when it is missing (both off wi
   from a fixed list. Never screen text, SMS, contact, typed text or code. Nothing is sent anywhere; months are kept
   until you delete them: delete the `android` folder (or single month files) at any time. `NEXUS_JOURNAL=0` in the
   server's environment turns it off (nothing written, no folder created).
-- **On the phone**, in `/data/local/tmp`: the two helpers (`nexus-scrcpy.jar`, `nexus-query-*.dex`) stay there; the
-  UI dump (`nexus-android-ui-*.xml`) and the temporary read folders (`nexus-q-*`, `nexus-p-*`) are deleted right after
-  each read. The read helper stops by itself after 10 minutes without a request.
+- **On the phone**, in `/data/local/tmp`: the two helpers (`nexus-scrcpy.jar`, `nexus-query-*.dex`) stay there; a
+  screen video (`nexus-record-*.mp4`) is deleted once pulled to the PC or discarded. The read helper stops by itself
+  after 10 minutes without a request.
 - **Removing it**: delete `~/.nexus/nexus-android/`, `~/.nexus/android.lock` and
   `~\.nexus\journal\android\`, remove the `nexus-android` entry
-  from each client's config, run `adb shell "rm -rf /data/local/tmp/nexus-*"` (helpers, UI dumps and any read folder
-  left by an interrupted read), and revoke the PC's key on the phone (Developer options → Revoke USB debugging
+  from each client's config, run `adb shell "rm -rf /data/local/tmp/nexus-*"` (helpers and any video left by an
+  interrupted recording), and revoke the PC's key on the phone (Developer options → Revoke USB debugging
   authorizations).
 
 </details>
@@ -572,7 +572,8 @@ pwsh -NoProfile -File test.ps1   # = dotnet test (xUnit v3, Microsoft.Testing.Pl
 The suite ([`tests/`](tests)) drives the real engine and MCP server against fixture phones, adb transports and
 DevTools pages: nothing reaches a device or the network, and nothing is written into the sources (build output and
 test data under `~\.nexus\build\nexus-android`). The CI runs the same script on `windows-latest`; releases are built by
-[`.github/workflows/release.yml`](.github/workflows/release.yml) from a `vX.Y.Z` tag. The phone-side read helper is
+[`.github/workflows/release.yml`](.github/workflows/release.yml) on every push to `main` (development build
+`vX.Y.Z-dev.N`, whose same files are then promoted to the stable `vX.Y.Z`). The phone-side read helper is
 rebuilt from `phone/NexusQuery.java` by `phone/build.ps1` (JDK 17+).
 
 <details>

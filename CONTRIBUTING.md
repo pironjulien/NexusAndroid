@@ -2,9 +2,10 @@
 
 ## Environment
 
-- Windows 10 or 11, the .NET SDK pinned by `global.json`, PowerShell 7;
-- no phone is needed by the tests; a JDK 17+ only to rebuild the phone-side helper (`phone/build.ps1`), and an Android
-  phone with USB or wireless debugging only for the real-phone [bench](benchmarks/README.md).
+- Windows 10 or 11, the .NET SDK pinned by `global.json`, PowerShell 7, a JDK 17+ (every engine build, tests
+  included, compiles the phone-side helper with `phone/build.ps1`);
+- no phone is needed by the tests; an Android phone with USB or wireless debugging only for the real-phone
+  [bench](benchmarks/README.md).
 
 ## Rules
 

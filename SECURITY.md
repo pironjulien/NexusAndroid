@@ -11,7 +11,7 @@ within a few days.
 
 ## Scope and limits
 
-- **Shared daemon token** (`nexus-android --http`): the bearer token keeps a misconfigured client or a stray agent
+- **Shared daemon token** (`NexusAndroid.exe --http`): the bearer token keeps a misconfigured client or a stray agent
   session from driving the phone through the daemon. It is not a defence against malicious software running on the
   same PC under your account: such software can read the token file, and it can talk to the phone directly through
   the local ADB server (port 5037), which has no authentication.
