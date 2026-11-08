@@ -89,9 +89,13 @@ public sealed class GetScriptTests : IDisposable
         bool stagedWhileHeld = false;
         using var released = new ManualResetEventSlim();
         using var watcher = new FileSystemWatcher(Home, "NexusAndroid.exe") { IncludeSubdirectories = true };
+        // Subscribed before the watcher starts raising events and before the installer runs: WaitForChanged inside the
+        // thread would subscribe only once the thread runs, and a creation in between was lost (held stayed null).
+        var created = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        watcher.Created += (_, e) => created.TrySetResult(e.FullPath);
         var scanner = new Thread(() =>
         {
-            string path = watcher.WaitForChanged(WatcherChangeTypes.Created, 60_000) is { TimedOut: false } change ? Path.Join(Home, change.Name) : "";
+            string path = created.Task.Wait(60_000) ? created.Task.Result : "";
             for (int i = 0; i < 400 && held is null && path.Length > 0; i++)
             {
                 try
