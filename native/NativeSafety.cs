@@ -16,6 +16,10 @@ public static class NativeSafety
     /// <summary>A guard rail stopped the gesture before anything reached the phone (confirmation or accord missing,
     /// password field, protected app): the common journal counts it as "refus", not as a failure.</summary>
     public sealed class GuardRefusal(string message) : InvalidOperationException(message);
+    /// <summary>The user's emergency stop (~\.nexus\stop) halted the call: journaled as "arrêt".</summary>
+    public sealed class EmergencyStop(string message) : InvalidOperationException(message);
+    /// <summary>The user had the phone in hand for the whole wait, so nothing was sent: journaled as "différé".</summary>
+    public sealed class UserActive(string message) : InvalidOperationException(message);
     public static readonly AsyncLocal<string?> Session = new();
     public static readonly AsyncLocal<CancellationToken> Cancellation = new();
     private static readonly ConcurrentDictionary<string, (string Session, string Action, DateTimeOffset Until)> Accords = new();
@@ -90,7 +94,7 @@ public static class NativeSafety
         Cancellation.Value.ThrowIfCancellationRequested();
         var stop = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nexus", "stop");
         if (File.Exists(stop) && DateTime.UtcNow - File.GetLastWriteTimeUtc(stop) < TimeSpan.FromSeconds(120))
-            throw new InvalidOperationException("Emergency stop requested by the user: no action for 120 seconds; do not bypass.");
+            throw new EmergencyStop("Emergency stop requested by the user: no action for 120 seconds; do not bypass.");
     }
     private static readonly Regex CodeWords = new(@"code|\b(?:codigo|codice|clave\b|contrasena|kennwort|passwort|bestatig|token\b|otp\b|pin\b|passcode|mot de passe|password|2fa\b|log[- ]?in\b|login|sign[- ]?in\b|connexion|securit|verif|valid|confirm|authentif|authentic|identifiant|usage unique|one[- ]?time)", RegexOptions.IgnoreCase);
     /// <summary>Each character without its accents (one plain character, else unchanged); typographic apostrophes as '.</summary>

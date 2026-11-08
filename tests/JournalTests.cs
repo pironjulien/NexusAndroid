@@ -102,6 +102,47 @@ public sealed class JournalTests
         Assert.Equal("no device", act["erreur"]!.GetValue<string>());
     }
 
+    // The emergency stop file lives in the real profile and the user-presence wait lasts 20 s: neither is triggered
+    // here, so the mapping of the errors the engine raises for them is checked on the journal writer itself.
+    public static TheoryData<string, string, string> Interruptions => new()
+    {
+        { "stop", "arrêt", "emergency stop" },
+        { "user", "différé", "user active" },
+        { "refusal", "refus", "accord required" },
+    };
+
+    [Theory, MemberData(nameof(Interruptions))]
+    public void InterruptionsHaveTheirOwnOutcome(string kind, string issue, string cause)
+    {
+        Exception error = kind switch
+        {
+            "stop" => new NativeSafety.EmergencyStop("Emergency stop requested by the user: no action for 120 seconds; do not bypass."),
+            "user" => new NativeSafety.UserActive("The user is using the phone right now; no action sent"),
+            _ => new NativeSafety.GuardRefusal("Exact action requiring the user's agreement: " + Typed),
+        };
+        var home = Path.Join(TestPaths.Root, "journal-" + Guid.NewGuid().ToString("N"));
+        var saved = (Switch: Environment.GetEnvironmentVariable("NEXUS_JOURNAL"), Home: Environment.GetEnvironmentVariable("NEXUS_JOURNAL_HOME"), Agent: NativeJournal.Agent.Value);
+        try
+        {
+            Environment.SetEnvironmentVariable("NEXUS_JOURNAL", "1");
+            Environment.SetEnvironmentVariable("NEXUS_JOURNAL_HOME", home);
+            NativeJournal.Agent.Value = "codex";
+            NativeJournal.Write("tap", App, "✗", 12.4, error);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("NEXUS_JOURNAL", saved.Switch);
+            Environment.SetEnvironmentVariable("NEXUS_JOURNAL_HOME", saved.Home);
+            NativeJournal.Agent.Value = saved.Agent;
+        }
+        var content = File.ReadAllText(Path.Join(home, "android", "codex", DateTimeOffset.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture) + ".jsonl"));
+        Assert.DoesNotContain(Typed, content, StringComparison.Ordinal);
+        var row = Assert.Single(content.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line => JsonNode.Parse(line)!.AsObject()));
+        Assert.Equal(issue, row["issue"]!.GetValue<string>());
+        Assert.Equal(cause, row["erreur"]!.GetValue<string>());
+        Assert.Equal(12, row["ms"]!.GetValue<int>());
+    }
+
     [Fact]
     public void AGuardRailRefusalIsRefusNotAFailure()
     {

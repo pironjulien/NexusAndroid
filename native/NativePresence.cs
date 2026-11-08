@@ -116,7 +116,7 @@ public sealed partial class NativeEngine
             if (idle >= quiet || touched <= own.AddSeconds(1))
                 return;
             if (DateTime.UtcNow >= until)
-                throw new InvalidOperationException("The user is using the phone right now; no action sent");
+                throw new NativeSafety.UserActive("The user is using the phone right now; no action sent");
             NativeSafety.StopGuard();
             Thread.Sleep(160);
         }

@@ -20,10 +20,15 @@ public static class NativeJournal
         try
         {
             var now = DateTimeOffset.UtcNow;
-            if (error is NativeSafety.GuardRefusal)
-                outcome = "refus";
+            outcome = error switch
+            {
+                NativeSafety.GuardRefusal => "refus",
+                NativeSafety.EmergencyStop => "arrêt",
+                NativeSafety.UserActive => "différé",
+                _ => outcome,
+            };
             var message = error?.Message.ToLowerInvariant() ?? "";
-            var cause = error is null ? null : error is NativeSafety.GuardRefusal ? (message.StartsWith("exact action requiring", StringComparison.Ordinal) ? "accord required" : message.StartsWith("confirmation required", StringComparison.Ordinal) ? "confirmation required" : message.StartsWith("password field", StringComparison.Ordinal) ? "password field" : "protected app") : message.Contains("no authorized android device") ? "no device" : message.Contains("phone busy") ? "phone busy" : error is ArgumentException ? "invalid arguments" : message.Contains("accord") ? "accord required" : message.Contains("confirmation") ? "confirmation required" : message.Contains("locked") ? "phone locked" : message.Contains("cancel") ? "cancelled" : message.Contains("using the phone") ? "user busy" : message.Contains("password") ? "password field" : message.Contains("protected") ? "protected app" : message.Contains("timeout") || message.Contains("timed out") ? "timeout" : "error";
+            var cause = error is null ? null : error is NativeSafety.EmergencyStop ? "emergency stop" : error is NativeSafety.UserActive ? "user active" : error is NativeSafety.GuardRefusal ? (message.StartsWith("exact action requiring", StringComparison.Ordinal) ? "accord required" : message.StartsWith("confirmation required", StringComparison.Ordinal) ? "confirmation required" : message.StartsWith("password field", StringComparison.Ordinal) ? "password field" : "protected app") : message.Contains("no authorized android device") ? "no device" : message.Contains("phone busy") ? "phone busy" : error is ArgumentException ? "invalid arguments" : message.Contains("accord") ? "accord required" : message.Contains("confirmation") ? "confirmation required" : message.Contains("locked") ? "phone locked" : message.Contains("cancel") ? "cancelled" : message.Contains("password") ? "password field" : message.Contains("protected") ? "protected app" : message.Contains("timeout") || message.Contains("timed out") ? "timeout" : "error";
             var row = new JsonObject { ["v"] = 1, ["ts"] = now.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture), ["agent"] = Agent.Value, ["outil"] = Program.Version, ["appel"] = Guid.NewGuid().ToString("N"), ["app"] = package is not null && Regex.IsMatch(package, @"^[A-Za-z][\w]*(\.[A-Za-z_][\w]*)+$") ? package : null, ["cadre"] = null, ["action"] = action, ["technique"] = "native:adb", ["issue"] = outcome, ["ms"] = (int)Math.Round(milliseconds), ["premier_plan"] = false, ["erreur"] = cause };
             var folder = Path.Join(Environment.GetEnvironmentVariable("NEXUS_JOURNAL_HOME") ?? Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nexus", "journal"), "android", Agent.Value!);
             lock (Gate)
