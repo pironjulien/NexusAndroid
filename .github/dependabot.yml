@@ -1,6 +1,7 @@
 # Dependabot: weekly updates of the pinned GitHub Actions (SHA + version comment) and of the project's dependencies.
 # A 7-day cooldown lets a compromised release be caught before it is proposed (zizmor dependabot-cooldown).
-# NuGet: the engine (ILCompiler and ILLink, kept on the same version) and the test project (xUnit v3), grouped in one PR.
+# NuGet: the engine (ILCompiler and ILLink, kept on the same version), the test project (xUnit v3) and the bench (its
+# lock file pins the engine's packages through its project reference), grouped in one PR.
 # The packages.lock.json files are refreshed by Dependabot with each update (RestorePackagesWithLockFile).
 version: 2
 updates:
@@ -17,6 +18,7 @@ updates:
     directories:
       - /native
       - /tests
+      - /benchmarks/Banc
     schedule:
       interval: weekly
     cooldown:
