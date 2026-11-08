@@ -64,13 +64,13 @@ public sealed class SelfTests
     public void ExactAgreementIsSingleUseAndCannotBeForged()
     {
         var request = new JsonObject { ["confirm"] = true };
-        var proposal = Assert.Throws<InvalidOperationException>(() => NativeSafety.Require(request, "send to synthetic recipient", true));
+        var proposal = Assert.Throws<NativeSafety.GuardRefusal>(() => NativeSafety.Require(request, "send to synthetic recipient", true));
         var accord = Regex.Match(proposal.Message, "accord=([a-f0-9]{48})").Groups[1].Value;
         Assert.Equal(48, accord.Length);
         request["accord"] = accord;
         NativeSafety.Require(request, "send to synthetic recipient", true);
-        Assert.Throws<InvalidOperationException>(() => NativeSafety.Require(request, "send to synthetic recipient", true));
-        Assert.Throws<InvalidOperationException>(() => NativeSafety.Require(
+        Assert.Throws<NativeSafety.GuardRefusal>(() => NativeSafety.Require(request, "send to synthetic recipient", true));
+        Assert.Throws<NativeSafety.GuardRefusal>(() => NativeSafety.Require(
             new JsonObject { ["confirm"] = true, ["accord"] = "ACCORD:forged:9999999999:send:recipient" }, "send to synthetic recipient", true));
     }
 

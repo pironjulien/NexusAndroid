@@ -90,7 +90,24 @@ public sealed partial class NativeEngine
             NativeSafety.StopGuard();
         return adb.Shell(string.Join(' ', args.Select(NativeSafety.Quote)));
     }
+    /// <summary>One tool call, and its one line in the common Nexus journal whatever ends it: a result, a guard-rail
+    /// refusal, or a failure before any gesture (invalid arguments, phone busy with another agent, no device).</summary>
     public JsonObject Execute(string name, JsonObject args)
+    {
+        var began = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var result = Run(name, args);
+            NativeJournal.Write(name, lastScreen is null ? null : Foreground(lastScreen), result["structuredContent"]?["verified"]?.ToJsonString() == "false" ? "~" : "✓", began.Elapsed.TotalMilliseconds);
+            return result;
+        }
+        catch (Exception e)
+        {
+            NativeJournal.Write(name, lastScreen is null ? null : Foreground(lastScreen), "✗", began.Elapsed.TotalMilliseconds, e);
+            throw;
+        }
+    }
+    private JsonObject Run(string name, JsonObject args)
     {
         NativeSchemas.Validate(name == "phone_map" ? "map" : name, args);
         if (name == "capture" && Str(args, "action") == "record")
@@ -98,12 +115,12 @@ public sealed partial class NativeEngine
             var start = args.DeepClone().AsObject();
             start["action"] = "start";
             start["seconds"] = Num(args, "seconds", 30);
-            Execute("capture", start);
+            Run("capture", start);
             var recording = video!;
             try
             {
                 recording.WaitForExitAsync(NativeSafety.Cancellation.Value).GetAwaiter().GetResult();
-                return Execute("capture", new JsonObject { ["action"] = "stop" });
+                return Run("capture", new JsonObject { ["action"] = "stop" });
             }
             catch (OperationCanceledException)
             {
@@ -126,39 +143,28 @@ public sealed partial class NativeEngine
             verifiedHardwareForOperation = adb.VerifiedSelectedHardwareIdentity ?? "";
             if (name is not ("checkup" or "phone"))
                 RestoreExpiredAwake();
-            var began = System.Diagnostics.Stopwatch.StartNew();
-            try
+            return name switch
             {
-                var result = name switch
-                {
-                    "phone" => Phone(),
-                    "checkup" => Checkup(args),
-                    "look" => Look(args),
-                    "act" => Act(args),
-                    "launch" => Launch(args),
-                    "messages" => Messages(args),
-                    "draft" => Draft(args),
-                    "notifications" => Notifications(args),
-                    "files" => Files(args),
-                    "capture" => Capture(args),
-                    "logs" => Logs(args),
-                    "clipboard" => Clipboard(args),
-                    "info" => Info(args),
-                    "settings" => Settings(args),
-                    "functions" => Functions(args),
-                    "web" => Web(args),
-                    "apps" => Apps(args),
-                    "phone_map" or "map" => Map(args),
-                    _ => throw new ArgumentException("Unknown tool: " + name)
-                };
-                NativeJournal.Write(name, lastScreen is null ? null : Foreground(lastScreen), result["structuredContent"]?["verified"]?.ToJsonString() == "false" ? "~" : "✓", began.Elapsed.TotalMilliseconds);
-                return result;
-            }
-            catch (Exception e)
-            {
-                NativeJournal.Write(name, lastScreen is null ? null : Foreground(lastScreen), "✗", began.Elapsed.TotalMilliseconds, e);
-                throw;
-            }
+                "phone" => Phone(),
+                "checkup" => Checkup(args),
+                "look" => Look(args),
+                "act" => Act(args),
+                "launch" => Launch(args),
+                "messages" => Messages(args),
+                "draft" => Draft(args),
+                "notifications" => Notifications(args),
+                "files" => Files(args),
+                "capture" => Capture(args),
+                "logs" => Logs(args),
+                "clipboard" => Clipboard(args),
+                "info" => Info(args),
+                "settings" => Settings(args),
+                "functions" => Functions(args),
+                "web" => Web(args),
+                "apps" => Apps(args),
+                "phone_map" or "map" => Map(args),
+                _ => throw new ArgumentException("Unknown tool: " + name)
+            };
         }
         finally
         {
@@ -506,14 +512,14 @@ public sealed partial class NativeEngine
             var irreversible = NativeSafety.Risky(label) || NativeSafety.ContextRisk(label, context);
             var slider = new[] { target, destination }.Any(e => e is not null && Regex.IsMatch(e.ClassName + " " + e.ResourceId + " " + e.RawDescription, @"(?i)slider|seekbar|glisser|slide to"));
             if (irreversible && (gesture != "scroll" || slider))
-                throw new InvalidOperationException("Irreversible, money and send gestures in protected apps are refused");
+                throw new NativeSafety.GuardRefusal("Irreversible, money and send gestures in protected apps are refused");
             if (gesture != "scroll" && new[] { target, destination }.Any(e => e is { Clickable: true, Editable: false } && (e.RawText + e.RawDescription).Trim().Length == 0))
-                throw new InvalidOperationException("Unnamed icon in a protected app is always refused; it may initiate payment or transfer");
+                throw new NativeSafety.GuardRefusal("Unnamed icon in a protected app is always refused; it may initiate payment or transfer");
             if (gesture != "scroll" && !Bool(step, "confirm"))
                 throw new InvalidOperationException("Protected app: reading and scrolling only without confirm=true");
         }
         if (target?.IsPassword == true && gesture is "type" or "clear")
-            throw new InvalidOperationException("Password field: typing refused");
+            throw new NativeSafety.GuardRefusal("Password field: typing refused");
         // Compose and RecyclerView rows put their words in child or overlapping views: an empty clickable container is
         // judged on the short labels drawn inside it (menu entry, button, row title), long snippets are content, not action.
         if (target is not null && label.Trim().Length == 0)
@@ -576,6 +582,7 @@ public sealed partial class NativeEngine
             {
                 // Step boundary: any failure is reported as ✗ and stops the batch, never crashes the host.
                 run.Reports.Add("✗ " + action + ": " + ex.Message);
+                NativeJournal.Write(action, lastScreen is null ? null : Foreground(lastScreen), "✗", began.Elapsed.TotalMilliseconds, ex);
                 run.AllVerified = false;
                 break;
             }
@@ -1036,9 +1043,9 @@ public sealed partial class NativeEngine
         if (elements.Count == 0)
             throw new InvalidOperationException("Active field unreadable: only navigation keys permitted; no key sent");
         if (elements.Any(e => e.Focused && e.IsPassword))
-            throw new InvalidOperationException("Password field: only navigation keys permitted; no key sent");
+            throw new NativeSafety.GuardRefusal("Password field: only navigation keys permitted; no key sent");
         if (!SafeKeys(codes) && (AndroidPolicy.IsProtectedPackage(Foreground(screen)) || elements.Any(e => e.Focused && AndroidPolicy.IsProtectedPackage(e.PackageName))))
-            throw new InvalidOperationException("Validation keys in protected apps are always refused, including with confirm and accord");
+            throw new NativeSafety.GuardRefusal("Validation keys in protected apps are always refused, including with confirm and accord");
     }
     private static List<string> Keys(string keys)
     {

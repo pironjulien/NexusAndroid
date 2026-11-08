@@ -13,6 +13,9 @@ public static class NativeSafety
     // Boundary filter (host, connection, step, timer): every failure is reported or contained, except the fatal ones
     // the process cannot recover from, which must still bring it down.
     public static bool Recoverable(Exception error) => error is not (OutOfMemoryException or InsufficientExecutionStackException);
+    /// <summary>A guard rail stopped the gesture before anything reached the phone (confirmation or accord missing,
+    /// password field, protected app): the common journal counts it as "refus", not as a failure.</summary>
+    public sealed class GuardRefusal(string message) : InvalidOperationException(message);
     public static readonly AsyncLocal<string?> Session = new();
     public static readonly AsyncLocal<CancellationToken> Cancellation = new();
     private static readonly ConcurrentDictionary<string, (string Session, string Action, DateTimeOffset Until)> Accords = new();
@@ -52,7 +55,7 @@ public static class NativeSafety
     public static void Require(JsonObject args, string exactAction, bool outward = false)
     {
         if (!outward && args["confirm"]?.GetValue<bool>() != true)
-            throw new InvalidOperationException($"Confirmation required for this exact action: {Mask(exactAction)}. Set confirm=true only on the user's explicit order.");
+            throw new GuardRefusal($"Confirmation required for this exact action: {Mask(exactAction)}. Set confirm=true only on the user's explicit order.");
         if (!outward)
             return;
         var supplied = args["accord"]?.GetValue<string>();
@@ -62,7 +65,7 @@ public static class NativeSafety
             Accords.TryRemove(stale.Key, out _);
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
         Accords[token] = (Session.Value ?? "stdio", exactAction, DateTimeOffset.UtcNow.AddMinutes(10));
-        throw new InvalidOperationException($"Exact action requiring the user's agreement: {Mask(exactAction)}\nSingle-use accord={token}. Show this exact summary to the user, then retry only after their explicit yes. Any changed action invalidates it.");
+        throw new GuardRefusal($"Exact action requiring the user's agreement: {Mask(exactAction)}\nSingle-use accord={token}. Show this exact summary to the user, then retry only after their explicit yes. Any changed action invalidates it.");
     }
     public static JsonNode? MaskJson(JsonNode? node)
     {

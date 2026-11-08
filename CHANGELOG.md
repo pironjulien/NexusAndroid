@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-11-08
+
+### Fixed
+- Common Nexus journal: every tool call writes its line, including the ones that fail before any gesture. A call
+  without an authorized device, with the phone busy with another agent, or with invalid arguments wrote nothing, so
+  a disconnected phone left the journal silent; it now writes `✗` with a short stable cause (`no device`,
+  `phone busy`, `invalid arguments`), never a serial or a text.
+- Guard-rail refusals (confirmation or accord missing, password field, protected app) are journaled as `refus`, as
+  the shared format says, instead of `✗`; a refused `act` step now writes its own line (failed steps wrote none).
+  The refusal messages are unchanged.
+- Tests: `JournalTests` makes real MCP calls under a journal folder of their own (never `~\.nexus\journal`) and
+  checks each line against the shared v1 format: a failing call, a call without a phone, and a refused send gesture,
+  with no typed text in the file.
+
 ## [0.25.0] - 2026-11-08
 
 ### Fixed
@@ -1654,7 +1668,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.1...HEAD
+[0.25.1]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.24.2...v0.25.0
 [0.24.2]: https://github.com/pironjulien/NexusAndroid/compare/v0.24.1...v0.24.2
 [0.24.1]: https://github.com/pironjulien/NexusAndroid/compare/v0.24.0...v0.24.1
