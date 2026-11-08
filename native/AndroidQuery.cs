@@ -46,6 +46,8 @@ public interface IAndroidQuery
     string ClipboardGet() => throw new NotSupportedException("Clipboard needs the phone helper");
     /// <summary>Sets the clipboard as the shell with SystemUI's overlay suppression: no floating preview, no "Copied" toast.</summary>
     void ClipboardSet(string text) => throw new NotSupportedException("Clipboard needs the phone helper");
+    /// <summary>Hands the helper's accessibility connection back to other tools now instead of after 45 s idle.</summary>
+    void Release() { }
 }
 public sealed class AndroidQuery(AdbClient adb) : IAndroidQuery
 {
@@ -176,6 +178,16 @@ public sealed class AndroidQuery(AdbClient adb) : IAndroidQuery
             Ensure();
             return Request(queries);
         }
+    }
+    public void Release()
+    {
+        // No helper started on this link: it holds no connection. A helper that cannot be reached is not restarted
+        // just to release: if it is still alive, its own 45 s idle rule hands the connection back.
+        if (port == 0 || serial != adb.SelectedSerial)
+            return;
+        var r = new NetworkReader(Request(["release"]));
+        if (r.Number() != 0)
+            throw new IOException("Phone helper refused release: " + r.Text());
     }
     public NativeScreen Screen(bool image) => Screen(image, true);
     private NativeScreen Screen(bool image, bool retry)

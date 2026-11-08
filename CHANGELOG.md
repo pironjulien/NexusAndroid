@@ -6,7 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.25.3] - 2026-11-08
+
 ### Fixed
+- The phone helper's accessibility connection is handed back to other tools (Appium, uiautomator2) right after a
+  tool call that read a protected (banking or identity) app, as the documentation says, instead of only after 45 s
+  without a screen read: the engine never sent the helper's `release` command. A test checks it.
 - Tests: the error-mode check in a child process expects only the two bits always inherited
   (`SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX`): the runtime briefly sets exactly those two while it loads a
   native library on another thread, so a child started in that window lacked `SEM_NOGPFAULTERRORBOX` and the check
@@ -1681,7 +1686,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.2...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.3...HEAD
+[0.25.3]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.2...v0.25.3
 [0.25.2]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.24.2...v0.25.0

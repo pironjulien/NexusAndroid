@@ -193,6 +193,28 @@ internal static class EngineContracts
             Assert(adb.Inputs.Count == 0 && Text(r).Contains("always refused"), "protected Enter sent");
             fixture.Package = "com.example.app";
         });
+        Test("reading a protected app hands the accessibility connection back right after the call", () =>
+        {
+            fixture.Releases = 0;
+            engine.Execute("look", new());
+            Assert(fixture.Releases == 0, "connection released after an ordinary app");
+            fixture.Package = "com.example.bank";
+            try
+            {
+                engine.Execute("look", new());
+                Assert(fixture.Releases == 1, "connection kept after reading a protected app");
+            }
+            finally { fixture.Package = "com.example.app"; }
+            fixture.ContextPackage = "com.example.bank";
+            try
+            {
+                engine.Execute("look", new());
+                Assert(fixture.Releases == 2, "connection kept after a protected overlay");
+            }
+            finally { fixture.ContextPackage = ""; }
+            engine.Execute("look", new());
+            Assert(fixture.Releases == 2, "release repeated once the protected app was gone");
+        });
         Test("password field typing refused before input", () =>
         {
             adb.Commands.Clear();
@@ -627,8 +649,9 @@ sealed class FakePhone : IAndroidQuery
     public string Label = "Open", Context = "recipient A", FieldText = "input", Package = "com.example.app";
     public string TargetPackage = "", ContextPackage = "", OverlayXml = "", Clipboard = "Original clipboard";
     public bool Changed, ChangeOnInput, Password, Checked, Selected, FailPaste, HintWhenEmpty;
-    public int Pastes;
+    public int Pastes, Releases;
     public byte[]? Picture;
+    public void Release() => Releases++;
     public readonly List<Dictionary<string, string>> ToastRows = [];
     public readonly List<(string Package, string Text)> ToastsOnInput = [];
 

@@ -10,6 +10,9 @@ public sealed partial class NativeEngine
 {
     private readonly AdbClient adb;
     private readonly IAndroidQuery query;
+    // A read this call showed a protected (banking, identity) app: the helper's accessibility connection is handed
+    // back once the call ends, not after the 45 s idle delay.
+    private bool protectedScreenRead;
     private readonly Func<IPhoneControl> control;
     private readonly Func<string, int, NativeScreen, IVideoRecorder> recorder;
     private readonly object gate = new();
@@ -168,6 +171,19 @@ public sealed partial class NativeEngine
         }
         finally
         {
+            if (protectedScreenRead)
+            {
+                protectedScreenRead = false;
+                try
+                {
+                    query.Release();
+                }
+                catch (Exception e) when (e is IOException or System.Net.Sockets.SocketException)
+                {
+                    // Not handed back now: the helper's own 45 s idle rule still does it. Journaled, never hidden.
+                    NativeJournal.Write("release", null, "✗", 0, e);
+                }
+            }
             verifiedHardwareForOperation = "";
             Monitor.Exit(gate);
         }
@@ -175,6 +191,8 @@ public sealed partial class NativeEngine
     private NativeScreen Read(bool image = false)
     {
         var screen = query.Screen(image || last.Any(e => e.IsOcr));
+        if (AndroidPolicy.IsProtectedPackage(Foreground(screen)) || Regex.Matches(screen.Xml, @"\bpackage=([""'])(.*?)\1").Any(m => AndroidPolicy.IsProtectedPackage(m.Groups[2].Value)))
+            protectedScreenRead = true;
         ObserveRecording(screen);
         if (lastScreen is not null && (lastScreen.Width != screen.Width || lastScreen.Height != screen.Height))
         {
