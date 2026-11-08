@@ -6,16 +6,16 @@ using System.Text.Json.Nodes;
 
 namespace NexusAndroid.Tests;
 
-/// <summary>An AI session keeps its stdio engine for hours while get.ps1 installs a newer one. A self-contained
-/// single-file engine (the release build) loads each assembly from its own file on first use: had an update replaced
-/// that file in place, every later call of the session would fail with an empty error (NexusFree before 1.3.3). get.ps1
+/// <summary>An AI session keeps its stdio engine for hours while get.ps1 installs a newer one. An engine whose files an
+/// update replaced in place could fail every later call of the session (a self-contained single-file build loads each
+/// assembly from its own file on first use: an empty error, NexusFree before 1.3.3). get.ps1
 /// installs each version in its own folder (releases\&lt;version&gt;), never written again, and removes older folders
 /// only after engine.txt names the new one; Windows refuses to delete the file of a running program, so a running engine
 /// keeps its file. Here the real release build is installed by get.ps1 and started, a newer version is installed by the
 /// same script (pointer then clean-up), and the running engine must still answer its tools.</summary>
 public sealed class UpdateWhileRunningTests : IDisposable
 {
-    private static readonly Lazy<string> SingleFilePackage = new(PublishSingleFile, LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<string> ReleasePackage = new(PublishRelease, LazyThreadSafetyMode.ExecutionAndPublication);
     private readonly string root = Path.Join(TestPaths.Root, "update-" + Guid.NewGuid().ToString("N"));
     private Process? engine;
     private string Home => Path.Join(root, "home");
@@ -54,9 +54,9 @@ public sealed class UpdateWhileRunningTests : IDisposable
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* removed with TestPaths.Root at exit */ }
     }
 
-    /// <summary>The release build (self-contained, single file, compressed) under an older version number, packaged as
-    /// a release zip; published once for the class, with its own build folder.</summary>
-    private static string PublishSingleFile()
+    /// <summary>The release build (one executable compiled ahead of time, Native AOT) under an older version number,
+    /// packaged as a release zip; published once for the class, with its own build folder.</summary>
+    private static string PublishRelease()
     {
         string rid = RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
         string work = Path.Join(TestPaths.Root, "single-file");
@@ -65,10 +65,10 @@ public sealed class UpdateWhileRunningTests : IDisposable
         string build = $"-p:NexusBuild={Path.Join(work, "build")}{Path.DirectorySeparatorChar}";
         // As release.yml does: one restore for both architectures (the committed packages.lock.json, never rewritten),
         // then the publish without restoring.
-        Dotnet("restore", project, "-p:SelfContained=true", build, "--nologo");
-        Dotnet("publish", project, "-c", "Release", "-r", rid, "--self-contained", "true", "-p:PublishSingleFile=true",
-            "-p:Version=0.0.1", build, "--no-restore", "-o", output, "--nologo");
-        Assert.Empty(Directory.GetFiles(output, "*.dll"));  // single file: no assembly next to the executable
+        Dotnet("restore", project, build, "--nologo");
+        Dotnet("publish", project, "-c", "Release", "-r", rid, "-p:Version=0.0.1", "-p:DebugType=none", build, "--no-restore",
+            "-o", output, "--nologo");
+        Assert.Empty(Directory.GetFiles(output, "*.dll"));  // compiled ahead of time: no assembly next to the executable
         File.WriteAllText(Path.Join(output, "README.md"), "readme");  // as the release zip carries it next to the engine
         string zip = Path.Join(work, $"NexusAndroid-{rid}.zip");
         ZipFile.CreateFromDirectory(output, zip);
@@ -86,6 +86,9 @@ public sealed class UpdateWhileRunningTests : IDisposable
         };
         foreach (string a in arguments)
             info.ArgumentList.Add(a);
+        // Native AOT finds the C++ linker through vswhere, which is not on PATH outside a developer prompt.
+        string vswhere = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft Visual Studio", "Installer");
+        info.Environment["PATH"] = Environment.GetEnvironmentVariable("PATH") + Path.PathSeparator + vswhere;
         using var process = Process.Start(info)!;
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
@@ -155,7 +158,7 @@ public sealed class UpdateWhileRunningTests : IDisposable
     [InlineData("powershell")]
     public async Task RunningEngineKeepsAnsweringAfterGetInstallsNewerVersion(string shell)
     {
-        string old = Install(shell, SingleFilePackage.Value, point: false);
+        string old = Install(shell, ReleasePackage.Value, point: false);
         Assert.EndsWith(Path.Join("releases", "0.0.1", "NexusAndroid.exe"), old, StringComparison.OrdinalIgnoreCase);
 
         // Offline: the test home, and an adb that does not exist (every phone tool then names it in its error).

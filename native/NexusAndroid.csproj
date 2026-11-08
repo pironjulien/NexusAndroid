@@ -4,16 +4,30 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <RootNamespace>NexusAndroid</RootNamespace>
     <AssemblyName>NexusAndroid</AssemblyName>
-    <Version>0.24.2</Version>
+    <Version>0.25.0</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <InvariantGlobalization>false</InvariantGlobalization>
-    <!-- Both release architectures in the restore graph, so packages.lock.json covers the self-contained publishes. -->
+    <!-- Both release architectures in the restore graph, so packages.lock.json covers the release publishes. -->
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
-    <!-- Release zips (get.ps1, .mcpb): one self-contained file per architecture, no .NET to install. -->
-    <EnableCompressionInSingleFile Condition="'$(SelfContained)' == 'true'">true</EnableCompressionInSingleFile>
+    <!-- Native AOT: release zips (get.ps1, .mcpb) carry one NexusAndroid.exe compiled ahead of time per architecture (no
+         .NET to install, no JIT at start-up). The trimming, single-file and AOT analyzers run in every build and, with
+         warnings as errors, no reflection-based JSON or runtime-marshalled call can come back; reflection-based JSON is
+         off in every build of the engine, so the tests run it the way the release does. -->
+    <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <!-- The two packages below are pinned on purpose (see there): their "delete explicit reference" notice is answered. -->
+    <SuppressGenerateILCompilerExplicitPackageReferenceWarning>true</SuppressGenerateILCompilerExplicitPackageReferenceWarning>
+    <SuppressILLinkExplicitPackageReferenceWarning>true</SuppressILLinkExplicitPackageReferenceWarning>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The AOT compiler and the trimmer, pinned like any package (packages.lock.json, Dependabot): left implicit, their
+         version would follow the .NET SDK of the machine and break the locked restore whenever the CI's SDK moves. -->
+    <PackageReference Include="Microsoft.DotNet.ILCompiler" Version="10.0.14" />
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="10.0.14" />
+  </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="tool-contracts.json" LogicalName="tool-contracts.json" />

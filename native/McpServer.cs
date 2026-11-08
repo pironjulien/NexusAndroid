@@ -198,7 +198,7 @@ public sealed class McpServer
                         ["isError"] = true,
                         ["content"] = new JsonArray
                         {
-                            new JsonObject
+                            (JsonNode)new JsonObject
                             {
                                 ["type"] = "text",
                                 ["text"] = $"Error executing {toolName}: {NativeSafety.Mask(ex.Message)}"

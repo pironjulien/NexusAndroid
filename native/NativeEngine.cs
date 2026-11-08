@@ -257,7 +257,7 @@ public sealed partial class NativeEngine
             var result = ImageChain.ProcessChain(enlarged, maxBytes: ImageChain.DefaultMaxInlineBytes);
             Current.Sent = null;/* the zoom is now the last image sent: the next full view goes out again */
             var regionOutput = Text($"Zoom of last full image [{x1},{y1},{x2},{y2}]. Action coordinates remain those of that full image.");
-            regionOutput["content"]!.AsArray().Add(new JsonObject { ["type"] = "image", ["mimeType"] = result.MimeType, ["data"] = Convert.ToBase64String(result.Bytes) });
+            regionOutput["content"]!.AsArray().Add((JsonNode?)new JsonObject { ["type"] = "image", ["mimeType"] = result.MimeType, ["data"] = Convert.ToBase64String(result.Bytes) });
             return regionOutput;
         }
         var show = Str(args, "show", "auto");
@@ -327,7 +327,7 @@ public sealed partial class NativeEngine
         {
             if (elements.Count == 0 && !Bool(args, "confirm"))
             {
-                output["content"]!.AsArray().Add(new JsonObject { ["type"] = "text", ["text"] = "Image not sent: UI tree unavailable, code masking cannot be guaranteed. confirm=true only if the user accepts this exact unmasked image." });
+                output["content"]!.AsArray().Add((JsonNode?)new JsonObject { ["type"] = "text", ["text"] = "Image not sent: UI tree unavailable, code masking cannot be guaranteed. confirm=true only if the user accepts this exact unmasked image." });
                 return output;
             }
             var blackouts = elements.Where(Sensitive).Select(e => (e.Left, e.Top, e.Right, e.Bottom)).ToList();
@@ -340,7 +340,7 @@ public sealed partial class NativeEngine
                 foreach (var line in lines.Where(l => NativeSafety.MaskCodes(NativeSafety.Mask(l.Text), context) != l.Text))
                     blackouts.Add((line.Left, line.Top, line.Right, line.Bottom));
             }
-            catch (Exception e) when (e is IOException or System.Runtime.InteropServices.COMException) { output["content"]!.AsArray().Add(new JsonObject { ["type"] = "text", ["text"] = "Windows OCR unavailable; codes drawn outside the UI tree may remain visible: " + NativeSafety.Mask(e.Message) }); }
+            catch (Exception e) when (e is IOException or System.Runtime.InteropServices.COMException) { output["content"]!.AsArray().Add((JsonNode?)new JsonObject { ["type"] = "text", ["text"] = "Windows OCR unavailable; codes drawn outside the UI tree may remain visible: " + NativeSafety.Mask(e.Message) }); }
             var marks = Str(args, "marks", "auto");
             var badges = show == "both" && marks != "none" ? elements.Where(e => marks == "all" || (e.Clickable && string.IsNullOrWhiteSpace(e.Text))).Select(e => (int.Parse(e.Id[1..], CultureInfo.InvariantCulture), e.CenterX, e.CenterY)).ToList() : null;
             var result = ImageChain.ProcessEncodedImage(screen.Image, maxBytes: Tuning.LookImageMaxBytes, preferredLosslessFormat: Tuning.LookLosslessFormat, blackouts: blackouts, badges: badges);
@@ -361,7 +361,7 @@ public sealed partial class NativeEngine
             var header = $"{Foreground(screen)} · {screen.Width}×{screen.Height}" + (Locked(screen) ? " · locked" : "") + hints + (unchanged ? " · image unchanged since the last one sent (not sent again)" : "");
             output["content"]![0]!["text"] = NativeSafety.Mask(header + "\n" + NativeSafety.Mask(screen.Error) + "\n" + (show == "image" ? "" : ScreenParser.FormatCompactTree(filtered.Take(300), imageScale, Current.ScaleY)), codes: false);
             if (!unchanged)
-                output["content"]!.AsArray().Add(new JsonObject { ["type"] = "image", ["mimeType"] = result.MimeType, ["data"] = Convert.ToBase64String(result.Bytes) });
+                output["content"]!.AsArray().Add((JsonNode?)new JsonObject { ["type"] = "image", ["mimeType"] = result.MimeType, ["data"] = Convert.ToBase64String(result.Bytes) });
         }
         return output;
     }
@@ -659,7 +659,7 @@ public sealed partial class NativeEngine
             var saved = template.DeepClone().AsObject();
             saved.Remove("confirm");
             saved.Remove("accord");
-            run.SavedSteps.Add(saved);
+            run.SavedSteps.Add((JsonNode?)saved);
             run.Reports.Add("✓ intent arrival inspected");
             return true;
         }
@@ -694,7 +694,7 @@ public sealed partial class NativeEngine
             record["to"] = StableTarget(aim.EndElement);
         if (record["target"]?.ToString() is { Length: 0 } || record["to"]?.ToString() is { Length: 0 })
             run.UnstableTarget = true;
-        run.SavedSteps.Add(record);
+        run.SavedSteps.Add((JsonNode?)record);
         return true;
     }
     /// <summary>The screen a step is judged on: owner not holding the phone, trusted lock lifted, screen awake.</summary>

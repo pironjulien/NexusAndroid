@@ -30,7 +30,8 @@ if (-not (Test-Path -LiteralPath $exe)) {
     # a single-RID restore would rewrite the committed lock file.
     & dotnet restore (Join-Path $project 'native\NexusAndroid.csproj')
     if ($LASTEXITCODE) { throw 'dotnet restore failed: nothing installed.' }
-    & dotnet publish (Join-Path $project 'native\NexusAndroid.csproj') -c Release -r $rid --self-contained false -p:PublishSingleFile=true --no-restore -o $part
+    # Framework-dependent here (the .NET of this workstation, no C++ build tools needed); releases are Native AOT.
+    & dotnet publish (Join-Path $project 'native\NexusAndroid.csproj') -c Release -r $rid --self-contained false -p:PublishAot=false -p:PublishSingleFile=true --no-restore -o $part
     if ($LASTEXITCODE) { throw 'dotnet publish failed: nothing installed.' }
     Get-ChildItem -LiteralPath $part -Filter *.pdb | Remove-Item
     Move-Item -LiteralPath $part -Destination $target

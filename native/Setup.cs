@@ -389,9 +389,8 @@ public static class Register
         return null;
     }
 
-    private static readonly JsonSerializerOptions RelaxedJson = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
     private static readonly string[] RouteKeys = ["url", "serverUrl", "httpUrl"];
-    private static string Toml(string text) => JsonSerializer.Serialize(text, RelaxedJson);
+    private static string Toml(string text) => EngineJson.RelaxedQuoted(text);
 
     /// <summary>Codex config.toml: tables ([name]) with their body, in file order; text before the first table first.</summary>
     private static List<(string? Name, string Text)> Tables(string text)

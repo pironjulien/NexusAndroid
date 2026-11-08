@@ -183,7 +183,7 @@ public sealed partial class NativeEngine
                 var links = new JsonArray();
                 if (value["links"] is JsonArray rawLinks)
                     foreach (var link in rawLinks.OfType<JsonArray>().Where(l => l.Count >= 2 && !l[1]!.ToString().StartsWith("javascript:", StringComparison.OrdinalIgnoreCase)).Take(60))
-                        links.Add(new JsonArray(CleanAdvancedText(link[0]?.ToString() ?? "", true), NativeSafety.Mask(link[1]?.ToString() ?? "", true)));
+                        links.Add((JsonNode?)new JsonArray(CleanAdvancedText(link[0]?.ToString() ?? "", true), NativeSafety.Mask(link[1]?.ToString() ?? "", true)));
                 return Text(new JsonObject { ["title"] = CleanAdvancedText(Str(value, "title"), true), ["url"] = NativeSafety.Mask(Str(value, "url"), true), ["text"] = text, ["links"] = links }.ToJsonString());
             }
         }
@@ -296,7 +296,7 @@ public sealed partial class NativeEngine
         }
         if (existing is not null)
             screens.Remove(existing);
-        screens.Add(new JsonObject { ["path"] = title, ["component"] = component, ["noted"] = DateTimeOffset.Now.ToString("O"), ["items"] = items });
+        screens.Add((JsonNode?)new JsonObject { ["path"] = title, ["component"] = component, ["noted"] = DateTimeOffset.Now.ToString("O"), ["items"] = items });
         WriteMapJson(destination, screens);
         return Text($"Screen noted under {title}: {items.Count} lines ({component})");
     }
@@ -378,7 +378,7 @@ public sealed partial class NativeEngine
             }
             var list = permissions[key]!.AsArray();
             if (!list.Any(v => v?.ToString() == current))
-                list.Add(current);
+                list.Add((JsonNode?)current);
         }
         var roles = new JsonObject();
         foreach (var role in new[] { "SMS", "DIALER", "BROWSER", "HOME", "ASSISTANT", "WALLET" })

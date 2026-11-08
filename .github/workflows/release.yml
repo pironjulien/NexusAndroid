@@ -1,7 +1,8 @@
 # Release, in two channels, with the shared Nexus release workflows of NexusSystem.
 # - Development: every push to main runs test.ps1 and builds the native engine for Windows x64 and Arm64
-#   (self-contained single file, no .NET to install): NexusAndroid-win-x64.zip, NexusAndroid-win-arm64.zip, the Claude
-#   Desktop extensions nexus-android.mcpb (x64) and nexus-android-arm64.mcpb, get.ps1 and SHA256SUMS.txt.
+#   (Native AOT: one executable compiled ahead of time, no .NET to install): NexusAndroid-win-x64.zip,
+#   NexusAndroid-win-arm64.zip, the Claude Desktop extensions nexus-android.mcpb (x64) and nexus-android-arm64.mcpb,
+#   get.ps1 and SHA256SUMS.txt.
 #   product-dev-release attests them and publishes the pre-release vX.Y.Z-dev.N (NexusSystem's development channel).
 # - Stable: right after that build when its version is not released yet, or "Run workflow" (promote: a vX.Y.Z-dev.N,
 #   or empty for the newest), product-promote runs: the SAME files
@@ -69,14 +70,18 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory dist | Out-Null
-          # One locked restore for both architectures (packages.lock.json), runtime packs included; then no restore.
-          dotnet restore native/NexusAndroid.csproj -p:SelfContained=true
+          # One locked restore for both architectures (packages.lock.json, the AOT compiler included); then no restore.
+          dotnet restore native/NexusAndroid.csproj
           if ($LASTEXITCODE) { throw 'dotnet restore failed.' }
+          # Native AOT finds the C++ linker through vswhere, which is not on PATH outside a developer prompt.
+          $env:PATH = "$env:PATH;${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
           foreach ($rid in 'win-x64', 'win-arm64') {
             $out = Join-Path $env:RUNNER_TEMP "publish-$rid"
-            dotnet publish native/NexusAndroid.csproj -c Release -r $rid --self-contained true -p:PublishSingleFile=true --no-restore -o $out
+            # PublishAot (native/NexusAndroid.csproj): NexusAndroid.exe compiled ahead of time, no assembly beside it.
+            dotnet publish native/NexusAndroid.csproj -c Release -r $rid --no-restore -p:DebugType=none -o $out
             if ($LASTEXITCODE) { throw "dotnet publish $rid failed." }
             if (-not (Test-Path "$out/NexusAndroid.exe") -or -not (Test-Path "$out/plugin/skills/nexus-android/SKILL.md")) { throw "$rid output incomplete." }
+            if (Get-ChildItem $out -Filter *.dll) { throw "$rid was not compiled ahead of time." }
             Copy-Item LICENSE, README.md $out
             Get-ChildItem $out -Filter *.pdb | Remove-Item
             Compress-Archive -Path "$out/*" -DestinationPath "dist/NexusAndroid-$rid.zip"

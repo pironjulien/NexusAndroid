@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-11-08
+
 ### Fixed
 - Tests: no test can show a Windows error box. The test process sets the error mode (no critical-error, crash or
   missing-file box) when it loads, and every process it starts inherits it; a test checks it in a child process.
@@ -14,6 +16,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   engine change can no longer break it unseen. It is built, never run.
 
 ### Changed
+- Releases ship `NexusAndroid.exe` compiled ahead of time (Native AOT) instead of a compressed self-contained single
+  file: 12.7 MB instead of 42 MB for x64, and an MCP session answers `initialize` then `tools/list` in about 22 ms
+  instead of 120 ms (median of 5 starts on the same PC). The release zips and Claude Desktop extensions keep the same
+  shape (`NexusAndroid.exe`, its plugin folder, README and LICENSE), so `get.ps1`, NexusSystem and existing
+  installations need no change. Windows OCR (`look`) was checked in an ahead-of-time build.
+- The engine is AOT-compatible: the trimming, single-file and AOT analyzers run in every build, with warnings as
+  errors. The 14 `JsonArray.Add` calls that went through reflection-based JSON now add the node itself, and the two
+  typed values the engine serializes (the `checkup` device list, the strings written into Codex's `config.toml`) use
+  source-generated metadata (`native/EngineJson.cs`), same output. Reflection-based JSON is off in every build of the
+  engine, so the tests run it the way the release does.
+- The AOT compiler and the trimmer (`Microsoft.DotNet.ILCompiler`, `Microsoft.NET.ILLink.Tasks`) are pinned package
+  references in `packages.lock.json`: left implicit, their version would follow the machine's .NET SDK and break the
+  locked restore of the CI whenever its SDK moves.
+- The test of an update while an engine runs installs the real release build, now the Native AOT one. `install.ps1`
+  (contributors) still builds a framework-dependent engine, without the C++ build tools.
 - Raw bench results (`benchmarks/results`) are no longer published: their header describes the tester's own phone
   (lock state, foreground app). The folder is ignored by Git and stays local; `benchmarks/README.md` keeps the
   conclusions.
@@ -1637,7 +1654,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.24.2...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.24.2...v0.25.0
 [0.24.2]: https://github.com/pironjulien/NexusAndroid/compare/v0.24.1...v0.24.2
 [0.24.1]: https://github.com/pironjulien/NexusAndroid/compare/v0.24.0...v0.24.1
 [0.24.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.23.22...v0.24.0

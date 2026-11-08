@@ -56,8 +56,9 @@ is in English: server instructions, tool descriptions and tool reports (results,
 ## 🚀 Quick start
 
 Windows 10 or 11 (x64 or Arm64), an Android phone and a USB data cable, about 10 minutes, nothing to know beforehand.
-Since 0.22.0 the server is a single native Windows executable (C#, .NET 10, self-contained): no Python, no uv, no .NET
-to install. New versions are no longer published to PyPI; earlier packages stay available.
+Since 0.22.0 the server is a single native Windows executable (C#, .NET 10, compiled ahead of time with Native AOT
+since 0.25.0): no Python, no uv, no .NET to install. New versions are no longer published to PyPI; earlier packages
+stay available.
 
 > [!TIP]
 > **Let your AI install it.** Paste this sentence into **Claude Code**, **Codex** or **Antigravity**:
@@ -561,7 +562,8 @@ Questions or concerns: open an issue, or see [SECURITY.md](SECURITY.md) for priv
 
 ## 🧪 Development
 
-With the [.NET 10 SDK](https://dot.net) (version pinned by `global.json`):
+With the [.NET 10 SDK](https://dot.net) (version pinned by `global.json`) and the Visual Studio C++ build tools
+("Desktop development with C++"), which Native AOT links the release engine with (one test installs that build):
 
 ```powershell
 pwsh -NoProfile -File test.ps1   # = dotnet test (xUnit v3, Microsoft.Testing.Platform), offline, no phone needed
@@ -577,7 +579,8 @@ rebuilt from `phone/NexusQuery.java` by `phone/build.ps1` (JDK 17+).
 <summary><b>Full install from a clone (Windows)</b></summary>
 
 An alternative to `get.ps1` for contributors: builds the engine from the sources with the
-[.NET 10 SDK](https://dot.net) and runs the same `setup`.
+[.NET 10 SDK](https://dot.net) (framework-dependent: the .NET 10 runtime of this PC, no C++ tools) and runs the same
+`setup`.
 
 ```powershell
 git clone https://github.com/pironjulien/NexusAndroid
