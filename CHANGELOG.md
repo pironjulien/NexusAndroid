@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.25.4] - 2026-11-09
+
+### Fixed
+- A phone whose screen is off on a trusted place (Smart Lock, Extend Unlock) is no longer reported as locked: when
+  its lock screen shows and the trust agent has not yet reported it, the screen is woken and trust read again before
+  giving up; the dismissal of the lock screen is sent again while it stays (a long doze could swallow the first one),
+  and a draft whose lock screen came back over the conversation lifts it again before reading the text back. A
+  phone that needs its code keeps its lock screen, untouched. Tests check both cases.
+
 ## [0.25.3] - 2026-11-08
 
 ### Fixed
@@ -1686,7 +1695,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.3...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.4...HEAD
+[0.25.4]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.3...v0.25.4
 [0.25.3]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.2...v0.25.3
 [0.25.2]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.0...v0.25.1

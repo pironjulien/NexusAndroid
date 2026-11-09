@@ -1328,6 +1328,13 @@ public sealed partial class NativeEngine
         if (Regex.IsMatch(output, @"(?im)^\s*(Error|Exception|SecurityException)"))
             throw new IOException(NativeSafety.Mask(output));
         screen = AwaitArrival(expected, 4);
+        if (Locked(screen))
+        {
+            // The lock screen came back over the conversation (screen gone back to sleep): lifted again when trusted.
+            screen = LiftTrustedLock(screen);
+            if (!Locked(screen))
+                screen = AwaitArrival(expected, 2);
+        }
         var arrived = expected.Length > 0 && Foreground(screen) == expected;
         var observed = false;
         if (arrived && !Locked(screen))

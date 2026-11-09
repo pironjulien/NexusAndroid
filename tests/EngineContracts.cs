@@ -815,7 +815,7 @@ sealed class ConfiguredPhone(JsonObject configuration) : IAndroidQuery
     /// <summary>Set once an input command ran: the screen then shows "xml_after_input" when the fixture gives one.</summary>
     public bool InputSeen;
     public NativeScreen Screen(bool image) => new(
-        Configuration["state"]?.ToString() ?? "mCurrentFocus=Window{fixture u0 com.example.app/.Main}\nmWakefulness=Awake\nisKeyguardShowing=false",
+        (InputSeen ? Configuration["state_after_input"]?.ToString() : null) ?? Configuration["state"]?.ToString() ?? "mCurrentFocus=Window{fixture u0 com.example.app/.Main}\nmWakefulness=Awake\nisKeyguardShowing=false",
         (InputSeen ? Configuration["xml_after_input"]?.ToString() : null) ?? Configuration["xml"]?.ToString() ?? "<hierarchy/>",
         Configuration["width"]?.GetValue<int>() ?? 1080,
         Configuration["height"]?.GetValue<int>() ?? 1920,
@@ -854,6 +854,8 @@ sealed class ConfiguredAdb(ConfiguredPhone phone) : AdbClient("fixture-adb.exe",
         var normalized = command.Replace("'", "");
         if (normalized.StartsWith("input ", StringComparison.Ordinal) || normalized.Contains("input motionevent", StringComparison.Ordinal))
             phone.InputSeen = true;
+        if (phone.InputSeen && normalized.Contains("dumpsys trust", StringComparison.Ordinal) && phone.Configuration["trust_after_input"] is { } trustAfter)
+            return trustAfter.ToString();
         var mapping = phone.Configuration["shell"]?.AsObject();
         if (mapping is not null)
         {

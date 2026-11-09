@@ -125,14 +125,33 @@ public sealed partial class NativeEngine
     {
         if (!Locked(screen))
             return screen;
-        var trusted = Regex.IsMatch(Shell("dumpsys", "trust"), @"\(current\):[^\r\n]*\bdeviceLocked=0\b");
-        if (!trusted)
-            return screen;
+        bool Trusted() => Regex.IsMatch(Shell("dumpsys", "trust"), @"\(current\):[^\r\n]*\bdeviceLocked=0\b");
+        if (!Trusted())
+        {
+            // A dozing phone (screen off, always-on display) can report its trusted place or Extend Unlock only once
+            // awake: wake it, then ask again. A phone that still needs its code keeps its lock screen, untouched.
+            if (Awake(screen))
+                return screen;
+            NativeSafety.StopGuard();
+            Shell("input", "keyevent", "KEYCODE_WAKEUP");
+            lastInput = DateTimeOffset.UtcNow;
+            var settle = DateTime.UtcNow.AddSeconds(1.5);
+            var regained = Trusted();
+            while (!regained && DateTime.UtcNow < settle)
+            {
+                Thread.Sleep(120);
+                regained = Trusted();
+            }
+            if (!regained)
+                return Read();
+        }
         NativeSafety.StopGuard();
         Shell("input", "keyevent", "KEYCODE_WAKEUP");
         Shell("wm", "dismiss-keyguard");
         lastInput = DateTimeOffset.UtcNow;
-        var until = DateTime.UtcNow.AddSeconds(2);
+        // Waking from a long doze can swallow the first dismissal: it is sent again while the lock screen stays.
+        var until = DateTime.UtcNow.AddSeconds(4);
+        var again = DateTime.UtcNow.AddMilliseconds(700);
         do
         {
             screen = Read();
@@ -143,6 +162,12 @@ public sealed partial class NativeEngine
             }
 
             Thread.Sleep(80);
+            if (DateTime.UtcNow >= again)
+            {
+                NativeSafety.StopGuard();
+                Shell("wm", "dismiss-keyguard");
+                again = DateTime.UtcNow.AddMilliseconds(700);
+            }
         } while (DateTime.UtcNow < until);
         return screen;
     }

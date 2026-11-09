@@ -499,6 +499,36 @@ public sealed class NativeUtilitiesTests
         Assert.DoesNotContain("exact text read back", body);
     }
 
+    [Fact]
+    public void DraftWakesADozingTrustedPhoneInsteadOfCallingItLocked()
+    {
+        // Screen off on a trusted Wi-Fi: lock screen shown and trust reported only once the phone is awake.
+        var fixture = DraftFixture();
+        var awake = fixture["state"]!.ToString();
+        fixture["state"] = awake.Replace("mWakefulness=Awake", "mWakefulness=Dozing").Replace("isKeyguardShowing=false", "isKeyguardShowing=true");
+        fixture["shell"]!["dumpsys trust"] = "(current): deviceLocked=1";
+        fixture["trust_after_input"] = "(current): deviceLocked=0";
+        fixture["state_after_input"] = awake;
+        var result = Call("draft", Json("""{"to": "[7]", "text": "draft text"}"""), fixture);
+        var body = Success(result);
+        Assert.DoesNotContain("phone locked", body);
+        Assert.Contains("exact text read back", body);
+        Assert.Contains(Commands(result), command => command.Contains("KEYCODE_WAKEUP", StringComparison.Ordinal));
+        Assert.Contains(Commands(result), command => command.Contains("dismiss-keyguard", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DraftLeavesAPhoneThatNeedsItsCodeLocked()
+    {
+        var fixture = DraftFixture();
+        fixture["state"] = fixture["state"]!.ToString().Replace("mWakefulness=Awake", "mWakefulness=Dozing").Replace("isKeyguardShowing=false", "isKeyguardShowing=true");
+        fixture["shell"]!["dumpsys trust"] = "(current): deviceLocked=1";
+        var result = Call("draft", Json("""{"to": "[7]", "text": "draft text"}"""), fixture);
+        var body = Success(result);
+        Assert.Contains("phone locked", body);
+        Assert.DoesNotContain(Commands(result), command => command.Contains("dismiss-keyguard", StringComparison.Ordinal));
+    }
+
     // ------------------------------------------------------------------ notifications
 
     private static string Notice(string package, long when, string title, string body, bool ongoing = false) =>
