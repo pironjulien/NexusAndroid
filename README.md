@@ -104,7 +104,8 @@ installs it into `~\.nexus\nexus-android\releases\<version>`, then runs `NexusAn
 or downloads Google's official [Platform Tools](https://developer.android.com/tools/releases/platform-tools),
 declares the server to the AI apps it finds (Claude Code, Claude Desktop, Codex, Antigravity; your own entries are
 kept, each edited file is backed up first), then walks you through connecting the phone (steps above). Run `get.ps1`
-again (downloaded and checked the same way) to update.
+again (downloaded and checked the same way) to update. Older versions are removed once no AI app runs them any more:
+by `get.ps1` when it installs, then by the engine itself each time a server starts (in the background).
 
 **Verify a download.** Every release file (both zips, both `.mcpb` extensions, `get.ps1`, `SHA256SUMS.txt`) carries a
 Sigstore build provenance attestation: `gh attestation verify NexusAndroid-win-x64.zip --repo pironjulien/NexusAndroid`
@@ -591,7 +592,7 @@ pwsh -NoProfile -File install.ps1 -NoWait  # same, without waiting for the phone
 ```
 
 The executable goes to `~\.nexus\nexus-android\native\<source fingerprint>` (a new folder for new sources, never
-overwritten while an AI app runs it). `-SkipTests` skips the tests, `-NoRegister` leaves the AI apps alone. Build
+overwritten while an AI app runs it; older ones are removed by the engine once no AI app runs them). `-SkipTests` skips the tests, `-NoRegister` leaves the AI apps alone. Build
 output goes to `~\.nexus\build\nexus-android`, never into the clone. The engine is checked offline by the xUnit suite
 of `tests/` (`test.ps1`, also run by the CI) and on a real phone by the [bench](benchmarks/README.md).
 

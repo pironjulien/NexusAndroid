@@ -230,17 +230,25 @@ function Remove-OldReleases([string]$Exe) {
     # A version folder still used (Test-FolderInUse) stays whole: deleting it file by file would leave a running engine
     # with its executable alone (Windows only refuses to delete the mapped program), every other file gone. An unused
     # one is renamed aside first (refused while a file in it is open, as the lock of an engine starting meanwhile), then
-    # deleted; a retired-* folder that did not go at once goes on a later run.
-    $keep = Split-Path -Leaf (Split-Path -Parent $Exe)
+    # deleted; a retired-* folder that did not go at once goes on a later run. install.ps1's folders
+    # (native\<source fingerprint>) are older versions too once engine.txt names this install. The engine runs the same
+    # clean-up at each server start (OldVersions.cs), for a version an AI app still ran here.
+    $keep = [IO.Path]::GetFullPath((Split-Path -Parent $Exe))
     $images = Get-EngineImages
     foreach ($left in @(Get-ChildItem -LiteralPath $state -Directory -Filter 'retired-*' -ErrorAction SilentlyContinue)) {
         if (-not (Test-FolderInUse $left.FullName $images)) { Remove-Item -LiteralPath $left.FullName -Recurse -Force -ErrorAction SilentlyContinue }
     }
-    foreach ($old in @(Get-ChildItem -LiteralPath (Join-Path $state 'releases') -Directory -ErrorAction SilentlyContinue)) {
-        if ($old.Name -eq $keep -or (Test-FolderInUse $old.FullName $images)) { continue }
-        $retired = Join-Path $state ('retired-' + [guid]::NewGuid().ToString('N'))
-        try { [IO.Directory]::Move($old.FullName, $retired) } catch { continue }
-        Remove-Item -LiteralPath $retired -Recurse -Force -ErrorAction SilentlyContinue
+    $native = Join-Path $state 'native'
+    foreach ($root in (Join-Path $state 'releases'), $native) {
+        foreach ($old in @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue)) {
+            if ($old.FullName -ieq $keep -or (Test-FolderInUse $old.FullName $images)) { continue }
+            $retired = Join-Path $state ('retired-' + [guid]::NewGuid().ToString('N'))
+            try { [IO.Directory]::Move($old.FullName, $retired) } catch { continue }
+            Remove-Item -LiteralPath $retired -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if ((Test-Path -LiteralPath $native) -and -not (Get-ChildItem -LiteralPath $native -Force -ErrorAction SilentlyContinue)) {
+        Remove-Item -LiteralPath $native -Force -ErrorAction SilentlyContinue
     }
 }
 

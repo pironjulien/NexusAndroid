@@ -119,6 +119,29 @@ public sealed class ReleaseCleanupTests : IDisposable
     [Theory]
     [InlineData("pwsh")]
     [InlineData("powershell")]
+    public void InstallScriptFoldersGoTooAndTheirEmptyParentWithThem(string shell)
+    {
+        // install.ps1 (from a clone) installs into native\<source fingerprint>: older versions too once engine.txt names
+        // this install. 0.22.10 to 0.23.0 stayed there (25 MB each) since nothing removed them.
+        string native = Path.Join(State, "native");
+        string held = Path.Join(native, "1111111111111111");
+        foreach (string folder in new[] { held, Path.Join(native, "2222222222222222") })
+        {
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Join(folder, "NexusAndroid.exe"), "dev build");
+            File.WriteAllText(Path.Join(folder, "engine.lock"), "");
+        }
+        using (new FileStream(Path.Join(held, "engine.lock"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            Clean(shell, None);
+        Assert.Equal(new[] { "1111111111111111" }, Directory.GetDirectories(native).Select(Path.GetFileName));
+        Clean(shell, None);
+        Assert.False(Directory.Exists(native));
+        Assert.True(File.Exists(Current));
+    }
+
+    [Theory]
+    [InlineData("pwsh")]
+    [InlineData("powershell")]
     public void AnEngineThatCannotBeReadKeepsEverything(string shell)
     {
         // An elevated or other-session engine the scan cannot read could run from any folder, retired ones included.

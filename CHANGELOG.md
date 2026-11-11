@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.25.5] - 2026-11-11
+
+### Fixed
+- Older versions no longer pile up in `%USERPROFILE%\.nexus\nexus-android`. `get.ps1` removed them only while
+  installing, and kept the one an open AI app was still running, which then stayed until the next version; the
+  folders `install.ps1` builds from a clone (`native\<source fingerprint>`, about 25 MB each) were never removed.
+  The engine now runs the same clean-up itself each time a server starts (stdio or shared daemon), in the background,
+  without delaying the start: only when `engine.txt` names the running engine, never a folder an engine may still
+  use (its program running, its `engine.lock` held, or a NexusAndroid process that cannot be read), an unused folder
+  renamed aside before it is deleted, and a folder installed less than an hour ago left alone. `get.ps1` now also
+  removes the old `native\` folders. Tests check both.
+
+### Changed
+- The engine is compiled with .NET 10.0.15 (the November 2026 servicing update; .NET SDK 10.0.404).
+
 ## [0.25.4] - 2026-11-09
 
 ### Fixed
@@ -1695,7 +1710,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.4...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.5...HEAD
+[0.25.5]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.4...v0.25.5
 [0.25.4]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.3...v0.25.4
 [0.25.3]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.2...v0.25.3
 [0.25.2]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.1...v0.25.2

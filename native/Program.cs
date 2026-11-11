@@ -52,6 +52,7 @@ public static class Program
             if (idx + 1 < args.Length && int.TryParse(args[idx + 1], out int p))
                 port = p;
             PrepareTools();
+            OldVersions.StartInBackground();
             var server = new McpServer();
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) =>
@@ -66,6 +67,7 @@ public static class Program
         if (args.Contains("--mcp"))
         {
             PrepareTools();
+            OldVersions.StartInBackground();
             var server = new McpServer();
             server.RunStdio();
             return 0;
