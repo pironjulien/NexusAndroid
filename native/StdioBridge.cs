@@ -86,7 +86,8 @@ public sealed class StdioBridge : IDisposable
             pending.RemoveAll(t => t.IsCompleted);
             pending.Add(task);
         }
-        await Task.WhenAny(Task.WhenAll(pending), Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
+        // At most 5 s for the forwards still running; a failed or late one is not waited for (no timer left behind).
+        await Task.WhenAll(pending).WaitAsync(TimeSpan.FromSeconds(5)).ContinueWith(static _ => { }, TaskScheduler.Default).ConfigureAwait(false);
         if (session is not null)
         {
             try

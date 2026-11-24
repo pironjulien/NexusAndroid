@@ -178,7 +178,7 @@ public sealed partial class NativeEngine
                     catch (Exception stopFailure) when (NativeSafety.Recoverable(stopFailure)) {/* StopVideo retries the owned producer and refuses delivery. */}
                     break;
                 }
-                await Task.WhenAny(stop.Task, Task.Delay(400));
+                await stop.Task.WaitAsync(TimeSpan.FromMilliseconds(400)).ContinueWith(static _ => { }, TaskScheduler.Default);
             }
         });
         if (video.WaitForExit(1000) && video.ExitCode is not (0 or null))

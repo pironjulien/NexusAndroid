@@ -79,6 +79,9 @@ public sealed class UpdateWhileRunningTests : IDisposable
     {
         var info = new ProcessStartInfo("dotnet")
         {
+            // From the repository, so global.json pins the SDK as release.yml does (elsewhere the newest SDK of the
+            // machine compiled it: CI 2026-11-24, analyzers the pinned SDK does not have).
+            WorkingDirectory = Repository(),
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,

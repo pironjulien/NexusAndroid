@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   returned no element and no image, without a word. It now waits up to 2 seconds for the app to show a readable
   screen, and a screen with neither a readable element nor an image is reported as such ("Nothing readable … look
   again") instead of an empty list. Tests check both.
+- Two waits (the stdio bridge closing, the screen-recording watch) no longer leave a timer running once what they
+  waited for is done (analyzer rule CA2027). The test that builds the release engine now builds it from the repository,
+  with the SDK `global.json` pins, as the release does, instead of the newest SDK of the machine.
 
 ## [0.25.5] - 2026-11-11
 
