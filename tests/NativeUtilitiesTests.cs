@@ -518,6 +518,34 @@ public sealed class NativeUtilitiesTests
     }
 
     [Fact]
+    public void LookWaitsForTheAppToRedrawAfterLiftingATrustedLock()
+    {
+        // Fold, 2026-11-24: screen off on a trusted place, Gmail's tree empty on the first reads after waking; look
+        // answered an empty list, no image, as done. It now waits for the app to redraw.
+        var fixture = DraftFixture();
+        var awake = fixture["state"]!.ToString();
+        fixture["state"] = awake.Replace("mWakefulness=Awake", "mWakefulness=Dozing").Replace("isKeyguardShowing=false", "isKeyguardShowing=true");
+        fixture["shell"]!["dumpsys trust"] = "(current): deviceLocked=1";
+        fixture["trust_after_input"] = "(current): deviceLocked=0";
+        fixture["state_after_input"] = awake;
+        fixture["empty_reads_after_input"] = 3;
+        var result = Call("look", new JsonObject(), fixture);
+        var body = Success(result);
+        Assert.Contains("Send", body);
+        Assert.DoesNotContain("Nothing readable", body);
+        Assert.Contains(Commands(result), command => command.Contains("dismiss-keyguard", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LookSaysWhenNothingIsReadableInsteadOfAnEmptyAnswer()
+    {
+        var fixture = DraftFixture();
+        fixture["xml"] = "<hierarchy/>";
+        var body = Success(Call("look", new JsonObject(), fixture));
+        Assert.Contains("Nothing readable", body);
+    }
+
+    [Fact]
     public void DraftLeavesAPhoneThatNeedsItsCodeLocked()
     {
         var fixture = DraftFixture();

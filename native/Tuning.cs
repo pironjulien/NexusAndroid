@@ -25,4 +25,7 @@ internal static class Tuning
     internal static int LookImageMaxBytes = ImageChain.DefaultMaxInlineBytes;
     /// <summary>Lossless format of `look` images: webp (shared rule) or png (until 0.23.19), compared on the bench.</summary>
     internal static string LookLosslessFormat = "webp";
+    /// <summary>After `look` lifts a lock screen, it waits at most this long for the app below to redraw a readable tree
+    /// (Fold, 2026-11-24: Gmail's tree came back empty on the first read after waking).</summary>
+    internal static double UnlockRedrawSeconds = 2;
 }

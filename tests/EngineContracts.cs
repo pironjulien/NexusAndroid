@@ -814,12 +814,19 @@ sealed class ConfiguredPhone(JsonObject configuration) : IAndroidQuery
     public string Clipboard = "";
     /// <summary>Set once an input command ran: the screen then shows "xml_after_input" when the fixture gives one.</summary>
     public bool InputSeen;
-    public NativeScreen Screen(bool image) => new(
-        (InputSeen ? Configuration["state_after_input"]?.ToString() : null) ?? Configuration["state"]?.ToString() ?? "mCurrentFocus=Window{fixture u0 com.example.app/.Main}\nmWakefulness=Awake\nisKeyguardShowing=false",
-        (InputSeen ? Configuration["xml_after_input"]?.ToString() : null) ?? Configuration["xml"]?.ToString() ?? "<hierarchy/>",
-        Configuration["width"]?.GetValue<int>() ?? 1080,
-        Configuration["height"]?.GetValue<int>() ?? 1920,
-        Configuration["image_base64"] is not null && image ? Convert.FromBase64String(Configuration["image_base64"]!.ToString()) : null);
+    /// <summary>Screen reads since the first input: "empty_reads_after_input" of them show an empty tree and no image, like
+    /// an app still redrawing right after the phone wakes and its lock screen is lifted.</summary>
+    public int ReadsAfterInput;
+    public NativeScreen Screen(bool image)
+    {
+        var redrawing = InputSeen && ReadsAfterInput++ < (Configuration["empty_reads_after_input"]?.GetValue<int>() ?? 0);
+        return new(
+            (InputSeen ? Configuration["state_after_input"]?.ToString() : null) ?? Configuration["state"]?.ToString() ?? "mCurrentFocus=Window{fixture u0 com.example.app/.Main}\nmWakefulness=Awake\nisKeyguardShowing=false",
+            redrawing ? "<hierarchy/>" : (InputSeen ? Configuration["xml_after_input"]?.ToString() : null) ?? Configuration["xml"]?.ToString() ?? "<hierarchy/>",
+            Configuration["width"]?.GetValue<int>() ?? 1080,
+            Configuration["height"]?.GetValue<int>() ?? 1920,
+            !redrawing && Configuration["image_base64"] is not null && image ? Convert.FromBase64String(Configuration["image_base64"]!.ToString()) : null);
+    }
     public List<Dictionary<string, string>> Query(string uri, string projection = "", string where = "", string sort = "")
     {
         QueryCalls.Add(new JsonObject { ["uri"] = uri, ["projection"] = projection, ["where"] = where, ["sort"] = sort });

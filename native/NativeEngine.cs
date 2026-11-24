@@ -291,14 +291,29 @@ public sealed partial class NativeEngine
         var previous = last.ToList();
         // One read when the phone is open: the image comes with the tree; a lock lifted first needs the image read again.
         var screen = Read(image);
+        var lifted = false;
         if (Locked(screen))
         {
             screen = LiftTrustedLock(screen);
+            lifted = !Locked(screen);
             if (image)
                 screen = Read(true);
         }
         ExtendAwake(screen);
         var elements = Elements(screen);
+        // Right after the lock screen is lifted, the app below redraws: its tree comes back empty for a moment (Gmail on the
+        // Fold, 2026-11-24: an empty list, no image, reported as done). Wait for it before answering.
+        static bool Readable(List<UiElement> list) => list.Any(e => e.Text.Length > 0 || e.ContentDesc.Length > 0);
+        if (lifted && !Readable(elements))
+        {
+            var redrawn = DateTime.UtcNow.AddSeconds(Tuning.UnlockRedrawSeconds);
+            while (!Readable(elements) && DateTime.UtcNow < redrawn)
+            {
+                Thread.Sleep(150);
+                screen = Read(image);
+                elements = Elements(screen);
+            }
+        }
         if (show == "auto" && !elements.Any(e => e.Text.Length > 0 || e.ContentDesc.Length > 0))
         {
             image = true;
@@ -347,6 +362,8 @@ public sealed partial class NativeEngine
         }
         var hints = LookHints(screen, elements);
         var output = Text($"{Foreground(screen)} · {screen.Width}×{screen.Height}" + (Locked(screen) ? " · locked" : "") + hints + "\n" + NativeSafety.Mask(screen.Error) + "\n" + (show == "image" ? "" : tree), codes: false);
+        if (elements.Count == 0 && screen.Image is null)
+            output["content"]!.AsArray().Add((JsonNode?)new JsonObject { ["type"] = "text", ["text"] = "Nothing readable: the UI tree is empty and the phone returned no image (an app still drawing, or the screen just waking). Look again." });
         if (image && screen.Image is not null)
         {
             if (elements.Count == 0 && !Bool(args, "confirm"))

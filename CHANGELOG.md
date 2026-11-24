@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.25.6] - 2026-11-24
+
+### Fixed
+- The first `look` on a phone asleep on a trusted place no longer answers an empty screen as done. Once the lock screen
+  was lifted, the app below (Gmail on the Fold) still redrew and its UI tree came back empty for a moment: `look`
+  returned no element and no image, without a word. It now waits up to 2 seconds for the app to show a readable
+  screen, and a screen with neither a readable element nor an image is reported as such ("Nothing readable … look
+  again") instead of an empty list. Tests check both.
+
 ## [0.25.5] - 2026-11-11
 
 ### Fixed
@@ -1710,7 +1719,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.5...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.6...HEAD
+[0.25.6]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.5...v0.25.6
 [0.25.5]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.4...v0.25.5
 [0.25.4]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.3...v0.25.4
 [0.25.3]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.2...v0.25.3
