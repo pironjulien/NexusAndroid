@@ -21,7 +21,7 @@ internal static class EngineJson
         TypeInfoResolver = EngineJsonContext.Default,
     };
 
-    private static readonly JsonTypeInfo<string> RelaxedString = (JsonTypeInfo<string>)Relaxed.GetTypeInfo(typeof(string));
+    private static readonly JsonTypeInfo<string> RelaxedString = Relaxed.GetTypeInfo<string>();
 
     internal static string RelaxedQuoted(string text) => JsonSerializer.Serialize(text, RelaxedString);
 

@@ -1,5 +1,5 @@
 #Requires -Version 7
-# Installs NexusAndroid from a clone of this repository on Windows (safe to run again after an update). Needs the .NET 10
+# Installs NexusAndroid from a clone of this repository on Windows (safe to run again after an update). Needs the .NET 11
 # SDK (https://dot.net); no Python. Without a clone, use get.ps1 instead (prebuilt, nothing to install).
 #  - offline tests (test.ps1), then `dotnet publish` of the native engine (build output in ~\.nexus\build\nexus-android),
 #    installed into ~\.nexus\nexus-android\native\<source fingerprint> (never overwritten while an AI app runs it)
@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 
 $project = $PSScriptRoot
 $state = Join-Path $HOME '.nexus\nexus-android'
-if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw '.NET SDK not found: install the .NET 10 SDK (https://dot.net), or use get.ps1 (prebuilt).' }
+if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw '.NET SDK not found: install the .NET 11 SDK (https://dot.net), or use get.ps1 (prebuilt).' }
 if (-not $SkipTests) {
     & (Join-Path $project 'test.ps1')
     if ($LASTEXITCODE) { throw 'Tests failed: nothing installed.' }

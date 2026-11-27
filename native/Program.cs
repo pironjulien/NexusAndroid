@@ -26,7 +26,7 @@ public static class Program
 
         if (args.Contains("--version") || args.Contains("-v"))
         {
-            Console.WriteLine($"NexusAndroid v{Version} (Native C# .NET 10)");
+            Console.WriteLine($"NexusAndroid v{Version} (Native C# .NET 11)");
             return 0;
         }
 
@@ -101,7 +101,7 @@ public static class Program
 
     private static void PrintHelp()
     {
-        Console.WriteLine($"NexusAndroid v{Version} - Unified Standalone C# .NET 10 Engine");
+        Console.WriteLine($"NexusAndroid v{Version} - Unified Standalone C# .NET 11 Engine");
         Console.WriteLine("Usage:");
         Console.WriteLine("  NexusAndroid.exe --http [port] Start HTTP MCP daemon (default 16180)");
         Console.WriteLine("  NexusAndroid.exe --mcp         Start stdio MCP server (18 tools)");

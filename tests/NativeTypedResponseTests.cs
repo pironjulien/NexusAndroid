@@ -427,7 +427,7 @@ internal static class Canonical
                 builder.Append(']');
                 break;
             case JsonValue value:
-                var element = System.Text.Json.JsonDocument.Parse(value.ToJsonString()).RootElement;
+                var element = System.Text.Json.JsonElement.Parse(value.ToJsonString());
                 switch (element.ValueKind)
                 {
                     case System.Text.Json.JsonValueKind.String:
@@ -567,7 +567,7 @@ internal static class SchemaValidator
             return type == "object";
         if (data is JsonArray)
             return type == "array";
-        var element = System.Text.Json.JsonDocument.Parse(data.ToJsonString()).RootElement;
+        var element = System.Text.Json.JsonElement.Parse(data.ToJsonString());
         return type switch
         {
             "string" => element.ValueKind == System.Text.Json.JsonValueKind.String,

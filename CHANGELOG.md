@@ -6,10 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-27
+
 ### Changed
+- Runs on .NET 11. The engine is still a single native executable compiled ahead of time: nothing to install, and
+  nothing changes in how you use it. Building from the sources now needs the .NET 11 SDK (pinned by `global.json`).
 - Dependencies: xUnit v3 4.0.3 (Microsoft.Testing.Platform 2.5.2) for the tests, and the pinned GitHub Actions
   (CodeQL 4.39.3, setup-dotnet 6.1.0, zizmor 0.8.1, NexusSystem release workflows 1.8.0). Dependabot no longer proposes
-  a new major of the AOT compiler and trimmer, which follow the .NET 10 runtime of the SDK `global.json` pins.
+  a new major of the AOT compiler and trimmer, which follow the .NET 11 runtime of the SDK `global.json` pins.
 
 ## [0.25.7] - 2026-11-27
 
@@ -1733,7 +1737,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.7...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.7...v0.26.0
 [0.25.7]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.6...v0.25.7
 [0.25.6]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.5...v0.25.6
 [0.25.5]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.4...v0.25.5
