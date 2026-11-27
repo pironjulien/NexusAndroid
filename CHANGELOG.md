@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-11-28
+
+### Added
+- `checkup` judges the ADB link instead of only printing its values, one line per finding and nothing when all is
+  well:
+  - wireless debugging on while neither the security patch level nor the Google Play system update reaches
+    2026-05-01, on Android 14 to 16: CVE-2026-0073 (critical, Android Security Bulletin of May 2026) lets a device on
+    the same network bypass wireless debugging authentication and run commands as the shell user. The line says so and
+    what to do: update the phone, or turn wireless debugging off outside a trusted network;
+  - an Android 17 phone with an adb older than 37 on the PC: ADB Wi-Fi 2.0 needs Android SDK Platform-Tools 37.0.0 or
+    later. The line names the adb in use and its version.
+
+  Both are read-only lines in the report: no notification, nothing changes on the phone.
+
 ## [0.26.0] - 2026-11-27
 
 ### Changed
@@ -1737,7 +1751,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.7...v0.26.0
 [0.25.7]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.6...v0.25.7
 [0.25.6]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.5...v0.25.6

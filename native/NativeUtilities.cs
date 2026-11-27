@@ -104,6 +104,14 @@ public sealed partial class NativeEngine
         var processes = reads[4];
         var helpers = processes.Split('\n').Where(l => Regex.IsMatch(l, @"(?i)mobilecli|DeviceServer|appium|uiautomator2|shizuku|scrcpy") && !l.Contains("nexus-scrcpy")).Select(l => l.Trim()).Take(12).ToList();
         var lines = new List<string> { $"Device: {reads[5].Trim()} · link {(adb.SelectedSerial!.Contains(':') ? "Wi-Fi" : "USB")}", $"Android {reads[6].Trim()} · security patch {reads[7].Trim()} · build {reads[8].Trim()}", $"Battery: {Battery("level")} % · health {BatteryHealth(Battery("health"))} · temperature {(double.TryParse(Battery("temperature"), out var t) ? t / 10 : 0):0.0} °C", "Storage (/data): " + CheckupStorage(storage), "Memory: " + CheckupMemory(memory), "Third-party apps: " + third.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length, "Outside official stores: " + (OutsideOfficialStores(third) is { Count: > 0 } outside ? string.Join(", ", outside) : "none"), "Wireless debugging: " + (reads[9].Trim() == "1" ? "on" : "off"), "Accessibility: " + (reads[10].Trim() is { Length: > 0 } services && services != "null" ? services : "none"), "Other control helpers: " + (helpers.Count > 0 ? string.Join("; ", helpers) : "none") };
+        // The link judged, one line per finding and nothing when all is well. The two extra reads run only in the case
+        // they decide: the Google Play system update date for an exposed phone, the host adb version for Android 17.
+        var (release, patch, wireless) = (reads[6].Trim(), reads[7].Trim(), reads[9].Trim() == "1");
+        if (CheckupWirelessDebugging(release, patch, wireless, "") is not null
+            && CheckupWirelessDebugging(release, patch, wireless, PlaySystemUpdate(Shell("dumpsys", "package", "com.google.android.modulemetadata"))) is { } exposed)
+            lines.Add(exposed);
+        if (AndroidMajor(release) >= 17 && CheckupHostAdb(release, HostAdbVersion(), adb.AdbPath) is { } hostAdb)
+            lines.Add(hostAdb);
         if (Bool(args, "clean"))
         {
             NativeSafety.StopGuard();
@@ -112,6 +120,42 @@ public sealed partial class NativeEngine
         }
         lines.Add("System/app updates are checked in Settings, Play Store or Galaxy Store.");
         return Text(string.Join('\n', lines), new JsonObject { ["connected"] = true, ["devices"] = EngineJson.Devices(devices) });
+    }
+    private string HostAdbVersion()
+    {
+        try
+        {
+            return adb.RunHost("version", timeoutMs: 5000).Stdout;
+        }
+        catch (Exception e) when (NativeSafety.Recoverable(e)) { /* an adb that cannot say its version is not judged */ return ""; }
+    }
+    private static int AndroidMajor(string release) => int.TryParse(Regex.Match(release, @"^\d{1,4}").Value, out var major) ? major : 0;
+    private static bool IsDate(string value) => Regex.IsMatch(value, @"^\d{4}-\d{2}-\d{2}$");
+    /// <summary>Date of the Google Play system update: the version name of the module metadata package, which Settings
+    /// shows under that name. Empty when the phone has none or names it otherwise.</summary>
+    internal static string PlaySystemUpdate(string dump) => Regex.Match(dump, @"versionName=(\d{4}-\d{2}-\d{2})\b").Groups[1].Value;
+    /// <summary>CVE-2026-0073 (Android Security Bulletin, May 2026): bypass of wireless ADB mutual authentication in adbd,
+    /// code execution as the shell user from the adjacent network. Android 14, 15 and 16; fixed by security patch level
+    /// 2026-05-01, and by the Google Play system update of adbd. One line only when wireless debugging is on and neither
+    /// date shows the fix; null otherwise (an unreadable patch level is not judged).</summary>
+    internal static string? CheckupWirelessDebugging(string release, string patch, bool wirelessDebugging, string playSystemUpdate)
+    {
+        const string Fixed = "2026-05-01";
+        if (!wirelessDebugging || AndroidMajor(release) is < 14 or > 16 || !IsDate(patch) || string.CompareOrdinal(patch, Fixed) >= 0)
+            return null;
+        if (IsDate(playSystemUpdate) && string.CompareOrdinal(playSystemUpdate, Fixed) >= 0)
+            return null;
+        var play = IsDate(playSystemUpdate) ? $" and Google Play system update {playSystemUpdate} are" : " is";
+        return $"Wireless debugging risk: security patch {patch}{play} older than {Fixed}, so CVE-2026-0073 (critical) lets a device on the same network bypass wireless debugging authentication and run commands as the shell user. Update the phone, or turn wireless debugging off outside a trusted network.";
+    }
+    /// <summary>ADB Wi-Fi 2.0 (developer.android.com/tools/adb): Android 17 with adb 37.0.0 or later on the PC. One line
+    /// when an Android 17 phone meets an older host adb; null otherwise (an unreadable version is not judged).</summary>
+    internal static string? CheckupHostAdb(string release, string adbVersion, string adbPath)
+    {
+        var version = Regex.Match(adbVersion, @"(?m)^Version (\d{1,4})\.(\d+)\.(\d+)");
+        if (AndroidMajor(release) < 17 || !version.Success || int.Parse(version.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) >= 37)
+            return null;
+        return $"Host adb {version.Groups[1].Value}.{version.Groups[2].Value}.{version.Groups[3].Value} ({adbPath}) is older than 37.0.0: ADB Wi-Fi 2.0, the faster and more reliable wireless debugging of Android {AndroidMajor(release)}, needs Android SDK Platform-Tools 37.0.0 or later on the PC. Update Platform-Tools.";
     }
     // BatteryManager.BATTERY_HEALTH_* codes, as dumpsys battery prints them.
     internal static string BatteryHealth(string code) => code switch { "1" => "unknown", "2" => "good", "3" => "overheat", "4" => "dead", "5" => "over voltage", "6" => "failure", "7" => "cold", _ => code.Length > 0 ? code : "unknown" };

@@ -63,6 +63,41 @@ internal static class EngineContracts
             var outside = NativeEngine.OutsideOfficialStores("package:/product/app/Calc/Calc.apk=com.sec.android.app.popupcalculator  installer=null\r\npackage:/data/app/~~a1==/org.chromium.webapk.x-b2==/base.apk=org.chromium.webapk.x  installer=com.android.chrome\r\npackage:/data/app/~~c3==/com.play.app-d4==/base.apk=com.play.app  installer=com.android.vending\r\npackage:/data/app/~~e5==/com.side.app-f6==/base.apk=com.side.app  installer=com.google.android.packageinstaller\r\npackage:/data/app/~~g7==/com.adb.app-h8==/base.apk=com.adb.app  installer=null\r\npackage:/data/app/Tips/Tips.apk=com.samsung.android.app.tips  installer=null\r\npackage:/data/app/~~i9==/net.oqee.androidmobile-j0==/base.apk=net.oqee.androidmobile  installer=com.samsung.android.app.omcagent\r\n");
             Assert(outside.SequenceEqual(["com.side.app", "com.adb.app"]), "store origin: " + string.Join(",", outside));
         });
+        Test("checkup judges the link: CVE-2026-0073 with wireless debugging on, host adb before 37 with Android 17, nothing otherwise", () =>
+        {
+            const string Risk = "Wireless debugging risk: security patch 2026-04-01 is older than 2026-05-01, so CVE-2026-0073 (critical) lets a device on the same network bypass wireless debugging authentication and run commands as the shell user. Update the phone, or turn wireless debugging off outside a trusted network.";
+            const string Old = "Android Debug Bridge version 1.0.41\r\nVersion 36.0.2-14143358\r\nInstalled as C:\\tools\\adb.exe\r\n";
+            // Old patch, wireless debugging on: Android 14 to 16, the versions the bulletin lists.
+            Assert(NativeEngine.CheckupWirelessDebugging("16", "2026-04-01", true, "") == Risk, "old patch with wireless debugging on");
+            Assert(NativeEngine.CheckupWirelessDebugging("14", "2025-12-05", true, "2026-03-01")?.Contains("security patch 2025-12-05 and Google Play system update 2026-03-01 are older than 2026-05-01") == true, "both dates old");
+            // Fixed: by the patch level, or by the Google Play system update that carries adbd.
+            Assert(NativeEngine.CheckupWirelessDebugging("16", "2026-05-01", true, "") is null && NativeEngine.CheckupWirelessDebugging("15", "2026-11-05", true, "") is null, "recent patch");
+            Assert(NativeEngine.CheckupWirelessDebugging("16", "2026-04-01", true, "2026-05-01") is null, "fixed by the Google Play system update");
+            // USB only (wireless debugging off), versions outside the bulletin, unreadable patch: nothing.
+            Assert(NativeEngine.CheckupWirelessDebugging("16", "2026-04-01", false, "") is null, "USB only");
+            Assert(NativeEngine.CheckupWirelessDebugging("13", "2026-04-01", true, "") is null && NativeEngine.CheckupWirelessDebugging("17", "2026-04-01", true, "") is null && NativeEngine.CheckupWirelessDebugging("16", "", true, "") is null, "not judged");
+            Assert(NativeEngine.PlaySystemUpdate("  Package [com.google.android.modulemetadata] (1a2b):\r\n    versionCode=361100000 minSdk=34\r\n    versionName=2026-10-01\r\n") == "2026-10-01" && NativeEngine.PlaySystemUpdate("Unable to find package") == "", "Google Play system update date");
+            // Host adb 36 with Android 17, then adb 37, an older Android, an unreadable version.
+            Assert(NativeEngine.CheckupHostAdb("17", Old, @"C:\tools\adb.exe") == @"Host adb 36.0.2 (C:\tools\adb.exe) is older than 37.0.0: ADB Wi-Fi 2.0, the faster and more reliable wireless debugging of Android 17, needs Android SDK Platform-Tools 37.0.0 or later on the PC. Update Platform-Tools.", "adb 36 with Android 17");
+            Assert(NativeEngine.CheckupHostAdb("17", Old.Replace("36.0.2", "37.0.0"), "adb.exe") is null && NativeEngine.CheckupHostAdb("16", Old, "adb.exe") is null && NativeEngine.CheckupHostAdb("17", "", "adb.exe") is null, "adb 37, Android 16, unreadable");
+
+            // Through the tool: one line each, read-only, and no extra read when nothing is wrong.
+            var phone = new FakePhone();
+            var link = new FakeAdb(phone) { Release = "16", SecurityPatch = "2026-04-01", WirelessDebugging = "1" };
+            string Report(string name) => Text(new NativeEngine(link, phone, Path.Join(dir, name), () => new FakeControl(phone)).Execute("checkup", new()));
+            var report = Report("checkup-risk");
+            Assert(report.Split('\n').Count(l => l == Risk) == 1 && !report.Contains("Host adb"), "risk line: " + report);
+            link.PlaySystemUpdate = "2026-06-01";
+            Assert(!Report("checkup-play").Contains("CVE-2026-0073"), "Google Play system update ignored");
+            (link.Release, link.SecurityPatch, link.HostAdb) = ("17", "2026-11-01", "36.0.2");
+            link.Commands.Clear();
+            report = Report("checkup-adb");
+            Assert(report.Split('\n').Count(l => l.StartsWith("Host adb 36.0.2 (fake-adb.exe) is older than 37.0.0", StringComparison.Ordinal)) == 1 && !report.Contains("CVE-2026-0073"), "host adb line: " + report);
+            Assert(!link.Commands.Any(c => c.Contains("modulemetadata") || c.Contains(" put ") || c.Contains("'put'")), "unneeded read or write");
+            link.HostAdb = "37.0.1";
+            report = Report("checkup-fine");
+            Assert(!report.Contains("Host adb") && !report.Contains("CVE-2026-0073") && report.Contains("Wireless debugging: on"), "healthy link judged: " + report);
+        });
         Test("checkup reconnects a remembered phone before reporting it disconnected", () =>
         {
             var phone = new FakePhone();
@@ -689,6 +724,7 @@ sealed class FakeAdb(FakePhone phone) : AdbClient("fake-adb.exe", ConnectionFixt
     public readonly List<string[]> ArgumentCalls = [];
     public bool FailInput;
     public string VideoRemote = "", Hardware = "fixture-hardware", DeviceSerial = "127.0.0.1:12345";
+    public string Release = "17", SecurityPatch = "", WirelessDebugging = "", PlaySystemUpdate = "", HostAdb = "37.0.1";
     public int StatusReads;
     public bool LoseFirstStatus;
     public bool VideoStopped, HideUntilPicked, Picked;
@@ -748,8 +784,14 @@ sealed class FakeAdb(FakePhone phone) : AdbClient("fake-adb.exe", ConnectionFixt
             return "1";
         if (command.Contains("ro.product.model"))
             return "Fake";
+        if (command.Contains("ro.build.version.security_patch"))
+            return SecurityPatch;
+        if (command.Contains("adb_wifi_enabled"))
+            return WirelessDebugging;
+        if (command.Contains("com.google.android.modulemetadata"))
+            return "    versionName=" + PlaySystemUpdate + "\n";
         if (command.Contains("ro.build.version.release"))
-            return "17";
+            return Release;
         if (command.Contains("dumpsys") && command.Contains("trust"))
             return "(current): deviceLocked=0";
         if (command.Contains("list-app-functions"))
@@ -760,10 +802,10 @@ sealed class FakeAdb(FakePhone phone) : AdbClient("fake-adb.exe", ConnectionFixt
     }
     public override (string Stdout, string Stderr) RunHost(string arguments, int timeoutMs = 15000)
     {
-        if (!arguments.StartsWith("disconnect ", StringComparison.Ordinal))
+        if (arguments != "version" && !arguments.StartsWith("disconnect ", StringComparison.Ordinal))
             throw new Exception("Unexpected host discovery in engine fixture");
         Commands.Add("host:" + arguments);
-        return ("", "");
+        return (arguments == "version" ? $"Android Debug Bridge version 1.0.41\r\nVersion {HostAdb}-14910828\r\nInstalled as C:\\fixture\\adb.exe\r\n" : "", "");
     }
     public override (string Stdout, string Stderr) RunAdb(string arguments, int timeoutMs = 15000)
     {

@@ -1513,7 +1513,7 @@
   },
   {
     "name": "checkup",
-    "description": "Phone checkup: system, security patch, battery, storage, memory, apps outside official stores, wireless\ndebugging, accessibility. clean=true also clears app caches (no data loss).",
+    "description": "Phone checkup: system, security patch, battery, storage, memory, apps outside official stores, wireless\ndebugging, accessibility. Adds one line per link problem found, none when all is well: wireless debugging on\nwithout the fix for CVE-2026-0073, host adb older than 37 with Android 17. clean=true also clears app caches (no data loss).",
     "inputSchema": {
       "properties": {
         "clean": {

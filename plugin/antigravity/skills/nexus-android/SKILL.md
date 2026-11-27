@@ -55,7 +55,8 @@ Do not create a question card just to report progress.
   `since="15m"`, `query=`; codes, tokens, e-mails and phone numbers masked; no `recent` for banking apps.
 - `notifications`, `files` (shared storage only; pull, push, never overwrites or deletes), `info` (location, calls,
   contacts, agenda; read-only), `settings` (Wi-Fi, Bluetooth, data, location, NFC, do not disturb, brightness,
-  volume; read back after change), `checkup` (health report).
+  volume; read back after change), `checkup` (health report; one more line names a
+  risky or outdated ADB link and what to update, nothing when all is well).
 - `map`: where something is set, from the user's words (`find`), then `open` that screen; `snapshot`/`diff` save
   and compare the phone state. Use it before searching Settings on screen.
 - `apps` (info, stop, clear, uninstall, restore, install; destructive ones need `confirm=true`), `web` (read the
