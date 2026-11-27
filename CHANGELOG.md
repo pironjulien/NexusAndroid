@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.25.7] - 2026-11-27
+
+### Fixed
+- Journal: a `wait` step that runs out of time is recorded as `timeout`, not `error` (its `TimeoutException` message,
+  "Expected screen condition not observed", holds no "timeout"; seen on 2026-11-24).
+
 ## [0.25.6] - 2026-11-24
 
 ### Fixed
@@ -1722,7 +1728,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.6...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.7...HEAD
+[0.25.7]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.6...v0.25.7
 [0.25.6]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.5...v0.25.6
 [0.25.5]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.4...v0.25.5
 [0.25.4]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.3...v0.25.4

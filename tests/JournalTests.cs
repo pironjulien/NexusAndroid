@@ -77,6 +77,31 @@ public sealed class JournalTests
         return rows;
     }
 
+    [Fact]
+    public void AWaitThatExpiresIsJournaledAsATimeout()
+    {
+        // 24/11/2026: a `wait` that ran out (TimeoutException "Expected screen condition not observed") was journaled
+        // as "error", its message holding no "timeout".
+        var home = Path.Join(TestPaths.Root, "journal-" + Guid.NewGuid().ToString("N"));
+        var saved = (Switch: Environment.GetEnvironmentVariable("NEXUS_JOURNAL"), Home: Environment.GetEnvironmentVariable("NEXUS_JOURNAL_HOME"), Agent: NativeJournal.Agent.Value);
+        try
+        {
+            Environment.SetEnvironmentVariable("NEXUS_JOURNAL", "1");
+            Environment.SetEnvironmentVariable("NEXUS_JOURNAL_HOME", home);
+            NativeJournal.Agent.Value = "claude";
+            NativeJournal.Write("wait", null, "✗", 15282, new TimeoutException("Expected screen condition not observed"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("NEXUS_JOURNAL", saved.Switch);
+            Environment.SetEnvironmentVariable("NEXUS_JOURNAL_HOME", saved.Home);
+            NativeJournal.Agent.Value = saved.Agent;
+        }
+        var file = Path.Join(home, "android", "claude", DateTimeOffset.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture) + ".jsonl");
+        var row = JsonNode.Parse(File.ReadAllLines(file).Single())!.AsObject();
+        Assert.Equal("timeout", row["erreur"]!.GetValue<string>());
+    }
+
     private static JsonObject Line(List<JsonObject> rows, string action) => Assert.Single(rows, r => r["action"]!.GetValue<string>() == action);
 
     [Fact]
