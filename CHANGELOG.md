@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+- Dependencies: xUnit v3 4.0.3 (Microsoft.Testing.Platform 2.5.2) for the tests, and the pinned GitHub Actions
+  (CodeQL 4.39.3, setup-dotnet 6.1.0, zizmor 0.8.1, NexusSystem release workflows 1.8.0). Dependabot no longer proposes
+  a new major of the AOT compiler and trimmer, which follow the .NET 10 runtime of the SDK `global.json` pins.
+
 ## [0.25.7] - 2026-11-27
 
 ### Fixed
