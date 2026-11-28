@@ -263,4 +263,235 @@ public sealed class GestureTests
         var result = Act(fixture, """{"steps": [{"do": "tap", "target": "Open"}]}""");
         Assert.DoesNotContain(Inputs(result), i => i.StartsWith("input tap", StringComparison.Ordinal));
     }
+
+    // ------------------------------------------------------------------ a target under the keyboard
+    // The keyboard is another window: never in the tree, only in the insets line of the screen state.
+
+    private static string State(string keyboard, string package = App) =>
+        $"mCurrentFocus=Window{{fixture u0 {package}/.Main}}\nmWakefulness=Awake\nisKeyguardShowing=false\n      InsetsSource id=3 type=ime {keyboard} flags=";
+
+    private const string KeyboardShown = "frame=[0,1200][1080,1920] visible=true";
+    private const string KeyboardHidden = "frame=[0,0][0,0] visible=false";
+
+    private static readonly string Form = Screen(
+        Node("Name", "", 0, 200, 1080, 400, "android.widget.EditText", "name", "clickable='true' focused='true'"),
+        Node("Next", "", 100, 1500, 500, 1600, id: "next"));
+
+    /// <summary>The same form once the keyboard is gone: the page slid down, the button with it.</summary>
+    private static readonly string FormBelow = Form.Replace("[100,1500][500,1600]", "[100,1700][500,1800]");
+
+    private static JsonObject KeyboardFixture(string after, string stateAfter)
+    {
+        var fixture = Fixture(Form, after);
+        fixture["state"] = State(KeyboardShown);
+        fixture["state_after_input"] = stateAfter;
+        return fixture;
+    }
+
+    [Theory]
+    [InlineData("      InsetsSource id=3 type=ime frame=[0,1200][1080,1920] visible=true flags=", 1200)]
+    [InlineData("      InsetsSource id=3 type=ime frame=[0,1200][1080,1920] visibleFrame=[0,1300][1080,1920] visible=true flags=", 1200)]
+    [InlineData("      InsetsSource type=ITYPE_IME frame=[0,1470][1080,2340] visible=true", 1470)]
+    [InlineData("      InsetsSource id=3 type=ime frame=[0,1200][1080,1920] visible=false flags=", null)]
+    [InlineData("      InsetsSource id=3 type=ime frame=[0,0][0,0] visible=true flags=", null)]
+    [InlineData("      InsetsSource id=5 type=navigationBars frame=[0,1800][1080,1920] visible=true flags=", null)]
+    [InlineData("", null)]
+    public void TheKeyboardFrameIsReadFromTheInsetsLineOfTheScreenState(string line, int? top)
+    {
+        var screen = new NativeScreen("mCurrentFocus=Window{fixture u0 com.example.app/.Main}\n" + line + "\nisKeyguardShowing=false", "<hierarchy/>", 1080, 1920, null);
+        Assert.Equal(top, NexusAndroid.NativeEngine.Keyboard(screen)?.Top);
+    }
+
+    [Fact]
+    public void ATargetUnderTheKeyboardIsSaidAndTheKeyboardClosedBeforeTheTap()
+    {
+        var result = Act(KeyboardFixture(FormBelow, State(KeyboardHidden)), """{"steps": [{"do": "tap", "target": "Next"}]}""");
+        // Back first, then the tap where the button stands once the page has slid back.
+        Assert.Equal(["input keyevent 4", "input tap 300 1750"], Inputs(result));
+        Assert.Contains("The keyboard covered the target: closed (back) before the tap", Text(result));
+    }
+
+    [Fact]
+    public void ANumberedTargetIsFollowedToWhereItStandsOnceTheKeyboardIsClosed()
+    {
+        var result = Act(KeyboardFixture(FormBelow, State(KeyboardHidden)), """{"steps": [{"do": "tap", "target": "[2]"}]}""");
+        Assert.Equal(["input keyevent 4", "input tap 300 1750"], Inputs(result));
+    }
+
+    [Fact]
+    public void ATargetAboveTheKeyboardIsTappedWithoutClosingIt()
+    {
+        var result = Act(KeyboardFixture(FormBelow, State(KeyboardShown)), """{"steps": [{"do": "tap", "target": "Name"}]}""");
+        Assert.Equal(["input tap 540 300"], Inputs(result));
+        Assert.DoesNotContain("keyboard", Text(result), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BackIsNeverSentWhenTheKeyboardIsAlreadyClosed()
+    {
+        var fixture = Fixture(Form, FormBelow);
+        fixture["state"] = State(KeyboardHidden);
+        var result = Act(fixture, """{"steps": [{"do": "tap", "target": "Next"}]}""");
+        Assert.Equal(["input tap 300 1550"], Inputs(result));
+    }
+
+    [Fact]
+    public void AKeyboardThatStaysUpGetsNoTap()
+    {
+        var result = Act(KeyboardFixture(Form, State(KeyboardShown)), """{"steps": [{"do": "tap", "target": "Next"}]}""");
+        Assert.Equal(["input keyevent 4"], Inputs(result));
+        Assert.Contains("✗ tap: Target is under the keyboard, which did not close", Text(result));
+    }
+
+    [Fact]
+    public void ClosingTheKeyboardThatLeavesTheAppGetsNoTap()
+    {
+        var result = Act(KeyboardFixture(Form, State(KeyboardHidden, "com.android.launcher")), """{"steps": [{"do": "tap", "target": "Next"}]}""");
+        Assert.Equal(["input keyevent 4"], Inputs(result));
+        Assert.Contains("another app is in front: nothing pressed", Text(result));
+    }
+
+    [Fact]
+    public void ATargetGoneOnceTheKeyboardIsClosedGetsNoTap()
+    {
+        var result = Act(KeyboardFixture(Screen(Node("Other", "", 100, 1500, 500, 1600, id: "other")), State(KeyboardHidden)), """{"steps": [{"do": "tap", "target": "Next"}]}""");
+        Assert.Equal(["input keyevent 4"], Inputs(result));
+        Assert.Contains("✗ tap: The keyboard covered the target and was closed (back), then: Target not found", Text(result));
+    }
+
+    [Fact]
+    public void APointGivenOnTheImageIsNotMovedByTheKeyboard()
+    {
+        // x,y was read on the image, which shows the keyboard: nothing is closed on its behalf.
+        var result = Act(KeyboardFixture(FormBelow, State(KeyboardHidden)), """{"steps": [{"do": "tap", "target": "300,1550"}]}""");
+        Assert.Equal(["input tap 300 1550"], Inputs(result));
+    }
+
+    [Fact]
+    public void ARefusedPressDoesNotCloseTheKeyboard()
+    {
+        var fixture = KeyboardFixture(FormBelow, State(KeyboardHidden));
+        fixture["state"] = State(KeyboardShown, "com.revolut.revolut");
+        var result = Act(fixture, """{"steps": [{"do": "tap", "target": "Next"}]}""");
+        Assert.Empty(Inputs(result));
+        Assert.Contains("✗ tap: Protected app", Text(result));
+    }
+
+    // ------------------------------------------------------------------ an app crash during the gesture
+    // One read answers the phone's clock (13:00:00.500 here), then the crash buffer: both in the phone's time. A crash in
+    // the window is stamped .501: the window opens at the clock, cut to the millisecond, minus the time the step took.
+
+    private static string Crash(string time, string package = App, string message = "broken") =>
+        string.Concat(new[] { "FATAL EXCEPTION: main", $"Process: {package}, PID: 321", $"java.lang.IllegalStateException: {message}", "    at android.view.View.performClick(View.java:7448)", $"    at {package}.Main.onClick(Main.kt:42)" }
+            .Select(line => $"2026-10-29 {time} 321 321 E AndroidRuntime: {line}\n"));
+
+    private static JsonObject CrashFixture(string before, string? after, string log, string clock = "2026-10-29T13:00:00.500000000")
+    {
+        var fixture = Fixture(before, after);
+        fixture["shell"]!["logcat"] = clock + "\n" + log;
+        return fixture;
+    }
+
+    private const string OneTap = """{"steps": [{"do": "tap", "target": "Open"}, {"do": "tap", "target": "Alpha"}]}""";
+
+    [Fact]
+    public void ACrashOfTheAppDuringTheGestureIsNamedWithItsExceptionAndItsOwnLine()
+    {
+        var result = Act(CrashFixture(List, null, Crash("13:00:00.501")), OneTap);
+        Assert.Contains("~ tap sent, then com.example.app crashed: java.lang.IllegalStateException: broken · at com.example.app.Main.onClick(Main.kt:42); do not repeat; full trace: logs", Text(result));
+        Assert.DoesNotContain("performClick", Text(result));
+        Assert.Equal(["input tap 300 1550"], Inputs(result));
+        Assert.Equal("false", result["response"]!["result"]!["structuredContent"]!["verified"]!.ToJsonString());
+    }
+
+    [Fact]
+    public void ACrashFromBeforeTheGestureIsNeverReported()
+    {
+        var result = Act(CrashFixture(List, null, Crash("12:59:30.000")), OneTap);
+        Assert.Contains("~ tap sent, effect unverified", Text(result));
+        Assert.DoesNotContain("crashed", Text(result));
+    }
+
+    [Fact]
+    public void ACrashOfAnotherAppIsNotTheGesturesCrash()
+    {
+        var result = Act(CrashFixture(List, null, Crash("13:00:00.501", "com.other.app")), OneTap);
+        Assert.Contains("~ tap sent, effect unverified", Text(result));
+        Assert.DoesNotContain("crashed", Text(result));
+    }
+
+    [Fact]
+    public void AnAppThatDiedAndLeftTheScreenIsACrashNotAnEffectReadBack()
+    {
+        var fixture = CrashFixture(List, Scrolled, Crash("13:00:00.501"));
+        fixture["state_after_input"] = State(KeyboardHidden, "com.android.launcher");
+        var result = Act(fixture, OneTap);
+        Assert.Contains("~ tap sent, then com.example.app crashed", Text(result));
+        Assert.DoesNotContain("✓ tap", Text(result));
+        Assert.Equal(["input tap 300 1550"], Inputs(result));
+    }
+
+    [Fact]
+    public void LeavingTheAppWithoutACrashIsStillAnEffectReadBack()
+    {
+        var fixture = CrashFixture(List, Scrolled, Crash("12:59:30.000"));
+        fixture["state_after_input"] = State(KeyboardHidden, "com.android.launcher");
+        Assert.Contains("✓ tap effect read back", Text(Act(fixture, """{"steps": [{"do": "tap", "target": "Open"}]}""")));
+    }
+
+    [Fact]
+    public void AVerifiedGestureInTheSameAppNeverReadsTheCrashBuffer()
+    {
+        var result = Act(CrashFixture(List, Scrolled, Crash("13:00:00.501")), """{"steps": [{"do": "tap", "target": "Open"}]}""");
+        Assert.Contains("✓ tap effect read back", Text(result));
+        Assert.DoesNotContain(result["commands"]!.AsArray(), c => c!.ToString().Contains("logcat", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheCrashLineIsBoundedAndReadFromABoundedPartOfTheBuffer()
+    {
+        var result = Act(CrashFixture(List, null, Crash("13:00:00.501", message: new string('x', 5000))), OneTap);
+        var line = Text(result).Split('\n').Single(l => l.Contains("crashed", StringComparison.Ordinal));
+        Assert.InRange(line.Length, 1, 500);
+        Assert.Contains("Main.onClick(Main.kt:42)", line);
+        Assert.Contains(result["commands"]!.AsArray(), c => c!.ToString().Replace("'", "").EndsWith("logcat -d -b crash -v threadtime -v year -t 1000", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AProtectedAppsCrashKeepsItsDetailsHidden()
+    {
+        const string bank = "com.revolut.revolut";
+        var fixture = CrashFixture(List, null, Crash("13:00:00.501", bank, "SyntheticAccountBalance"));
+        fixture["state"] = State(KeyboardHidden, bank);
+        var result = Act(fixture, """{"steps": [{"do": "tap", "target": "Open", "confirm": true}]}""");
+        Assert.Contains($"{bank} crashed: java.lang.IllegalStateException: [details hidden for protected app] · at {bank}.Main.onClick(Main.kt:42)", Text(result));
+        Assert.DoesNotContain("SyntheticAccountBalance", Text(result));
+    }
+
+    [Theory]
+    [InlineData("2026-10-29T13:00:00.%N", "13:00:01.000", true)]   // `date` without %N: the clock is cut to the second
+    [InlineData("2026-10-29T13:00:00.%N", "12:59:57.000", false)]
+    [InlineData("date: bad format", "13:00:00.501", false)]         // no clock, no window: nothing is claimed
+    public void TheWindowFollowsThePhonesClockEvenCutToTheSecond(string clock, string crashedAt, bool named)
+    {
+        var text = Text(Act(CrashFixture(List, null, Crash(crashedAt), clock), OneTap));
+        Assert.Equal(named, text.Contains("crashed", StringComparison.Ordinal));
+        Assert.Contains("~ tap sent", text);
+    }
+
+    [Fact]
+    public void AStepThatFailsAfterItsInputNamesTheCrashToo()
+    {
+        var field = Screen(Node("", "", 0, 200, 1080, 400, "android.widget.EditText", "name"));
+        var result = Act(CrashFixture(field, Screen(Node("Stopped", "", 0, 200, 1080, 400, "android.widget.TextView", "t", "")), Crash("13:00:00.501")), """{"steps": [{"do": "type", "target": "id:name", "text": "abc"}]}""");
+        Assert.Contains("✗ type: Field focus changed after tap; nothing typed · com.example.app crashed: java.lang.IllegalStateException: broken", Text(result));
+    }
+
+    [Fact]
+    public void AStepRefusedBeforeAnyInputNeverReadsTheCrashBuffer()
+    {
+        var result = Act(CrashFixture(List, null, Crash("13:00:00.501")), """{"steps": [{"do": "tap", "target": "Missing"}]}""");
+        Assert.Contains("✗ tap: Target not found", Text(result));
+        Assert.DoesNotContain(result["commands"]!.AsArray(), c => c!.ToString().Contains("logcat", StringComparison.Ordinal));
+    }
 }

@@ -845,36 +845,9 @@ public sealed partial class NativeEngine
         public string Pid = "", Process = "", Kind = "java";
         public List<string> Lines = [];
     }
-    private JsonObject Logs(JsonObject args)
+    /// <summary>A crash's process is already dead: its Process/PID lines are authoritative even without ps/Start proc.</summary>
+    private static void NameProcesses(List<LogEntry> entries, Dictionary<string, string> names)
     {
-        var kind = Str(args, "kind", "crash");
-        var app = Str(args, "app").Trim();
-        var pkg = app.Length > 0 ? (Regex.IsMatch(app, @"^[A-Za-z][\w]*(?:\.[A-Za-z][\w]*)+$") ? NativeSafety.Package(app) : ResolvePackage(app)) : "";
-        if (kind == "recent" && AndroidPolicy.IsProtectedPackage(pkg))
-            throw new InvalidOperationException("Recent logs of protected apps refused");
-        var count = Math.Clamp(Num(args, "lines", 200), 1, 2000);
-        var wanted = Str(args, "query");
-        var phoneClock = Shell("date", "+%Y-%m-%d %H:%M:%S").Trim();
-        var now = DateTime.TryParseExact(phoneClock, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var clock) ? clock : DateTime.Now;
-        var since = LogSince(Str(args, "since"), now);
-        if (kind == "anr")
-            return AnrLogs(pkg, since, wanted, now.Year);
-        if (kind is not ("recent" or "crash"))
-            throw new ArgumentException("Unknown log kind");
-        var command = new List<string> { "logcat", "-d", "-b", kind == "crash" ? "crash" : "main,system,crash", "-v", "threadtime", "-v", "year" };
-        if (kind == "recent")
-        {
-            command.AddRange(["-t", since is not null ? since.Value.ToString("yyyy-MM-dd HH:mm:ss.000", CultureInfo.InvariantCulture) : (pkg.Length > 0 || wanted.Length > 0 ? 20000 : count).ToString(CultureInfo.InvariantCulture)]);
-        }
-        var entries = ParseLogs(Shell(command.ToArray()), now.Year);
-        var names = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var line in Shell("ps", "-A", "-o", "PID,NAME").Split('\n'))
-        {
-            var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 2 && Regex.IsMatch(parts[0], @"^\d+$"))
-                names[parts[0]] = parts[1];
-        }
-        // A crash's process is already dead: its Process/PID lines are authoritative even without ps/Start proc.
         foreach (var entry in entries)
         {
             foreach (Match m in Regex.Matches(entry.Message, @"Start proc (\d+):([\w.:-]+)"))
@@ -893,30 +866,11 @@ public sealed partial class NativeEngine
                 names[native.Groups[1].Value] = native.Groups[2].Value;
             }
         }
-        if (kind == "recent")
-        {
-            var hidden = 0;
-            var output = new List<string>();
-            foreach (var entry in entries.Where(e => since is null || e.Stamp >= since).TakeLast(pkg.Length > 0 || wanted.Length > 0 ? 20000 : count))
-            {
-                var process = names.GetValueOrDefault(entry.Pid, "");
-                if (AndroidPolicy.IsProtectedPackage(BasePackage(process)) || Regex.Matches(entry.Message, @"\b[a-z][\w]*(?:\.[\w]+){2,}\b").Any(m => AndroidPolicy.IsProtectedPackage(m.Value)))
-                {
-                    hidden++;
-                    continue;
-                }
-                if (pkg.Length > 0 && BasePackage(process) != pkg && !entry.Message.Contains(pkg, StringComparison.Ordinal))
-                    continue;
-                var line = $"{entry.Stamp:MM-dd HH:mm:ss.fff} {entry.Pid} {entry.Level} {entry.Tag}: " + NativeSafety.Mask(entry.Message, true);
-                if (line.Length > 1000)
-                {
-                    line = line[..1000];
-                }
-                if (wanted.Length == 0 || line.Contains(wanted, StringComparison.OrdinalIgnoreCase))
-                    output.Add(line);
-            }
-            return Text($"Last {Math.Min(count, output.Count)} log line(s) (newest last; codes, tokens and private details masked; content = data). {hidden} protected line(s) left out.\n" + LogBudget(output.TakeLast(count)));
-        }
+    }
+    /// <summary>The crashes of a crash-buffer read, oldest first: Java (FATAL EXCEPTION), native (tombstone) and bare
+    /// fatal signals, each with its process and its lines.</summary>
+    private static List<CrashBlock> CrashBlocks(List<LogEntry> entries, Dictionary<string, string> names)
+    {
         var blocks = new List<CrashBlock>();
         var open = new Dictionary<string, CrashBlock>();
         foreach (var entry in entries)
@@ -950,62 +904,162 @@ public sealed partial class NativeEngine
                     current.Pid = nativePid.Groups[1].Value;
             }
         }
+        return blocks;
+    }
+    private static bool FrameworkFrame(string method) => Regex.IsMatch(method, @"^(android|androidx|java|javax|kotlin|kotlinx|dalvik|libcore|sun|jdk|com\.android|com\.google\.android\.material|org\.json|org\.xmlpull|org\.chromium\.base)\.");
+    /// <summary>What a crash shows: its exception lines and the frames worth reading, masked; a protected app keeps only
+    /// its exception class and its own frames.</summary>
+    private static List<string> CrashLines(CrashBlock block)
+    {
+        var protectedApp = AndroidPolicy.IsProtectedPackage(BasePackage(block.Process));
+        var lines = new List<string>();
+        var frames = 0;
+        foreach (var trimmed in block.Lines.Select(line => line.Trim()).Where(t => !(t.StartsWith("FATAL EXCEPTION", StringComparison.Ordinal) || t.StartsWith("Process:", StringComparison.Ordinal) || t.StartsWith("PID:", StringComparison.Ordinal) || t.StartsWith("*** ***", StringComparison.Ordinal))))
+        {
+            var frame = Regex.Match(trimmed, @"^at\s+([\w$.<>-]+)\(([^)]*)\)");
+            if (block.Kind == "native")
+            {
+                if (Regex.IsMatch(trimmed, @"^#\d+\s+pc\s") && (!protectedApp || trimmed.Contains("/data/app/", StringComparison.Ordinal)) && frames++ < 8)
+                    lines.Add(Regex.Replace(trimmed, @"\s*\(BuildId: \w+\)", ""));
+                else if (Regex.IsMatch(trimmed, @"^signal \d+ \(SIG"))
+                    lines.Add(protectedApp ? trimmed.Split(',')[0] : NativeSafety.Mask(trimmed, true));
+                else if (!protectedApp && (trimmed.StartsWith("Cause:", StringComparison.Ordinal) || trimmed.StartsWith("Abort message:", StringComparison.Ordinal)))
+                {
+                    lines.Add(NativeSafety.Mask(trimmed, true));
+                }
+                continue;
+            }
+            var framework = frame.Success && FrameworkFrame(frame.Groups[1].Value);
+            if (protectedApp)
+            {
+                if (frame.Success)
+                {
+                    if (!framework && frames++ < 6)
+                        lines.Add(frame.Value);
+                }
+                else
+                {
+                    frames = 0;
+                    var exception = Regex.Match(trimmed, @"^((?:Caused by|Suppressed): )?([\w$.]+(?:Exception|Error))\b");
+                    if (exception.Success)
+                        lines.Add(exception.Value + ": [details hidden for protected app]");
+                }
+            }
+            else
+            {
+                if (frame.Success)
+                {
+                    if ((!framework || frames == 0) && frames++ < 6)
+                        lines.Add(frame.Value);
+                }
+                else
+                {
+                    frames = 0;
+                    var masked = NativeSafety.Mask(trimmed, true);
+                    lines.Add(masked.Length > 1000 ? masked[..1000] : masked);
+                }
+            }
+        }
+        if (lines.Count == 0)
+        {
+            lines.Add(protectedApp ? "[protected app details hidden]" : "[no exception details]");
+        }
+        return lines;
+    }
+    /// <summary>The crash of <paramref name="package"/> recorded since the step began, as one bounded line (exception, then
+    /// the app's own frame), or null. One read of the crash buffer with the phone's clock, both in the phone's time: a
+    /// crash from before the step is never returned. Never decisive: an unreadable buffer only leaves the line out.</summary>
+    private string? CrashDuring(string package, System.Diagnostics.Stopwatch began)
+    {
+        if (package.Length == 0)
+            return null;
+        // Taken before the read: the clock is read on the phone after this, so the window starts no earlier than the step.
+        var elapsed = began.Elapsed;
+        string raw;
+        try
+        {
+            raw = Shell("sh", "-c", "date +%Y-%m-%dT%H:%M:%S.%N; logcat -d -b crash -v threadtime -v year -t " + Tuning.CrashReadLines.ToString(CultureInfo.InvariantCulture));
+        }
+        catch (Exception e) when (e is IOException or TimeoutException or InvalidOperationException) { return null; }
+        var clock = Regex.Match(raw, @"^\s*(\d{4}-\d\d-\d\d)T(\d\d:\d\d:\d\d)(?:\.(\d{3})\d*)?");
+        if (!clock.Success || !DateTime.TryParseExact(clock.Groups[1].Value + " " + clock.Groups[2].Value, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var now))
+            return null;
+        // The clock is cut to the millisecond, or to the second where `date` has no %N: count the cut part as elapsed.
+        now = clock.Groups[3].Success ? now.AddMilliseconds(int.Parse(clock.Groups[3].Value, CultureInfo.InvariantCulture) + 1) : now.AddSeconds(1);
+        var since = now - elapsed;
+        var entries = ParseLogs(raw, now.Year);
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        NameProcesses(entries, names);
+        var block = CrashBlocks(entries, names).LastOrDefault(b => b.Stamp >= since && BasePackage(b.Process) == package);
+        if (block is null)
+            return null;
+        static string Cut(string text, int length) => text.Length > length ? text[..length] + "…" : text;
+        var lines = CrashLines(block);
+        bool Frame(string line) => line.StartsWith("at ", StringComparison.Ordinal) || line.StartsWith('#');
+        var cause = lines.FirstOrDefault(line => !Frame(line)) ?? "";
+        var frame = lines.FirstOrDefault(line => line.StartsWith("at ", StringComparison.Ordinal) && !FrameworkFrame(line[3..])) ?? lines.FirstOrDefault(Frame) ?? "";
+        return package + " crashed: " + Cut(cause, 200) + (cause.Length > 0 && frame.Length > 0 ? " · " : "") + Cut(frame, 160);
+    }
+    private JsonObject Logs(JsonObject args)
+    {
+        var kind = Str(args, "kind", "crash");
+        var app = Str(args, "app").Trim();
+        var pkg = app.Length > 0 ? (Regex.IsMatch(app, @"^[A-Za-z][\w]*(?:\.[A-Za-z][\w]*)+$") ? NativeSafety.Package(app) : ResolvePackage(app)) : "";
+        if (kind == "recent" && AndroidPolicy.IsProtectedPackage(pkg))
+            throw new InvalidOperationException("Recent logs of protected apps refused");
+        var count = Math.Clamp(Num(args, "lines", 200), 1, 2000);
+        var wanted = Str(args, "query");
+        var phoneClock = Shell("date", "+%Y-%m-%d %H:%M:%S").Trim();
+        var now = DateTime.TryParseExact(phoneClock, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var clock) ? clock : DateTime.Now;
+        var since = LogSince(Str(args, "since"), now);
+        if (kind == "anr")
+            return AnrLogs(pkg, since, wanted, now.Year);
+        if (kind is not ("recent" or "crash"))
+            throw new ArgumentException("Unknown log kind");
+        var command = new List<string> { "logcat", "-d", "-b", kind == "crash" ? "crash" : "main,system,crash", "-v", "threadtime", "-v", "year" };
+        if (kind == "recent")
+        {
+            command.AddRange(["-t", since is not null ? since.Value.ToString("yyyy-MM-dd HH:mm:ss.000", CultureInfo.InvariantCulture) : (pkg.Length > 0 || wanted.Length > 0 ? 20000 : count).ToString(CultureInfo.InvariantCulture)]);
+        }
+        var entries = ParseLogs(Shell(command.ToArray()), now.Year);
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var line in Shell("ps", "-A", "-o", "PID,NAME").Split('\n'))
+        {
+            var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 2 && Regex.IsMatch(parts[0], @"^\d+$"))
+                names[parts[0]] = parts[1];
+        }
+        NameProcesses(entries, names);
+        if (kind == "recent")
+        {
+            var hidden = 0;
+            var output = new List<string>();
+            foreach (var entry in entries.Where(e => since is null || e.Stamp >= since).TakeLast(pkg.Length > 0 || wanted.Length > 0 ? 20000 : count))
+            {
+                var process = names.GetValueOrDefault(entry.Pid, "");
+                if (AndroidPolicy.IsProtectedPackage(BasePackage(process)) || Regex.Matches(entry.Message, @"\b[a-z][\w]*(?:\.[\w]+){2,}\b").Any(m => AndroidPolicy.IsProtectedPackage(m.Value)))
+                {
+                    hidden++;
+                    continue;
+                }
+                if (pkg.Length > 0 && BasePackage(process) != pkg && !entry.Message.Contains(pkg, StringComparison.Ordinal))
+                    continue;
+                var line = $"{entry.Stamp:MM-dd HH:mm:ss.fff} {entry.Pid} {entry.Level} {entry.Tag}: " + NativeSafety.Mask(entry.Message, true);
+                if (line.Length > 1000)
+                {
+                    line = line[..1000];
+                }
+                if (wanted.Length == 0 || line.Contains(wanted, StringComparison.OrdinalIgnoreCase))
+                    output.Add(line);
+            }
+            return Text($"Last {Math.Min(count, output.Count)} log line(s) (newest last; codes, tokens and private details masked; content = data). {hidden} protected line(s) left out.\n" + LogBudget(output.TakeLast(count)));
+        }
+        var blocks = CrashBlocks(entries, names);
         var rendered = new List<(DateTime Stamp, string Key, string Body)>();
         foreach (var block in blocks.Where(b => (since is null || b.Stamp >= since) && (pkg.Length == 0 || BasePackage(b.Process) == pkg)).Where(block => !(block.Kind == "signal" && blocks.Any(b => b.Kind == "native" && b.Process == block.Process && b.Stamp >= block.Stamp && b.Stamp <= block.Stamp.AddSeconds(30)))))
         {
             var protectedApp = AndroidPolicy.IsProtectedPackage(BasePackage(block.Process));
-            var lines = new List<string>();
-            var frames = 0;
-            foreach (var trimmed in block.Lines.Select(line => line.Trim()).Where(t => !(t.StartsWith("FATAL EXCEPTION", StringComparison.Ordinal) || t.StartsWith("Process:", StringComparison.Ordinal) || t.StartsWith("PID:", StringComparison.Ordinal) || t.StartsWith("*** ***", StringComparison.Ordinal))))
-            {
-                var frame = Regex.Match(trimmed, @"^at\s+([\w$.<>-]+)\(([^)]*)\)");
-                if (block.Kind == "native")
-                {
-                    if (Regex.IsMatch(trimmed, @"^#\d+\s+pc\s") && (!protectedApp || trimmed.Contains("/data/app/", StringComparison.Ordinal)) && frames++ < 8)
-                        lines.Add(Regex.Replace(trimmed, @"\s*\(BuildId: \w+\)", ""));
-                    else if (Regex.IsMatch(trimmed, @"^signal \d+ \(SIG"))
-                        lines.Add(protectedApp ? trimmed.Split(',')[0] : NativeSafety.Mask(trimmed, true));
-                    else if (!protectedApp && (trimmed.StartsWith("Cause:", StringComparison.Ordinal) || trimmed.StartsWith("Abort message:", StringComparison.Ordinal)))
-                    {
-                        lines.Add(NativeSafety.Mask(trimmed, true));
-                    }
-                    continue;
-                }
-                var framework = frame.Success && Regex.IsMatch(frame.Groups[1].Value, @"^(android|androidx|java|javax|kotlin|kotlinx|dalvik|libcore|sun|jdk|com\.android|com\.google\.android\.material|org\.json|org\.xmlpull|org\.chromium\.base)\.");
-                if (protectedApp)
-                {
-                    if (frame.Success)
-                    {
-                        if (!framework && frames++ < 6)
-                            lines.Add(frame.Value);
-                    }
-                    else
-                    {
-                        frames = 0;
-                        var exception = Regex.Match(trimmed, @"^((?:Caused by|Suppressed): )?([\w$.]+(?:Exception|Error))\b");
-                        if (exception.Success)
-                            lines.Add(exception.Value + ": [details hidden for protected app]");
-                    }
-                }
-                else
-                {
-                    if (frame.Success)
-                    {
-                        if ((!framework || frames == 0) && frames++ < 6)
-                            lines.Add(frame.Value);
-                    }
-                    else
-                    {
-                        frames = 0;
-                        var masked = NativeSafety.Mask(trimmed, true);
-                        lines.Add(masked.Length > 1000 ? masked[..1000] : masked);
-                    }
-                }
-            }
-            if (lines.Count == 0)
-            {
-                lines.Add(protectedApp ? "[protected app details hidden]" : "[no exception details]");
-            }
+            var lines = CrashLines(block);
             var body = string.Join('\n', lines);
             var header = $"{block.Stamp:MM-dd HH:mm:ss.fff} {block.Process} (pid {block.Pid}, {block.Kind})" + (protectedApp ? " — protected app" : "");
             var combined = header + "\n" + body;

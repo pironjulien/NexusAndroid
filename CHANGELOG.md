@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-11-28
+
+### Added
+- `act` names an app crash that happened on the gesture. When a gesture cannot be read back, leaves the app, or
+  fails after its input was sent, the crash buffer (the one `logs` reads) is read once: if the app the gesture was
+  aimed at crashed since the step began, the report line says so with the exception and the app's own line, for
+  example `~ tap sent, then com.example.app crashed: java.lang.IllegalStateException: broken · at
+  com.example.app.Main.onClick(Main.kt:42); do not repeat; full trace: logs`, and the batch stops there. A crash
+  from before the gesture, or of another app, is never reported; the line is short (the full trace stays in `logs`);
+  a banking or identity app keeps its details hidden, as in `logs`. A gesture read back in the same app costs
+  nothing more.
+- A named target under the on-screen keyboard is no longer pressed blind. The keyboard is another window: an element
+  it covers was still listed, and a tap on it landed on a key. `act` now reads whether the keyboard is shown and the
+  area it covers, closes it first (back, sent only when the phone reports the keyboard shown, never otherwise),
+  finds the target again where it stands once the page has settled, then presses it; the report says `The keyboard
+  covered the target: closed (back) before the tap`. If the keyboard stays up, another app comes in front or the
+  target is gone, nothing is pressed and the line says why. A press that would be refused anyway does not close the
+  keyboard, and a point given as `x,y` is pressed as is. Applies to `tap`, `long_press`, `double_tap`, `type`,
+  `clear`, `swipe` and `drag`.
+
 ## [0.27.0] - 2026-11-28
 
 ### Added
@@ -1751,7 +1771,8 @@ Everything goes through ADB, with no app on the phone.
 - `install.ps1`: environment outside the sources, registration in the three clients, tests and `-Live` run on the
   phone.
 
-[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusAndroid/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.7...v0.26.0
 [0.25.7]: https://github.com/pironjulien/NexusAndroid/compare/v0.25.6...v0.25.7

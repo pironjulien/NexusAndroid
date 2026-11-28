@@ -26,11 +26,15 @@ Do not create a question card just to report progress.
    - Steps: `tap`, `long_press`, `double_tap`, `type` (accents and emoji work; `target` = field to tap first),
      `clear`, `key` (`back`, `home`, `recent`, arrows; `enter` needs `confirm=true` and an accord), `scroll` (`direction` = reading
      direction; about a third of the screen per notch, stopping where the finger stops, no fling), `swipe` (`target` → `to`), `wait` (`text`, or `gone=true`), `open_url`.
+   - A named target hidden under the on-screen keyboard: the keyboard is closed first (back) and the report says
+     so; nothing to do yourself. A point given as `x,y` is pressed as is.
    - Direct links with `open_url`: `geo:0,0?q=address`, `google.navigation:q=address`, `tel:...` (opens the dialer,
      does not call), `mailto:`, `https://`.
 4. Reports: ✓ effect read back, ~ sent but not verified (the image is joined only if the screen did not change; otherwise `look(show="both")`), ✗ failed or refused, ? link lost during the
    gesture. A transport error after input may also mean an unknown effect: stop the batch, reconnect if needed,
    then inspect a fresh `look` before deciding what remains to do. Never replay the failed gesture automatically.
+   When the app crashed on the gesture, the ~ or ✗ line names it (`<app> crashed: <exception> · <its line>`) and the
+   batch stops there: report it, and read `logs` for the full trace instead of trying again.
 5. Leave the phone as you found it: when the task is done, close what you opened (`key home`, or back to the app the
    user was in), unless the user asked to keep that screen open.
 

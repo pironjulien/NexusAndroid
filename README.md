@@ -345,7 +345,13 @@ the few milliseconds between that last reading and the ADB injection is beyond w
   block and never a guarantee.
 - **Target checked on the current screen**: the UI and the phone state (lock, foreground app) are read again in
   one round trip just before each gesture; a changed `[N]` or a spot with nothing readable is refused. Reports: ✓
-  effect read back, ~ sent but not verified, ✗ refused or failed.
+  effect read back, ~ sent but not verified, ✗ refused or failed. When the app crashed on the gesture, that line
+  names it (`<app> crashed: <exception> · <its own line>`, from the crash buffer `logs` reads; never a crash from
+  before the gesture) and the batch stops there.
+- **A target under the keyboard**: the on-screen keyboard is another window, so an element it covers is still
+  listed. A press on such an element would land on a key: the keyboard is closed first (back, sent only when the
+  phone reports the keyboard shown), the target is found again where it now stands, and the report says so. If the
+  keyboard stays up or the target is gone, nothing is pressed. A point given as `x,y` is pressed as is.
 - **One phone only**: the owner's phone is identified by its hardware serial number, recorded at the first USB
   connection; emulators, TV boxes and other devices are ignored. One agent at a time drives it (lock shared by all
   servers on the PC, and by the sessions of the shared daemon); another one waits 30 seconds at most, then is told

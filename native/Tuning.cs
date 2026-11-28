@@ -28,4 +28,10 @@ internal static class Tuning
     /// <summary>After `look` lifts a lock screen, it waits at most this long for the app below to redraw a readable tree
     /// (Fold, 2026-11-24: Gmail's tree came back empty on the first read after waking).</summary>
     internal static double UnlockRedrawSeconds = 2;
+    /// <summary>After back closes a keyboard that covered the target: the longest wait for it to be gone and the screen
+    /// below to stand still, before giving up without tapping.</summary>
+    internal static int KeyboardCloseMs = 1500;
+    /// <summary>Last lines of the crash buffer read when a gesture went unverified or left the app: enough for the
+    /// newest crash, a bounded read whatever the buffer holds.</summary>
+    internal static int CrashReadLines = 1000;
 }

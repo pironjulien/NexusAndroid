@@ -97,10 +97,11 @@ public final class NexusQuery {
     private static final int FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES = 1;  // UiAutomation
     private static final int FLAG_INCLUDE_NOT_IMPORTANT_VIEWS = 2;  // AccessibilityServiceInfo, comme dump (non compressé)
     // État lu dans le même échange : la commande STATE_SH de screen.py (mot pour mot, vérifié par les tests), puis le
-    // pliage. Texte fixe : la requête n'y met rien.
+    // pliage. Texte fixe : la requête n'y met rien. La ligne InsetsSource du clavier (type=ime, ITYPE_IME avant
+    // Android 14) dit s'il est affiché et quelle zone il couvre : il n'est pas dans l'arbre (autre fenêtre).
     static final String STATE_SH = "dumpsys power | grep mWakefulness=; { dumpsys window displays; dumpsys window "
             + "policy; } | grep -E 'mCurrentFocus=|mFocusedApp=|isKeyguardShowing=|mShowingLockscreen=|"
-            + "KeyguardShowing=|mIsShowing='; true";
+            + "KeyguardShowing=|mIsShowing=|InsetsSource .*type=(ITYPE_IME|ime) '; true";
     static final String POSTURE_MARK = "@@NEXUS-POSTURE@@";
     private static final String STATUS_SH = STATE_SH + "; echo " + POSTURE_MARK
             + "; dumpsys device_state | grep mCommittedState=; true";

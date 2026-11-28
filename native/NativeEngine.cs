@@ -500,6 +500,11 @@ public sealed partial class NativeEngine
                 throw new ArgumentException(matches.Count == 0 ? "Target not found" : "Ambiguous target: use id:resource-id or [N]");
             element = matches[0];
         }
+        return Front(element, fresh);
+    }
+    /// <summary>The point to press on an element: enabled, on screen, and nothing of the tree drawn over its centre.</summary>
+    private static (int X, int Y, UiElement? Element) Front(UiElement element, List<UiElement> fresh)
+    {
         if (!element.Enabled)
             throw new InvalidOperationException("Target disabled: nothing sent");
         if (element.Right <= element.Left || element.Bottom <= element.Top)
@@ -579,6 +584,60 @@ public sealed partial class NativeEngine
         }
         return null;
     }
+    /// <summary>The on-screen keyboard's frame while it is shown, null when it is hidden or the phone does not say. The
+    /// keyboard is another window: it is never in the element tree, which holds the app's window only, so an element
+    /// can be listed with bounds that the keyboard covers. Read from the insets line of the screen state, taken in
+    /// the same exchange as the tree (Android 11-13: type=ITYPE_IME, 14+: type=ime).</summary>
+    internal static (int Left, int Top, int Right, int Bottom)? Keyboard(NativeScreen screen)
+    {
+        foreach (Match m in Regex.Matches(screen.State, @"InsetsSource [^\r\n]*?type=(?:ITYPE_IME|ime) [^\r\n]*?frame=\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\][^\r\n]*?\bvisible=true"))
+        {
+            var edges = Enumerable.Range(1, 4).Select(i => int.Parse(m.Groups[i].Value, CultureInfo.InvariantCulture)).ToArray();
+            if (edges[2] > edges[0] && edges[3] > edges[1])
+                return (edges[0], edges[1], edges[2], edges[3]);
+        }
+        return null;
+    }
+    /// <summary>Closes the keyboard that covers a target with back, sent only because this very screen read shows the
+    /// keyboard (back then closes it and nothing else), and returns the screen below once it stands still. Nothing is
+    /// pressed afterwards unless the keyboard is gone and the same app is still in front.</summary>
+    private (NativeScreen Screen, List<UiElement> Elements) CloseKeyboard(NativeScreen screen, List<UiElement> elements, JsonObject step)
+    {
+        Guard(screen, elements, step, null, "back", authorize: false);
+        var package = Foreground(screen);
+        Shell("input", "keyevent", "4");
+        lastInput = DateTimeOffset.UtcNow;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var now = Read();
+        while (true)
+        {
+            var closed = Keyboard(now) is null && Foreground(now) == package;
+            if (clock.ElapsedMilliseconds >= Tuning.KeyboardCloseMs && !closed)
+                throw new InvalidOperationException(Keyboard(now) is not null ? "Target is under the keyboard, which did not close (back sent once): nothing pressed; look again" : "The keyboard covered the target; after back closed it another app is in front: nothing pressed; look again");
+            NativeSafety.StopGuard();
+            Thread.Sleep(Tuning.SettlePollMs);
+            var next = Read();
+            // Gone, and two reads agree: the page under a closing keyboard slides back into place before it is aimed at.
+            if (closed && Keyboard(next) is null && Foreground(next) == package && (next.Xml == now.Xml || clock.ElapsedMilliseconds >= Tuning.KeyboardCloseMs))
+                return (next, Elements(next));
+            now = next;
+        }
+    }
+    /// <summary>The same target on the screen left by the closed keyboard: a [N] is followed by its identity (the page may
+    /// have moved), text and ids are searched again.</summary>
+    private (int X, int Y, UiElement? Element) ResolveUncovered(JsonNode? target, UiElement? before, List<UiElement> fresh)
+    {
+        try
+        {
+            if (before is not null && Regex.IsMatch(target!.ToString(), @"^\[?\d+\]?$"))
+                return Front(FollowTarget(before, fresh) ?? throw new InvalidOperationException("the target cannot be told apart on the new screen"), fresh);
+            return Resolve(target, fresh);
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+        {
+            throw new InvalidOperationException("The keyboard covered the target and was closed (back), then: " + e.Message + "; nothing pressed; look again", e);
+        }
+    }
     // act runs each step as: observe → aim → guard → send → settle → verify → remember. One observation per step: the
     // guard always judges the very screen the input is aimed on (type and clear re-guard after focusing their field).
     private sealed class ActRun
@@ -587,6 +646,9 @@ public sealed partial class NativeEngine
         public readonly JsonArray SavedSteps = [];
         public bool AllVerified = true;
         public bool UnstableTarget;
+        // The step in progress: the app its gesture is aimed at, and whether an input may have left for it.
+        public string Package = "";
+        public bool Sending;
     }
     private sealed class Aim
     {
@@ -594,6 +656,7 @@ public sealed partial class NativeEngine
         public UiElement? Element;
         public int EndX, EndY;
         public UiElement? EndElement;
+        public bool KeyboardClosed;
     }
     private JsonObject Act(JsonObject args)
     {
@@ -616,7 +679,9 @@ public sealed partial class NativeEngine
             catch (Exception ex) when (NativeSafety.Recoverable(ex))
             {
                 // Step boundary: any failure is reported as ✗ and stops the batch, never crashes the host.
-                run.Reports.Add("✗ " + action + ": " + ex.Message);
+                // An input left for the app and the step still failed: say so when the app crashed meanwhile.
+                var crashed = run.Sending ? CrashDuring(run.Package, began) : null;
+                run.Reports.Add("✗ " + action + ": " + ex.Message + (crashed is null ? "" : " · " + crashed + "; full trace: logs"));
                 NativeJournal.Write(action, lastScreen is null ? null : Foreground(lastScreen), "✗", began.Elapsed.TotalMilliseconds, ex);
                 run.AllVerified = false;
                 break;
@@ -687,6 +752,7 @@ public sealed partial class NativeEngine
     /// <summary>Runs one step; false stops the batch (effect not read back).</summary>
     private bool ActStep(JsonObject step, string action, JsonObject template, ActRun run, System.Diagnostics.Stopwatch began)
     {
+        run.Sending = false;
         var screen = Observe(action);
         if (action == "wait")
         {
@@ -707,18 +773,27 @@ public sealed partial class NativeEngine
         }
         var elements = Elements(screen);
         var keyCodes = action == "key" ? Keys(Str(step, "keys").ToLowerInvariant()) : [];
-        var aim = AimStep(step, action, screen, elements, keyCodes);
+        var aim = AimStep(step, action, ref screen, ref elements, keyCodes);
+        if (aim.KeyboardClosed)
+            run.Reports.Add("The keyboard covered the target: closed (back) before the " + action);
+        run.Package = Foreground(screen);
         if (action == "key")
             GuardKeys(screen, elements, keyCodes);
         var guardGesture = action != "key" ? action : !SafeKeys(keyCodes) ? "enter" : NavigationGesture(keyCodes);
         if (action != "scroll")
             Guard(screen, elements, step, aim.Element, guardGesture, authorize: action != "type", destination: aim.EndElement);
+        run.Sending = true;
         (screen, elements) = SendStep(step, action, aim, screen, elements, keyCodes);
         lastInput = DateTimeOffset.UtcNow;
         KeepScreenAwake(screen);
         var after = SettleAfter(screen);
         var verified = Verified(step, action, aim, screen, elements, after, Elements(after));
-        run.Reports.Add((verified ? "✓ " : "~ ") + action + (verified ? " effect read back" : " sent, effect unverified; do not repeat"));
+        // Nothing read back, or the app is no longer in front: the crash buffer says whether it died on this gesture.
+        // A crash is not the effect asked for, whatever the screen shows next: named, and the batch stops there.
+        var crashed = !verified || Foreground(after) != run.Package ? CrashDuring(run.Package, began) : null;
+        if (crashed is not null)
+            verified = false;
+        run.Reports.Add((verified ? "✓ " : "~ ") + action + (verified ? " effect read back" : crashed is not null ? " sent, then " + crashed + "; do not repeat; full trace: logs" : " sent, effect unverified; do not repeat"));
         NativeJournal.Write(action, Foreground(after), verified ? "✓" : "~", began.Elapsed.TotalMilliseconds);
         if (!verified)
         {
@@ -769,9 +844,10 @@ public sealed partial class NativeEngine
             screen = Read();
         }
     }
-    private Aim AimStep(JsonObject step, string action, NativeScreen screen, List<UiElement> elements, List<string> keyCodes)
+    private Aim AimStep(JsonObject step, string action, ref NativeScreen screen, ref List<UiElement> elements, List<string> keyCodes)
     {
         var aim = new Aim();
+        var ends = action is "swipe" or "drag";
         if (action == "key")
         {
             aim.Element = elements.FirstOrDefault(e => e.Focused);
@@ -792,8 +868,25 @@ public sealed partial class NativeEngine
         }
         if (action is "type" or "clear" && aim.Element?.Editable != true)
             throw new InvalidOperationException("Target is not an editable field");
-        if (action is "swipe" or "drag")
+        if (ends)
             (aim.EndX, aim.EndY, aim.EndElement) = Resolve(step["to"], elements);
+        // A named element whose press point lies under the keyboard: the press would land on a key. The keyboard is
+        // closed first and the target found again. A point given as x,y is left alone: it was read on the image, which
+        // shows the keyboard.
+        if (action is "tap" or "long_press" or "double_tap" or "type" or "clear" or "swipe" or "drag" && Keyboard(screen) is { } keyboard)
+        {
+            bool Under(string key, int x, int y, UiElement? element) => element is not null && step[key] is not null && !Regex.IsMatch(Str(step, key), @"^\s*@?\s*-?\d+(?:\.\d+)?\s*,") && x >= keyboard.Left && x < keyboard.Right && y >= keyboard.Top && y < keyboard.Bottom;
+            if (Under("target", aim.X, aim.Y, aim.Element) || ends && Under("to", aim.EndX, aim.EndY, aim.EndElement))
+            {
+                // Judged first as it stands: a press that would be refused anyway does not close the keyboard.
+                Guard(screen, elements, step, aim.Element, action, authorize: false, destination: aim.EndElement);
+                (screen, elements) = CloseKeyboard(screen, elements, step);
+                (aim.X, aim.Y, aim.Element) = ResolveUncovered(step["target"], aim.Element, elements);
+                if (ends)
+                    (aim.EndX, aim.EndY, aim.EndElement) = ResolveUncovered(step["to"], aim.EndElement, elements);
+                aim.KeyboardClosed = true;
+            }
+        }
         return aim;
     }
     /// <summary>Sends the gesture. Returns the screen the step ends on before settling (a focused field for type/clear).</summary>
